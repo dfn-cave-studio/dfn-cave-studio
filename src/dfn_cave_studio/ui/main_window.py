@@ -36,6 +36,7 @@ from dfn_cave_studio.ui.qt_adapter import (
 
 from dfn_cave_studio.core import get_config, AppVersion
 from dfn_cave_studio.persistence.project_store import ProjectStore, RecentProjectsManager
+from dfn_cave_studio.models.dfn_realization import DFNRealization
 
 
 class MainWindow(QMainWindow):
@@ -57,6 +58,7 @@ class MainWindow(QMainWindow):
         self._project_store = ProjectStore()
         self._recent_manager = RecentProjectsManager()
         self._project_store.set_on_dirty_changed(self._on_project_dirty_changed)
+        self._dfn_renderer = None  # Lazy-loaded (imports pyvista)
 
         # Auto-save timer
         self._auto_save_timer = QTimer(self)
@@ -516,8 +518,80 @@ class MainWindow(QMainWindow):
         self.log_message("Joint Set Manager requested")
 
     def _on_generate_dfn(self) -> None:
-        """Generate DFN."""
-        self.log_message("Generate DFN requested")
+        """Generate DFN from current project parameters."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Please create or open a project first.")
+            return
+
+        project = self._project_store.current_project
+        if not project.joint_sets:
+            QMessageBox.warning(self, "No Joint Sets", "Please add at least one joint set.")
+            return
+
+        self.log_message("Starting DFN generation...")
+        self.set_status("Generating DFN...")
+        self.show_progress(0, 100)
+
+        # Lazy-import worker to avoid VTK loading at startup
+        from dfn_cave_studio.workers.dfn_worker import DFNGenerationWorker
+
+        # Create worker
+        self._dfn_worker = DFNGenerationWorker(
+            joint_sets=project.joint_sets,
+            bounds=project.model_bounds,
+            master_seed=project.config.master_seed,
+            realization_number=len(project.dfn_realizations),
+        )
+
+        self._dfn_worker.signals.progress.connect(self._on_dfn_progress)
+        self._dfn_worker.signals.finished.connect(self._on_dfn_finished)
+        self._dfn_worker.signals.error.connect(self._on_dfn_error)
+
+        from dfn_cave_studio.ui.qt_adapter import QThreadPool
+        QThreadPool.globalInstance().start(self._dfn_worker)
+
+    def _on_dfn_progress(self, current: int, total: int, message: str) -> None:
+        """Handle DFN generation progress updates."""
+        self.set_status(f"DFN: {message}")
+        if total > 0:
+            self.show_progress(current, total)
+
+    def _on_dfn_finished(self, realization: DFNRealization) -> None:
+        """Handle completed DFN generation."""
+        self.hide_progress()
+        project = self._project_store.current_project
+        project.dfn_realizations.append(realization)
+
+        self.log_message(
+            f"DFN generation complete: {realization.generation_result.total_fractures} fractures, "
+            f"P32={realization.generation_result.achieved_p32:.3f}, "
+            f"error={realization.generation_result.p32_error_percent:.1f}%"
+        )
+        self.set_status(
+            f"DFN generated: {realization.generation_result.total_fractures} fractures"
+        )
+
+        # Render in 3D viewport (lazy-load DFNRenderer)
+        if self._plotter:
+            try:
+                if self._dfn_renderer is None:
+                    from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                    self._dfn_renderer = DFNRenderer()
+                self._dfn_renderer.render_to_plotter(
+                    self._plotter, realization, project.joint_sets
+                )
+                self._plotter.reset_camera()
+                self.log_message("3D rendering complete")
+            except Exception as e:
+                self.log_error(f"3D rendering failed: {e}")
+
+        self._update_project_tree_from_project(project)
+
+    def _on_dfn_error(self, error_msg: str) -> None:
+        """Handle DFN generation error."""
+        self.hide_progress()
+        self.log_error(f"DFN generation failed: {error_msg}")
+        QMessageBox.critical(self, "DFN Generation Error", error_msg)
 
     def _on_domain_manager(self) -> None:
         """Open domain manager."""
