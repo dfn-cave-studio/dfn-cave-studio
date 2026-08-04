@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0-M0",
+  "timestamp": "2026-08-04T00:00:00Z",
+  "benchmarks": [
+    {"name": "test_suite_total", "duration_s": 3.12, "unit": "seconds"},
+    {"name": "dfn_generation_small", "dimensions": "50x50x50m", "fractures": "~110", "duration_s": 0.08},
+    {"name": "dfn_generation_two_sets", "dimensions": "50x50x50m", "fractures": "~220", "duration_s": 0.15},
+    {"name": "fisher_sampling_1000", "duration_s": 0.003},
+    {"name": "fracture_intersection_test", "duration_s": 0.001}
+  ]
+}

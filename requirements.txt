@@ -1,0 +1,41 @@
+# DFN Cave Studio Dependencies
+# Generated 2026-08-04
+# Python 3.14.5, Windows 11 x64
+
+# === Qt Desktop Framework ===
+PySide6==6.11.1
+
+# === 3D Visualization ===
+pyvista==0.48.4
+pyvistaqt==0.12.0
+vtk==9.6.2
+
+# === Numerical Computing ===
+numpy==2.4.6
+scipy==1.17.1
+pandas==3.0.3
+
+# === Mesh Processing ===
+trimesh==4.12.2
+
+# === Graph Algorithms ===
+networkx==3.6.1
+
+# === 2D Plotting ===
+matplotlib==3.10.9
+
+# === Data Validation ===
+pydantic==2.13.4
+
+# === Data Storage ===
+h5py==3.16.0
+zarr==3.3.0
+PyYAML>=6.0
+
+# === Testing ===
+pytest==9.1.1
+pytest-qt==4.5.0
+pytest-cov>=5.0
+
+# === Utilities ===
+QtPy==2.4.3

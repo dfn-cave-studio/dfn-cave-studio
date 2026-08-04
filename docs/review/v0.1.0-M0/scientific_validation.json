@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0-M0",
+  "timestamp": "2026-08-04T00:00:00Z",
+  "cases": [
+    {"id": "SV-01", "name": "Dip dir/dip ↔ normal round-trip", "expected": "error < 1e-10", "actual": "error < 1e-12", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 1e-10, "passed": true},
+    {"id": "SV-02", "name": "Known normal vector values", "expected": "[0, -1, 0]", "actual": "[0, -1, 0]", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 1e-12, "passed": true},
+    {"id": "SV-03", "name": "Fisher distribution sampling", "expected": "mean within 10°", "actual": "within tolerance", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 10.0, "passed": true},
+    {"id": "SV-04", "name": "Single fracture through cube", "expected": "intersects", "actual": "intersects", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.0, "passed": true},
+    {"id": "SV-05", "name": "Dipping fracture multiple voxels", "expected": "intersects", "actual": "intersects", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.0, "passed": true},
+    {"id": "SV-06", "name": "Fixed seed reproducibility", "expected": "identical", "actual": "identical", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.0, "passed": true},
+    {"id": "SV-07", "name": "Two fracture intersection", "expected": "detected", "actual": "detected", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.0, "passed": true},
+    {"id": "SV-08", "name": "P32 tracking", "expected": "P32 recorded", "actual": "P32 statistics recorded", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.05, "passed": true},
+    {"id": "SV-09", "name": "Two joint sets", "expected": "set_id correct", "actual": "correct", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.0, "passed": true},
+    {"id": "SV-10", "name": "Fixed-size generation", "expected": "radius=3m", "actual": "~3m", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.01, "passed": true},
+    {"id": "SV-11", "name": "Position bounds", "expected": "in bounds", "actual": "in bounds", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 0.0, "passed": true},
+    {"id": "SV-12", "name": "Unit vector properties", "expected": "correct", "actual": "correct", "abs_error": 0.0, "rel_error": 0.0, "tolerance": 1e-12, "passed": true}
+  ],
+  "summary": {"total": 12, "passed": 12, "failed": 0}
+}
