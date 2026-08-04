@@ -3,6 +3,7 @@ Main window for DFN Cave Studio.
 """
 
 from pathlib import Path
+from typing import Optional
 
 from dfn_cave_studio.ui.qt_adapter import (
     Qt,
@@ -28,11 +29,13 @@ from dfn_cave_studio.ui.qt_adapter import (
     QProgressBar,
     QFileDialog,
     QSettings,
+    QTimer,
     PyVistaQtInteractor,
     HAS_PYVISTAQT,
 )
 
 from dfn_cave_studio.core import get_config, AppVersion
+from dfn_cave_studio.persistence.project_store import ProjectStore, RecentProjectsManager
 
 
 class MainWindow(QMainWindow):
@@ -49,6 +52,17 @@ class MainWindow(QMainWindow):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = get_config()
+
+        # Initialize project management
+        self._project_store = ProjectStore()
+        self._recent_manager = RecentProjectsManager()
+        self._project_store.set_on_dirty_changed(self._on_project_dirty_changed)
+
+        # Auto-save timer
+        self._auto_save_timer = QTimer(self)
+        self._auto_save_timer.timeout.connect(self._on_auto_save_tick)
+        self._auto_save_timer.start(60000)  # Check every 60 seconds
+
         self._init_window()
         self._init_menu_bar()
         self._init_tool_bar()
@@ -418,32 +432,76 @@ class MainWindow(QMainWindow):
 
     def _on_new_project(self) -> None:
         """Create a new project."""
-        self.log_message("New Project requested")
-        # Placeholder for M1+ project creation dialog
-        QMessageBox.information(
-            self, "New Project",
-            "Project creation will be available in Milestone M1."
-        )
+        self.log_message("Creating new project...")
+        try:
+            project = self._project_store.new_project("New Project")
+            self.setWindowTitle("DFN Cave Studio — New Project [unsaved]")
+            self.set_status(f"New project created")
+            self._update_project_tree_from_project(project)
+            self.log_message(f"New project '{project.metadata.name}' created")
+        except Exception as e:
+            self.log_error(f"Failed to create project: {e}")
 
     def _on_open_project(self) -> None:
         """Open an existing project."""
-        self.log_message("Open Project requested")
-        QMessageBox.information(
-            self, "Open Project",
-            "Project opening will be available in Milestone M1."
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Project", "",
+            "DFN Cave Studio Projects (*.dfncs);;JSON Files (*.json);;All Files (*)",
         )
+        if not path:
+            return
+
+        self.log_message(f"Opening project: {path}")
+        try:
+            project = self._project_store.open(Path(path))
+            self._recent_manager.add(Path(path), project.metadata.name)
+            self.setWindowTitle(f"DFN Cave Studio — {project.metadata.name}")
+            self.set_status(f"Loaded: {Path(path).name}")
+            self._update_project_tree_from_project(project)
+            self._update_recent_menu()
+            self.log_message(f"Project '{project.metadata.name}' loaded ({project.model_volume:.0f} m³)")
+        except Exception as e:
+            self.log_error(f"Failed to open project: {e}")
+            QMessageBox.critical(self, "Open Project Error", str(e))
 
     def _on_save_project(self) -> None:
         """Save the current project."""
-        self.log_message("Save Project requested")
-        QMessageBox.information(
-            self, "Save Project",
-            "Project saving will be available in Milestone M1."
-        )
+        if not self._project_store.has_project:
+            self._on_save_project_as()
+            return
+
+        try:
+            path = self._project_store.save()
+            self._recent_manager.add(path, self._project_store.current_project.metadata.name)
+            self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
+            self.set_status(f"Saved: {path.name}")
+            self.log_message(f"Project saved to {path}")
+        except Exception as e:
+            self.log_error(f"Failed to save project: {e}")
+            QMessageBox.critical(self, "Save Error", str(e))
 
     def _on_save_project_as(self) -> None:
         """Save project to a new location."""
-        self.log_message("Save Project As requested")
+        if not self._project_store.has_project:
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project As", "untitled.dfncs",
+            "DFN Cave Studio Projects (*.dfncs);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            saved_path = self._project_store.save_as(Path(path))
+            self._recent_manager.add(saved_path, self._project_store.current_project.metadata.name)
+            self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
+            self.set_status(f"Saved: {saved_path.name}")
+            self.log_message(f"Project saved to {saved_path}")
+            self._update_recent_menu()
+        except Exception as e:
+            self.log_error(f"Failed to save project: {e}")
+            QMessageBox.critical(self, "Save Error", str(e))
 
     def _on_borehole_manager(self) -> None:
         """Open borehole manager."""
@@ -541,8 +599,119 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Save state before closing."""
+        # Check for unsaved changes
+        if self._project_store.is_dirty:
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                "The project has unsaved changes. Save before closing?",
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if reply == QMessageBox.StandardButton.Save:
+                self._on_save_project()
+            elif reply == QMessageBox.StandardButton.Cancel:
+                event.ignore()
+                return
+
+        self._auto_save_timer.stop()
         settings = QSettings("DFNCaveStudio", "MainWindow")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
         self.log_message("DFN Cave Studio closing")
         super().closeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Project Management Helpers
+    # ------------------------------------------------------------------
+
+    def _on_project_dirty_changed(self, dirty: bool) -> None:
+        """Handle project dirty state change."""
+        if self._project_store.has_project:
+            title = f"DFN Cave Studio — {self._project_store.current_project.metadata.name}"
+            if dirty:
+                title += " *"
+            self.setWindowTitle(title)
+
+    def _on_auto_save_tick(self) -> None:
+        """Periodic auto-save check."""
+        if self._project_store.tick_auto_save():
+            self.log_message("Auto-saved project")
+            self.set_status("Auto-saved")
+
+    def _update_project_tree_from_project(self, project) -> None:
+        """Refresh the project tree to reflect the current project."""
+        tree = self._project_tree
+        tree.clear()
+
+        root = QTreeWidgetItem(tree, [project.metadata.name])
+        root.setExpanded(True)
+
+        # Model section
+        model = QTreeWidgetItem(root, ["Model"])
+        QTreeWidgetItem(model, [f"Bounds: {project.model_bounds.width:.0f}x{project.model_bounds.depth:.0f}x{project.model_bounds.height:.0f} m"])
+        QTreeWidgetItem(model, [f"Voxel: {project.voxel_config.cell_size_x:.1f}x{project.voxel_config.cell_size_y:.1f}x{project.voxel_config.cell_size_z:.1f} m"])
+        if project.surface_model:
+            QTreeWidgetItem(model, [f"Surface: {project.surface_model.name}"])
+
+        # Data section
+        data = QTreeWidgetItem(root, ["Data"])
+        n_boreholes = len(project.borehole_collection)
+        QTreeWidgetItem(data, [f"Boreholes ({n_boreholes})"])
+        QTreeWidgetItem(data, [f"Deterministic Fractures ({len(project.deterministic_fractures)})"])
+
+        # DFN section
+        dfn_node = QTreeWidgetItem(root, ["DFN"])
+        QTreeWidgetItem(dfn_node, [f"Joint Sets ({len(project.joint_sets)})"])
+        for js in project.joint_sets:
+            QTreeWidgetItem(dfn_node, [f"  {js.name} (P32={js.target_p32})"])
+        QTreeWidgetItem(dfn_node, [f"Realizations ({len(project.dfn_realizations)})"])
+
+        # Domains section
+        domains_node = QTreeWidgetItem(root, ["Structural Domains"])
+        QTreeWidgetItem(domains_node, [f"Domains ({len(project.structural_domains.domains)})"])
+
+        # Analysis section
+        analysis = QTreeWidgetItem(root, ["Analysis"])
+        QTreeWidgetItem(analysis, ["Connectivity"])
+        QTreeWidgetItem(analysis, ["Fragmentation"])
+
+        for i in range(root.childCount()):
+            root.child(i).setExpanded(True)
+
+    def _update_recent_menu(self) -> None:
+        """Update the recent projects submenu."""
+        self._recent_menu.clear()
+        recent = self._recent_manager.list()
+        if not recent:
+            self._recent_menu.addAction("(No recent projects)").setEnabled(False)
+        else:
+            for entry in recent[:10]:
+                action = QAction(f"{entry['name']} — {entry['path']}", self)
+                action.setData(entry["path"])
+                action.triggered.connect(self._on_open_recent)
+                self._recent_menu.addAction(action)
+            self._recent_menu.addSeparator()
+            clear_action = QAction("Clear Recent", self)
+            clear_action.triggered.connect(lambda: self._recent_manager.clear() or self._update_recent_menu())
+            self._recent_menu.addAction(clear_action)
+
+    def _on_open_recent(self) -> None:
+        """Open a recent project from the menu."""
+        action = self.sender()
+        if action and action.data():
+            path = action.data()
+            if Path(path).exists():
+                try:
+                    project = self._project_store.open(Path(path))
+                    self._recent_manager.add(Path(path), project.metadata.name)
+                    self.setWindowTitle(f"DFN Cave Studio — {project.metadata.name}")
+                    self.set_status(f"Loaded: {Path(path).name}")
+                    self._update_project_tree_from_project(project)
+                    self.log_message(f"Loaded recent project: {path}")
+                except Exception as e:
+                    self.log_error(f"Failed to open {path}: {e}")
+            else:
+                self.log_warning(f"Recent project not found: {path}")
+                self._recent_manager.remove(Path(path))
+                self._update_recent_menu()

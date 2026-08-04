@@ -50,3 +50,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - trimesh 4.12.2, NetworkX 3.6.1, Matplotlib 3.10.9
 - h5py 3.16.0, zarr 3.3.0, pydantic 2.13.4
 - pytest 9.1.1, pytest-qt 4.5.0
+
+## [0.2.0-M1] — 2026-08-04
+
+### Added (Milestone M1: Data Models & Project Management)
+- **Borehole models**: Collar, SurveyStation, BoreholeSurvey, FractureObservation, RQDInterval, Borehole, BoreholeCollection
+- **BoreholeSurvey**: Minimum curvature trajectory computation
+- **BoreholeCollection**: CSV import, duplicate detection, angle validation, quality report
+- **StructuralDomain**: Global, box, polygon, fault_buffer boundary types with spatial point query
+- **StructuralDomainCollection**: Prioritized domain lookup with global fallback
+- **RockMask**: Box and surface-based masks with point/AABB containment testing
+- **ExcavationMask**: Void region masks for excavations and caves
+- **SurfaceModel**: Triangulated surface with barycentric elevation_at() and above_surface()
+- **SpatialAttributeConfig**: Per-voxel attribute flags (active_mask, material_id, domain_id, etc.)
+- **FractureMechanicalProperties**: Cohesion, friction, stiffness, dilation, residual strength
+- **MechanicalPropertyTemplate**: Multi-criteria matching (set, domain, type, filling)
+- **MechanicalPropertyLibrary**: Priority-based template resolution
+- **Project model**: Unified container for all project data with JSON serialization
+- **Project schema versioning**: Forward/backward compatible migration
+- **ProjectStore**: Save/load/auto-save with atomic writes and backup
+- **RecentProjectsManager**: Persistent recent files (max 20)
+- **MainWindow**: Project CRUD (new, open, save, save-as) with unsaved-changes tracking
+- **Project tree**: Dynamic display of project structure
+- **Sample data**: 5 borehole collars, 14 fracture observations, 1 sample project
+- **63 new tests** (200 total, all passing)
