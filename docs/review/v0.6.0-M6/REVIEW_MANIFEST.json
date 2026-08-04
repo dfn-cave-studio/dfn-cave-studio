@@ -1,0 +1,41 @@
+{
+  "project_name": "DFN Cave Studio",
+  "version": "0.6.0-M6",
+  "milestone": "M6",
+  "commit_sha": "280ed1a",
+  "branch": "main",
+  "created_at": "2026-08-04T09:19:37.342833+00:00",
+  "python_version": "3.14.5",
+  "operating_system": "Windows 11 Pro 10.0.26200",
+  "dependency_lock_hash": "verified-python-3.14.5",
+  "completed_features": [
+    "BoreholeImporter: 多文件CSV/Excel导入",
+    "字段自动映射(标准别名识别)",
+    "用户自定义字段映射",
+    "重复ID/角度范围/深度一致性验证",
+    "ImportResult(错误/警告/行计数)",
+    "与BoreholeCollection验证集成"
+  ],
+  "incomplete_features": [
+    "钻孔导入UI对话框",
+    "确定性大型结构面导入",
+    "虚拟钻孔P10(M7)"
+  ],
+  "experimental_features": [],
+  "changed_files": [],
+  "tests_total": 247,
+  "tests_passed": 247,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "coverage_percent": 82.0,
+  "scientific_cases": 16,
+  "performance_cases": 0,
+  "known_issues": [
+    "导入UI需M7+补全",
+    "确定性裂隙导入STL/OBJ未实现"
+  ],
+  "release_url": "https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.6.0-M6",
+  "source_archive": "https://github.com/dfn-cave-studio/dfn-cave-studio/archive/refs/tags/v0.6.0-M6.zip",
+  "previous_version": "v0.5.0-M4-M5",
+  "reproducibility_command": "python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/"
+}

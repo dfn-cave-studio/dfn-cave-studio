@@ -1,0 +1,11 @@
+{
+  "version": "v0.3.0-M2",
+  "timestamp": "2026-08-04T09:19:37.337622+00:00",
+  "summary": {
+    "total": 210,
+    "passed": 210,
+    "failed": 0,
+    "skipped": 0,
+    "coverage_percent": 80.0
+  }
+}

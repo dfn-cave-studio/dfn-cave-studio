@@ -1,0 +1,47 @@
+{
+  "project_name": "DFN Cave Studio",
+  "version": "0.5.0-M4-M5",
+  "milestone": "M4+M5",
+  "commit_sha": "8e06216",
+  "branch": "main",
+  "created_at": "2026-08-04T09:19:37.341123+00:00",
+  "python_version": "3.14.5",
+  "operating_system": "Windows 11 Pro 10.0.26200",
+  "dependency_lock_hash": "verified-python-3.14.5",
+  "completed_features": [
+    "DFNVoxelIntersectionEngine: AABB预筛+精确盘-盒求交",
+    "逐体素属性: fracture_count/fracture_area/local_p32/max_frac_size",
+    "按节理组计数(set_count_N)",
+    "ConnectivityGraph: 裂隙对精确求交建图",
+    "DFS连通簇识别(按大小排序)",
+    "最大簇比例/孤立裂隙数",
+    "边界贯通检测(任意方向)",
+    "组间交切矩阵",
+    "连通性统计报告",
+    "11个新测试(共247个)"
+  ],
+  "incomplete_features": [
+    "块度分析(M8)",
+    "NCI类扩展指标",
+    "岩桥距离"
+  ],
+  "experimental_features": [
+    "大DFN贯通分析算法未经充分验证"
+  ],
+  "changed_files": [],
+  "tests_total": 247,
+  "tests_passed": 247,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "coverage_percent": 82.0,
+  "scientific_cases": 16,
+  "performance_cases": 0,
+  "known_issues": [
+    "O(N²)边计算大DFN需空间索引",
+    "未区分几何相交与力学连接"
+  ],
+  "release_url": "https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.5.0-M4-M5",
+  "source_archive": "https://github.com/dfn-cave-studio/dfn-cave-studio/archive/refs/tags/v0.5.0-M4-M5.zip",
+  "previous_version": "v0.4.0-M3",
+  "reproducibility_command": "python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/"
+}

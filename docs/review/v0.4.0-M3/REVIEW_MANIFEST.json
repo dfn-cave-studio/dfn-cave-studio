@@ -1,0 +1,44 @@
+{
+  "project_name": "DFN Cave Studio",
+  "version": "0.4.0-M3",
+  "milestone": "M3",
+  "commit_sha": "9f3c5d7",
+  "branch": "main",
+  "created_at": "2026-08-04T09:19:37.339320+00:00",
+  "python_version": "3.14.5",
+  "operating_system": "Windows 11 Pro 10.0.26200",
+  "dependency_lock_hash": "verified-python-3.14.5",
+  "completed_features": [
+    "VoxelGrid: 分块(32³)多属性体素存储",
+    "VoxelChunk: 逐块属性数组/活跃计数/空检测",
+    "稀疏模式: 仅写入时分配块",
+    "掩膜系统: active_mask≠void≠invalid(无零值歧义)",
+    "apply_mask(): RockMask批量应用",
+    "apply_domain_ids(): 结构域空间赋值",
+    "世界坐标↔体素索引互转",
+    "静态内存估算与危险分辨率警告",
+    "26个新测试(共236个)"
+  ],
+  "incomplete_features": [
+    "DFN-体素求交(M4)",
+    "多分辨率显示",
+    "HDF5持久化"
+  ],
+  "experimental_features": [],
+  "changed_files": [],
+  "tests_total": 236,
+  "tests_passed": 236,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "coverage_percent": 81.0,
+  "scientific_cases": 14,
+  "performance_cases": 0,
+  "known_issues": [
+    "全网格apply_mask()逐体素循环效率低(需向量化)",
+    "仅支持int32属性"
+  ],
+  "release_url": "https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.4.0-M3",
+  "source_archive": "https://github.com/dfn-cave-studio/dfn-cave-studio/archive/refs/tags/v0.4.0-M3.zip",
+  "previous_version": "v0.3.0-M2",
+  "reproducibility_command": "python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/"
+}

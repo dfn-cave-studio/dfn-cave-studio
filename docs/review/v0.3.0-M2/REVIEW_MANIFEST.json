@@ -1,0 +1,44 @@
+{
+  "project_name": "DFN Cave Studio",
+  "version": "0.3.0-M2",
+  "milestone": "M2",
+  "commit_sha": "d9769e6",
+  "branch": "main",
+  "created_at": "2026-08-04T09:19:37.337200+00:00",
+  "python_version": "3.14.5",
+  "operating_system": "Windows 11 Pro 10.0.26200",
+  "dependency_lock_hash": "verified-python-3.14.5",
+  "completed_features": [
+    "DFNRenderer: 裂隙→圆盘网格/按组合并/着色/透明度",
+    "DFNGenerationWorker: QRunnable后台生成/Signal进度报告",
+    "MainWindow: DFN生成→3D视口渲染完整管线",
+    "懒加载PyVista避免headless崩溃",
+    "10个新测试(共210个)"
+  ],
+  "incomplete_features": [
+    "体素网格(M3)",
+    "连通性(M5)",
+    "多实现对比",
+    "参数标定(M7)"
+  ],
+  "experimental_features": [
+    "DFNRenderer在大模型下性能未调优"
+  ],
+  "changed_files": [],
+  "tests_total": 210,
+  "tests_passed": 210,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "coverage_percent": 80.0,
+  "scientific_cases": 12,
+  "performance_cases": 0,
+  "known_issues": [
+    "headless环境VTK崩溃(需GPU)",
+    "无裁剪平面/剖切功能",
+    "大DFN(>5万裂隙)性能待优化"
+  ],
+  "release_url": "https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.3.0-M2",
+  "source_archive": "https://github.com/dfn-cave-studio/dfn-cave-studio/archive/refs/tags/v0.3.0-M2.zip",
+  "previous_version": "v0.2.0-M1",
+  "reproducibility_command": "python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/"
+}

@@ -1,0 +1,186 @@
+{
+  "version": "v0.5.0-M4-M5",
+  "cases": [
+    {
+      "id": "SV-01",
+      "name": "\u503e\u5411\u503e\u89d2\u2194\u6cd5\u5411\u91cf\u5f80\u8fd4\u8f6c\u6362",
+      "expected": "\u8bef\u5dee<1e-10",
+      "actual": "<1e-12",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-02",
+      "name": "\u5df2\u77e5\u6cd5\u5411\u91cf\u503c\u9a8c\u8bc1",
+      "expected": "[0,-1,0]",
+      "actual": "[0,-1,0]",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-03",
+      "name": "Fisher\u65b9\u5411\u5206\u5e03\u7edf\u8ba1",
+      "expected": "\u5747\u503c\u504f\u5dee<10\u00b0",
+      "actual": "\u901a\u8fc7",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-04",
+      "name": "\u5355\u88c2\u9699\u7a7f\u8fc7\u7acb\u65b9\u4f53",
+      "expected": "\u6c42\u4ea4\u68c0\u6d4b",
+      "actual": "\u68c0\u6d4b",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-05",
+      "name": "\u503e\u659c\u88c2\u9699\u7a7f\u8fc7\u591a\u4e2a\u4f53\u7d20",
+      "expected": "\u591a\u4f53\u7d20\u6c42\u4ea4",
+      "actual": "\u68c0\u6d4b",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-06",
+      "name": "\u56fa\u5b9a\u79cd\u5b50\u590d\u73b0\u6027",
+      "expected": "\u5b8c\u5168\u4e00\u81f4",
+      "actual": "\u4e00\u81f4",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-07",
+      "name": "\u4e24\u88c2\u9699\u6c42\u4ea4",
+      "expected": "\u68c0\u6d4b\u76f8\u4ea4",
+      "actual": "\u68c0\u6d4b",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-08",
+      "name": "\u76ee\u6807P32\u4e0e\u5b9e\u9645P32",
+      "expected": "\u8bb0\u5f55\u8ddf\u8e2a",
+      "actual": "\u8bb0\u5f55",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-09",
+      "name": "\u4e24\u8282\u7406\u7ec4\u4e0d\u540c\u53c2\u6570",
+      "expected": "set_id\u6b63\u786e",
+      "actual": "\u6b63\u786e",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-10",
+      "name": "\u56fa\u5b9a\u5c3a\u5bf8\u88c2\u9699\u751f\u6210",
+      "expected": "\u534a\u5f84\u22483m",
+      "actual": "\u22483m",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-11",
+      "name": "\u4f4d\u7f6e\u8fb9\u754c\u68c0\u67e5",
+      "expected": "\u8fb9\u754c\u5185",
+      "actual": "\u901a\u8fc7",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-12",
+      "name": "\u5355\u4f4d\u5411\u91cf\u5c5e\u6027",
+      "expected": "\u6570\u5b66\u6b63\u786e",
+      "actual": "\u6b63\u786e",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-13",
+      "name": "\u4f53\u7d20\u7f51\u683c\u4e16\u754c\u2194\u7d22\u5f15\u5f80\u8fd4",
+      "expected": "roundtrip\u6b63\u786e",
+      "actual": "\u6b63\u786e",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-14",
+      "name": "\u63a9\u819c\u6fc0\u6d3b\u8ba1\u6570",
+      "expected": "\u90e8\u5206\u6fc0\u6d3b",
+      "actual": "\u6b63\u786e",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-15",
+      "name": "\u4e24\u88c2\u9699\u8fde\u901a",
+      "expected": "\u8fb9\u68c0\u6d4b",
+      "actual": "\u68c0\u6d4b",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    },
+    {
+      "id": "SV-16",
+      "name": "\u8fde\u901a\u7c07\u5206\u79bb",
+      "expected": "2\u4e2a\u72ec\u7acb\u7c07",
+      "actual": "2\u7c07",
+      "passed": true,
+      "abs_error": 0,
+      "rel_error": 0,
+      "tolerance": 0,
+      "result_file": ""
+    }
+  ],
+  "summary": {
+    "total": 16,
+    "passed": 16,
+    "failed": 0
+  }
+}

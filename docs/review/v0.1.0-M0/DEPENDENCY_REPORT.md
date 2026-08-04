@@ -1,11 +1,10 @@
 # Dependency Report — v0.1.0-M0
 
 ## Python
-- **Version:** 3.14.5 (tags/v3.14.5:5607950, May 10 2026)
-- **Architecture:** 64-bit (AMD64)
-- **Compiler:** MSC v.1944
+- **Version:** 3.14.5
+- **Arch:** 64-bit AMD64
 
-## Core Dependencies
+## Dependencies
 
 | Package | Version | License | Verified |
 |---------|---------|---------|----------|
@@ -23,18 +22,12 @@
 | h5py | 3.16.0 | BSD-3 | ✅ |
 | zarr | 3.3.0 | MIT | ✅ |
 | PyYAML | 6.0.3 | MIT | ✅ |
-
-## Dev Dependencies
-
-| Package | Version | License |
-|---------|---------|---------|
-| pytest | 9.1.1 | MIT |
-| pytest-qt | 4.5.0 | MIT |
-| pytest-cov | 7.1.0 | MIT |
-| black | 26.5.1 | MIT |
-| ruff | 0.16.1 | MIT |
+| pytest | 9.1.1 | MIT | ✅ |
+| pytest-qt | 4.5.0 | MIT | ✅ |
+| pytest-cov | 7.1.0 | MIT | ✅ |
+| black | 26.5.1 | MIT | ✅ |
+| ruff | 0.16.1 | MIT | ✅ |
+| debugpy | latest | MIT | ✅ |
 
 ## License Compliance
-- All dependencies have permissive licenses (MIT, BSD, LGPL, PSF)
-- No GPL or AGPL code included
-- See THIRD_PARTY_NOTICES.md for full details
+All dependencies permissive (MIT, BSD, LGPL, PSF). No GPL/AGPL.

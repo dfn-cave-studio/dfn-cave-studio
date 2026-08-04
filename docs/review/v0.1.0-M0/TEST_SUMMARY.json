@@ -1,53 +1,11 @@
 {
-  "version": "0.1.0-M0",
-  "timestamp": "2026-08-04T00:00:00Z",
+  "version": "v0.1.0-M0",
+  "timestamp": "2026-08-04T09:19:37.333962+00:00",
   "summary": {
     "total": 137,
     "passed": 137,
     "failed": 0,
     "skipped": 0,
-    "duration_seconds": 3.12,
     "coverage_percent": 88.0
-  },
-  "by_category": {
-    "unit": {
-      "total": 125,
-      "passed": 125,
-      "failed": 0,
-      "modules": {
-        "test_config.py": {"total": 14, "passed": 14},
-        "test_coordinate.py": {"total": 13, "passed": 13},
-        "test_dfn_generator.py": {"total": 10, "passed": 10},
-        "test_fisher.py": {"total": 14, "passed": 14},
-        "test_fracture_models.py": {"total": 15, "passed": 15},
-        "test_intersection.py": {"total": 16, "passed": 16},
-        "test_vector.py": {"total": 21, "passed": 21}
-      }
-    },
-    "gui": {
-      "total": 12,
-      "passed": 12,
-      "failed": 0,
-      "modules": {
-        "test_main_window.py": {"total": 12, "passed": 12}
-      }
-    }
-  },
-  "coverage_by_module": {
-    "core/config.py": "100%",
-    "models/enums.py": "100%",
-    "geometry/vector.py": "100%",
-    "geometry/coordinate.py": "95%",
-    "geometry/intersection.py": "96%",
-    "dfn/fisher.py": "94%",
-    "dfn/generator.py": "83%",
-    "models/fracture.py": "95%",
-    "models/fracture_set.py": "84%",
-    "models/dfn_realization.py": "94%",
-    "ui/main_window.py": "93%",
-    "ui/qt_adapter.py": "80%",
-    "models/bounds.py": "70%",
-    "app/__init__.py": "0%",
-    "core/logger.py": "0%"
   }
 }
