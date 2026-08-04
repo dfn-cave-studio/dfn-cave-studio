@@ -1,5 +1,4 @@
-# Known Issues — v0.3.0-M2
+# Known Issues
 
-- headless环境VTK崩溃(需GPU)
-- 无裁剪平面/剖切功能
-- 大DFN(>5万裂隙)性能待优化
+- headless环境VTK初始化崩溃
+- 大DFN(>5万)性能待优化

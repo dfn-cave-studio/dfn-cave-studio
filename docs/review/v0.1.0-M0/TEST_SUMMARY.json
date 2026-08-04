@@ -1,11 +1,15 @@
 {
   "version": "v0.1.0-M0",
-  "timestamp": "2026-08-04T09:19:37.333962+00:00",
+  "timestamp": "2026-08-04T10:01:04.910739+00:00",
   "summary": {
-    "total": 137,
-    "passed": 137,
+    "total": 247,
+    "passed": 247,
     "failed": 0,
-    "skipped": 0,
-    "coverage_percent": 88.0
+    "skipped": 0
+  },
+  "coverage_percent": 72.0,
+  "scientific_validation": {
+    "total": 16,
+    "passed": 16
   }
 }

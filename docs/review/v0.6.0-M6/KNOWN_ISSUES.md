@@ -1,4 +1,4 @@
-# Known Issues — v0.6.0-M6
+# Known Issues
 
-- 导入UI需M7+补全
-- 确定性裂隙导入STL/OBJ未实现
+- 导入UI需后续里程碑补全
+- 确定性裂隙STL/OBJ导入未实现

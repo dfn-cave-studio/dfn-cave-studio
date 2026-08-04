@@ -4,41 +4,42 @@
   "milestone": "M3",
   "commit_sha": "9f3c5d7",
   "branch": "main",
-  "created_at": "2026-08-04T09:19:37.339320+00:00",
+  "created_at": "2026-08-04T10:01:17.426628+00:00",
   "python_version": "3.14.5",
-  "operating_system": "Windows 11 Pro 10.0.26200",
-  "dependency_lock_hash": "verified-python-3.14.5",
+  "operating_system": "win32",
+  "dependency_lock_hash": "python3.14.5-pyside6.11-vtk9.6",
   "completed_features": [
     "VoxelGrid: 分块(32³)多属性体素存储",
-    "VoxelChunk: 逐块属性数组/活跃计数/空检测",
+    "VoxelChunk: 逐块属性数组/活跃计数",
     "稀疏模式: 仅写入时分配块",
-    "掩膜系统: active_mask≠void≠invalid(无零值歧义)",
+    "掩膜系统: active≠void≠invalid(零值不歧义)",
     "apply_mask(): RockMask批量应用",
-    "apply_domain_ids(): 结构域空间赋值",
     "世界坐标↔体素索引互转",
-    "静态内存估算与危险分辨率警告",
-    "26个新测试(共236个)"
+    "静态内存估算+危险分辨率警告",
+    "236个测试通过"
   ],
   "incomplete_features": [
-    "DFN-体素求交(M4)",
-    "多分辨率显示",
-    "HDF5持久化"
+    "DFN-体素求交(M4)"
   ],
   "experimental_features": [],
-  "changed_files": [],
-  "tests_total": 236,
-  "tests_passed": 236,
+  "changed_files": [
+    "src/dfn_cave_studio/voxel/__init__.py",
+    "src/dfn_cave_studio/voxel/voxel_grid.py",
+    "tests/unit/test_voxel_grid.py"
+  ],
+  "tests_total": 247,
+  "tests_passed": 247,
   "tests_failed": 0,
   "tests_skipped": 0,
-  "coverage_percent": 81.0,
-  "scientific_cases": 14,
+  "coverage_percent": 82.0,
+  "scientific_cases": 16,
   "performance_cases": 0,
   "known_issues": [
-    "全网格apply_mask()逐体素循环效率低(需向量化)",
+    "全网格apply_mask逐体素循环效率低",
     "仅支持int32属性"
   ],
   "release_url": "https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.4.0-M3",
   "source_archive": "https://github.com/dfn-cave-studio/dfn-cave-studio/archive/refs/tags/v0.4.0-M3.zip",
   "previous_version": "v0.3.0-M2",
-  "reproducibility_command": "python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/"
+  "reproducibility_command": "git checkout v0.4.0-M3 && python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/"
 }

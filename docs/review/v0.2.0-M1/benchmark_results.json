@@ -2,13 +2,14 @@
   "version": "v0.2.0-M1",
   "benchmarks": [
     {
-      "name": "test_suite_total",
+      "name": "test_suite",
       "duration_s": 3.0,
-      "unit": "seconds"
+      "tests": 247
     },
     {
-      "name": "dfn_generation_small",
-      "duration_s": 0.08
+      "name": "scientific_validation",
+      "cases": 16,
+      "passed": 16
     }
   ]
 }
