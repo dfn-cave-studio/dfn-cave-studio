@@ -30,7 +30,7 @@ from numpy.typing import NDArray
 
 from dfn_cave_studio.models.fracture import StochasticFracture
 from dfn_cave_studio.models.dfn_realization import DFNRealization
-from dfn_cave_studio.geometry.intersection import disk_aabb_intersects
+from dfn_cave_studio.geometry.intersection import disk_aabb_intersects, disk_aabb_intersection_area
 from dfn_cave_studio.voxel.voxel_grid import VoxelGrid, ACTIVE_VALUE
 
 
@@ -165,22 +165,10 @@ class DFNVoxelIntersectionEngine:
                     vox_min, vox_max,
                 ):
                     fracture_count += 1
-                    # Clipped area estimate: the fraction of the disk that
-                    # falls inside the voxel. Without full polygon clipping,
-                    # use the ratio of voxel face area to bounding square as
-                    # a first-order correction.
-                    # Full disk area = πr²
-                    # Fraction inside ≈ min(1, voxel_area / (πr²)) capped by
-                    # the disk's actual intersection with the voxel
-                    disk_area = math.pi * r ** 2
-                    # Estimate clipped area as area of the portion of the
-                    # disk inside the voxel's bounding box. Simple model:
-                    # if the disk center is inside the voxel, use full disk
-                    # area capped by voxel face area; otherwise scale by
-                    # overlap fraction.
-                    clipped_area = self._estimate_clipped_area(
+                    # Exact clipped area using polygon clipping (64-gon)
+                    clipped_area = disk_aabb_intersection_area(
                         frac.geometry.center, frac.geometry.normal, r,
-                        vox_min, vox_max, disk_area,
+                        vox_min, vox_max,
                     )
                     total_area += clipped_area
                     max_radius = max(max_radius, r)
@@ -191,9 +179,10 @@ class DFNVoxelIntersectionEngine:
             if fracture_count > 0:
                 total_pairs += 1
                 vox_volume = self.grid.cell_volume
-                local_p32 = total_area / vox_volume
+                local_p32 = total_area / vox_volume if vox_volume > 0 else 0.0
 
                 self.grid.set_voxel(ix, iy, iz, ATTR_FRACTURE_COUNT, fracture_count)
+                self.grid.set_voxel(ix, iy, iz, ATTR_FRACTURE_AREA, int(total_area * 1e6))  # mm²
                 self.grid.set_voxel(ix, iy, iz, ATTR_LOCAL_P32, int(local_p32 * 1000))  # Store as milli-P32
                 self.grid.set_voxel(ix, iy, iz, ATTR_MAX_FRAC_SIZE, int(max_radius * 1000))  # mm
 
@@ -205,67 +194,6 @@ class DFNVoxelIntersectionEngine:
         return total_pairs
 
     # ── Helpers ───────────────────────────────────────────────────────────
-
-    def _estimate_clipped_area(
-        self,
-        center: NDArray[np.float64],
-        normal: NDArray[np.float64],
-        radius: float,
-        vox_min: NDArray[np.float64],
-        vox_max: NDArray[np.float64],
-        full_disk_area: float,
-    ) -> float:
-        """Estimate the portion of a disk fracture inside a voxel.
-
-        Without full polygon-voxel clipping (computationally expensive),
-        this uses a first-order geometric correction:
-        - If the disk center is inside the voxel: area ≈ min(full_area, vox_face_area)
-        - Otherwise: scale by the ratio of the overlapping bounding interval
-          to the disk diameter in each in-plane axis.
-
-        For full accuracy, a polygon-plane-AABB clipping algorithm should be
-        used (see _compute_clipped_polygon_area for the exact version).
-
-        Args:
-            center: Disk center (3,).
-            normal: Disk plane normal (3,).
-            radius: Disk radius.
-            vox_min, vox_max: Voxel AABB corners.
-            full_disk_area: π·r² for this fracture.
-
-        Returns:
-            Estimated clipped area in m².
-        """
-        # Check if center is inside the voxel
-        center_inside = bool(
-            np.all(center >= vox_min) and np.all(center <= vox_max)
-        )
-        if center_inside:
-            # Disk centered in voxel — area is full disk, but cannot
-            # exceed the cross-sectional area of the voxel
-            vox_dims = vox_max - vox_min
-            vox_face_area = float(np.prod(vox_dims))
-            return min(full_disk_area, vox_face_area * 2.0)  # factor 2 for diagonal cuts
-
-        # Center outside: scale by estimated overlap fraction
-        # Project the voxel onto the disk plane and compute overlap
-        # of the disk with the projected voxel footprint
-        half_dims = (vox_max - vox_min) / 2.0
-        vox_center = (vox_min + vox_max) / 2.0
-        max_dim = float(np.max(half_dims))
-
-        # Distance from disk center to voxel center (in 3D)
-        dist_3d = float(np.linalg.norm(center - vox_center))
-        # Effective overlap zone: disk radius + voxel half-diagonal
-        overlap_zone = radius + max_dim * 1.8  # ~sqrt(3) ≈ 1.732, round up
-
-        if dist_3d > overlap_zone:
-            return 0.0
-
-        # Simple linear falloff: area ∝ (overlap_zone - dist) / (2*radius)
-        # clamped to [0, full_disk_area]
-        frac = max(0.0, min(1.0, (overlap_zone - dist_3d) / (2.0 * radius)))
-        return full_disk_area * frac
 
     def _voxel_aabb(self, ix: int, iy: int, iz: int) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Get the AABB of a voxel in world coordinates."""

@@ -310,57 +310,106 @@ class ConnectivityGraph:
         and the boundary normal (i.e., the fracture disk intersects the
         boundary plane within its radius).
         """
-        tols = {
-            "x_min": 1e-6, "x_max": 1e-6,
-            "y_min": 1e-6, "y_max": 1e-6,
-            "z_min": 1e-6, "z_max": 1e-6,
-        }
+        def _touches_boundary(frac, bound_normal, bound_val, dim_idx, range_a, range_b):
+            """Check if fracture disk intersects a FINITE model boundary face.
 
-        def _touches_boundary(frac, bound_normal, bound_coord, tol):
-            """Check if fracture disk intersects a boundary plane.
+            A fracture touches a boundary if:
+            1. The perpendicular distance from the disk center to the boundary
+               plane ≤ the disk's projected radius (infinite plane check)
+            2. The intersection between the disk and the boundary plane lies
+               within the finite face rectangle (finite face check).
 
-            A disk of radius r centered at c with normal n intersects
-            plane with normal b at coordinate d if:
-                |(d - c)·b| ≤ r · sqrt(1 - (n·b)²)
-            i.e., the distance from center to plane ≤ the projected radius.
+            Args:
+                frac: Fracture object.
+                bound_normal: Inward-pointing normal of the boundary (3,).
+                bound_val: Coordinate value of the boundary (e.g., x_min).
+                dim_idx: Index of the boundary dimension (0=x, 1=y, 2=z).
+                range_a: (min, max) for the first non-boundary dimension.
+                range_b: (min, max) for the second non-boundary dimension.
             """
             r = frac.radius if frac.radius > 0 else (frac.geometry.radius or 1.0)
             center = frac.geometry.center
-            # Signed distance from center to boundary plane
-            dist = abs(float(np.dot(center - bound_coord, bound_normal)))
+            n = frac.geometry.normal
+
+            # 1. Infinite plane check: distance from center to boundary plane
+            dist = abs(float(center[dim_idx] - bound_val))
             # Projected radius in the boundary normal direction
-            # cos(θ) where θ = angle between fracture normal and boundary normal
-            cos_theta = abs(float(np.dot(frac.geometry.normal, bound_normal)))
+            # cos(θ) = |n·bound_normal|, effective radius = r·sin(θ) = r·√(1-cos²θ)
+            cos_theta = abs(float(n[dim_idx]))  # bound_normal is axis-aligned
             proj_radius = r * math.sqrt(max(0.0, 1.0 - cos_theta ** 2))
-            return dist <= proj_radius + tol
+            if dist > proj_radius + 1e-6:
+                return False
 
-        # Check each direction
-        checks = {"x": False, "y": False, "z": False}
+            # 2. Finite face check: the intersection of the disk with the
+            #    boundary plane must overlap the face rectangle.
+            #    The intersection of the disk plane with the boundary plane
+            #    is a line. Parametrize the line, find the segment within
+            #    the disk, and check if it overlaps the face.
+            if proj_radius < 1e-12:
+                # Disk is parallel to boundary plane — only the center
+                # matters for the infinite plane check.
+                # Check if center lies within face rectangle.
+                d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
+                return (range_a[0] - 1e-6 <= center[d1] <= range_a[1] + 1e-6 and
+                        range_b[0] - 1e-6 <= center[d2] <= range_b[1] + 1e-6)
 
-        for fi in component:
-            f = self.fractures[fi]
+            # Compute the intersection line. The line direction is
+            # n_disk × n_boundary (both lie in the boundary plane).
+            # Simpler: solve for the line in the boundary plane coordinates.
 
-            # X-percolation: touches both x_min and x_max planes
-            if not checks["x"]:
-                x_min_ok = _touches_boundary(
-                    f, np.array([-1.0, 0.0, 0.0]),
-                    np.array([x_range[0], 0.0, 0.0]), tols["x_min"],
-                )
-                x_max_ok = _touches_boundary(
-                    f, np.array([1.0, 0.0, 0.0]),
-                    np.array([x_range[1], 0.0, 0.0]), tols["x_max"],
-                )
-                # But a single fracture can't satisfy both — need to check
-                # across the whole component. We track the flags per component.
-                # Actually, we need BOTH min and max to be touched by SOME
-                # fractures in the component. So accumulate flags.
+            # The disk plane: n·(P - c) = 0
+            # On boundary plane x = x_min (for dim=0):
+            #   nx*(x-x_min) + nx*(x_min-cx) + ny*(y-cy) + nz*(z-cz) = 0
+            # But P is on x=x_min, so first term is 0:
+            #   ny*(y-cy) + nz*(z-cz) + nx*(x_min-cx) = 0
+            # This is a line in the (y,z) plane.
 
-            # Early exit
-            if checks["x"] and checks["y"] and checks["z"]:
-                break
+            d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
+            a = float(n[d1])   # coefficient for first free coordinate
+            b = float(n[d2])   # coefficient for second free coordinate
+            c_offset = float(n[dim_idx]) * (bound_val - float(center[dim_idx]))
 
-        # Actually, the per-fracture check inside the loop needs to aggregate
-        # across all fractures. Let me restructure.
+            # Line equation in the face plane: a·(u-c_u) + b·(v-c_v) + c_offset = 0
+            # where u = coord[d1], v = coord[d2]
+            # The distance from center projection to this line is |c_offset| / sqrt(a²+b²)
+
+            line_normal_mag = math.sqrt(a**2 + b**2)
+            if line_normal_mag < 1e-12:
+                # Disk normal is parallel to boundary normal — shouldn't reach here
+                # (handled by proj_radius check above)
+                return False
+
+            # Distance from (center[d1], center[d2]) to the line in the face plane
+            dist_face = abs(c_offset) / line_normal_mag
+            if dist_face > proj_radius + 1e-6:
+                return False
+
+            # The intersection segment on the line within the disk has
+            # half-length h = sqrt(proj_radius² - dist_face²) in the face plane
+            h_face = math.sqrt(max(0.0, proj_radius**2 - dist_face**2))
+
+            # The line's closest point to (center[d1], center[d2]) in the face plane:
+            p0_u = float(center[d1]) - a * c_offset / line_normal_mag**2
+            p0_v = float(center[d2]) - b * c_offset / line_normal_mag**2
+
+            # Direction along the line in the face plane: perpendicular to (a,b)
+            line_dir_u = -b / line_normal_mag
+            line_dir_v = a / line_normal_mag
+
+            # Intersection segment on the line: from p0 ± h_face * line_dir
+            seg_u_min = p0_u - h_face * abs(line_dir_u) - 1e-6
+            seg_u_max = p0_u + h_face * abs(line_dir_u) + 1e-6
+            seg_v_min = p0_v - h_face * abs(line_dir_v) - 1e-6
+            seg_v_max = p0_v + h_face * abs(line_dir_v) + 1e-6
+
+            # Check overlap with the face rectangle
+            face_u_min, face_u_max = range_a
+            face_v_min, face_v_max = range_b
+
+            return (seg_u_min <= face_u_max and seg_u_max >= face_u_min and
+                    seg_v_min <= face_v_max and seg_v_max >= face_v_min)
+
+        # Aggregate boundary-touching flags across all fractures in the component
         x_min_comp = False
         x_max_comp = False
         y_min_comp = False
@@ -373,33 +422,27 @@ class ConnectivityGraph:
 
             if not x_min_comp:
                 x_min_comp = _touches_boundary(
-                    f, np.array([-1.0, 0.0, 0.0]),
-                    np.array([x_range[0], 0.0, 0.0]), tols["x_min"],
+                    f, None, x_range[0], 0, y_range, z_range,
                 )
             if not x_max_comp:
                 x_max_comp = _touches_boundary(
-                    f, np.array([1.0, 0.0, 0.0]),
-                    np.array([x_range[1], 0.0, 0.0]), tols["x_max"],
+                    f, None, x_range[1], 0, y_range, z_range,
                 )
             if not y_min_comp:
                 y_min_comp = _touches_boundary(
-                    f, np.array([0.0, -1.0, 0.0]),
-                    np.array([0.0, y_range[0], 0.0]), tols["y_min"],
+                    f, None, y_range[0], 1, x_range, z_range,
                 )
             if not y_max_comp:
                 y_max_comp = _touches_boundary(
-                    f, np.array([0.0, 1.0, 0.0]),
-                    np.array([0.0, y_range[1], 0.0]), tols["y_max"],
+                    f, None, y_range[1], 1, x_range, z_range,
                 )
             if not z_min_comp:
                 z_min_comp = _touches_boundary(
-                    f, np.array([0.0, 0.0, -1.0]),
-                    np.array([0.0, 0.0, z_range[0]]), tols["z_min"],
+                    f, None, z_range[0], 2, x_range, y_range,
                 )
             if not z_max_comp:
                 z_max_comp = _touches_boundary(
-                    f, np.array([0.0, 0.0, 1.0]),
-                    np.array([0.0, 0.0, z_range[1]]), tols["z_max"],
+                    f, None, z_range[1], 2, x_range, y_range,
                 )
 
         percolates_x = x_min_comp and x_max_comp
@@ -415,6 +458,53 @@ class ConnectivityGraph:
         else:  # "any"
             return percolates_x or percolates_y or percolates_z
 
+    @staticmethod
+    def _fracture_touches_face(
+        frac,
+        bound_val: float,
+        dim_idx: int,
+        face_range_a: Tuple[float, float],
+        face_range_b: Tuple[float, float],
+    ) -> bool:
+        """Check if a fracture touches a finite model boundary face.
+
+        Performs both:
+        1. Infinite plane check (distance + projected radius)
+        2. Finite face rectangle overlap check
+
+        Args:
+            frac: Fracture object with .radius and .geometry (center, normal).
+            bound_val: Coordinate of the boundary plane (e.g., x_min).
+            dim_idx: Index of the boundary dimension (0=x, 1=y, 2=z).
+            face_range_a: (min, max) for the first free dimension.
+            face_range_b: (min, max) for the second free dimension.
+
+        Returns:
+            True if the fracture disk intersects the finite boundary face.
+        """
+        r = frac.radius if frac.radius > 0 else (frac.geometry.radius or 1.0)
+        center = frac.geometry.center
+        n = frac.geometry.normal
+
+        # 1. Distance to boundary plane
+        dist = abs(float(center[dim_idx]) - bound_val)
+        cos_theta = abs(float(n[dim_idx]))
+        proj_radius = r * math.sqrt(max(0.0, 1.0 - cos_theta**2))
+        if dist > proj_radius + 1e-6:
+            return False
+
+        # 2. Finite face: check center coordinates fall within face bounds
+        #    (with margin = proj_radius for the disk's extent)
+        d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
+        c1, c2 = float(center[d1]), float(center[d2])
+
+        # The disk's footprint on the boundary face extends up to proj_radius
+        # from the center's projection in all face-plane directions
+        return (c1 - proj_radius <= face_range_a[1] + 1e-6 and
+                c1 + proj_radius >= face_range_a[0] - 1e-6 and
+                c2 - proj_radius <= face_range_b[1] + 1e-6 and
+                c2 + proj_radius >= face_range_b[0] - 1e-6)
+
     def _component_span_directions(
         self,
         component: Set[int],
@@ -426,28 +516,19 @@ class ConnectivityGraph:
         x_min_c = x_max_c = y_min_c = y_max_c = z_min_c = z_max_c = False
         for fi in component:
             f = self.fractures[fi]
-            r = f.radius if f.radius > 0 else (f.geometry.radius or 1.0)
-            center = f.geometry.center
-            normal = f.geometry.normal
-
-            def _touches(bound_normal, bound_val, dim_idx):
-                dist = abs(center[dim_idx] - bound_val)
-                cos_th = abs(float(np.dot(normal, bound_normal)))
-                proj_r = r * math.sqrt(max(0.0, 1.0 - cos_th**2))
-                return dist <= proj_r + 1e-6
 
             if not x_min_c:
-                x_min_c = _touches(np.array([-1.,0.,0.]), x_range[0], 0)
+                x_min_c = self._fracture_touches_face(f, x_range[0], 0, y_range, z_range)
             if not x_max_c:
-                x_max_c = _touches(np.array([1.,0.,0.]), x_range[1], 0)
+                x_max_c = self._fracture_touches_face(f, x_range[1], 0, y_range, z_range)
             if not y_min_c:
-                y_min_c = _touches(np.array([0.,-1.,0.]), y_range[0], 1)
+                y_min_c = self._fracture_touches_face(f, y_range[0], 1, x_range, z_range)
             if not y_max_c:
-                y_max_c = _touches(np.array([0.,1.,0.]), y_range[1], 1)
+                y_max_c = self._fracture_touches_face(f, y_range[1], 1, x_range, z_range)
             if not z_min_c:
-                z_min_c = _touches(np.array([0.,0.,-1.]), z_range[0], 2)
+                z_min_c = self._fracture_touches_face(f, z_range[0], 2, x_range, y_range)
             if not z_max_c:
-                z_max_c = _touches(np.array([0.,0.,1.]), z_range[1], 2)
+                z_max_c = self._fracture_touches_face(f, z_range[1], 2, x_range, y_range)
 
         return {
             "x": x_min_c and x_max_c,

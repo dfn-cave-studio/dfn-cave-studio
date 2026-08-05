@@ -272,7 +272,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.1.0-M0</p>"
+                "<p>Version 0.6.2-M6</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -363,8 +363,8 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.1.0-M0 started")
-        self.log_message(f"Python: (see about dialog)")
+        self.log_message("DFN Cave Studio v0.6.2-M6 started")
+        self.log_message(f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}")
         if HAS_PYVISTAQT:
             self.log_message("3D Visualization: Available (PyVistaQt)")
         else:
@@ -506,19 +506,82 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Save Error", str(e))
 
     def _on_borehole_manager(self) -> None:
-        """Open borehole manager."""
-        self.log_message("Borehole Manager requested")
+        """Open borehole data import dialog."""
+        from dfn_cave_studio.ui.dialogs.import_dialog import DataImportDialog
+        dlg = DataImportDialog(self)
+        if dlg.exec() == DataImportDialog.DialogCode.Accepted:
+            collection = dlg.get_collection()
+            if collection and self._project_store.has_project:
+                project = self._project_store.current_project
+                project.borehole_collection = collection
+                self._project_store._mark_dirty()
+                n_bh = len(collection)
+                n_obs = sum(bh.observed_fracture_count for bh in collection)
+                self.log_message(f"Imported {n_bh} boreholes, {n_obs} fracture observations")
+                self.set_status(f"{n_bh} boreholes imported")
+                self._update_project_tree_from_project(project)
+                self._render_boreholes(collection)
+
+    def _render_boreholes(self, collection) -> None:
+        """Render borehole trajectories in 3D view."""
+        if not self._plotter:
+            return
+        try:
+            import pyvista as pv
+            for bh in collection:
+                points, _ = bh.compute_trajectory(step_length=2.0)
+                if len(points) >= 2:
+                    line = pv.PolyData(points)
+                    tube = line.tube(radius=0.3)
+                    self._plotter.add_mesh(tube, color="cyan", name=f"BH-{bh.borehole_id}")
+            self._plotter.reset_camera()
+        except Exception as e:
+            self.log_warning(f"Borehole rendering: {e}")
 
     def _on_voxel_settings(self) -> None:
-        """Open voxel settings."""
-        self.log_message("Voxel Settings requested")
+        """Open model bounds and voxel settings dialog."""
+        from dfn_cave_studio.ui.dialogs.bounds_dialog import ModelBoundsDialog
+        project = self._project_store.current_project if self._project_store.has_project else None
+        dlg = ModelBoundsDialog(
+            bounds=project.model_bounds if project else None,
+            voxel=project.voxel_config if project else None,
+            seed=project.config.master_seed if project else 42,
+            parent=self,
+        )
+        if dlg.exec() == ModelBoundsDialog.DialogCode.Accepted:
+            if self._project_store.has_project:
+                project = self._project_store.current_project
+                project.model_bounds = dlg.get_bounds()
+                project.voxel_config = dlg.get_voxel_config()
+                project.config.master_seed = dlg.get_seed()
+                self._project_store._mark_dirty()
+                vc = dlg.get_voxel_config()
+                b = dlg.get_bounds()
+                self.log_message(f"Bounds: {b.width:.0f}×{b.depth:.0f}×{b.height:.0f}m, "
+                               f"Voxels: {vc.cell_size_x}×{vc.cell_size_y}×{vc.cell_size_z}m, "
+                               f"Seed: {dlg.get_seed()}")
+                self._update_project_tree_from_project(project)
 
     def _on_joint_set_manager(self) -> None:
-        """Open joint set manager."""
-        self.log_message("Joint Set Manager requested")
+        """Open joint set manager dialog."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Please create or open a project first.")
+            return
+        project = self._project_store.current_project
+        from dfn_cave_studio.ui.dialogs.joint_set_dialog import JointSetManagerDialog
+        dlg = JointSetManagerDialog(
+            joint_sets=project.joint_sets,
+            model_volume=project.model_bounds.volume,
+            parent=self,
+        )
+        if dlg.exec() == JointSetManagerDialog.DialogCode.Accepted:
+            project.joint_sets = dlg.get_joint_sets()
+            self._project_store._mark_dirty()
+            self.log_message(f"Updated {len(project.joint_sets)} joint sets")
+            self._update_project_tree_from_project(project)
 
     def _on_generate_dfn(self) -> None:
-        """Generate DFN from current project parameters."""
+        """Run full computation pipeline: DFN → Voxel → Connectivity."""
         if not self._project_store.has_project:
             QMessageBox.warning(self, "No Project", "Please create or open a project first.")
             return
@@ -528,82 +591,100 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Joint Sets", "Please add at least one joint set.")
             return
 
-        self.log_message("Starting DFN generation...")
-        self.set_status("Generating DFN...")
-        self.show_progress(0, 100)
+        # Create pipeline worker
+        from dfn_cave_studio.workers.pipeline_worker import PipelineWorker
+        from dfn_cave_studio.ui.dialogs.compute_dialog import ComputePipelineDialog
 
-        # Lazy-import worker to avoid VTK loading at startup
-        from dfn_cave_studio.workers.dfn_worker import DFNGenerationWorker
-
-        # Create worker
-        self._dfn_worker = DFNGenerationWorker(
+        worker = PipelineWorker(
             joint_sets=project.joint_sets,
             bounds=project.model_bounds,
+            voxel_config=project.voxel_config,
             master_seed=project.config.master_seed,
             realization_number=len(project.dfn_realizations),
         )
 
-        self._dfn_worker.signals.progress.connect(self._on_dfn_progress)
-        self._dfn_worker.signals.finished.connect(self._on_dfn_finished)
-        self._dfn_worker.signals.error.connect(self._on_dfn_error)
+        dlg = ComputePipelineDialog(worker, self)
+        if dlg.exec() == ComputePipelineDialog.DialogCode.Accepted:
+            results = dlg.get_results()
+            if "dfn" in results:
+                realization = results["dfn"]
+                project.dfn_realizations.append(realization)
+                self._project_store._mark_dirty()
 
-        from dfn_cave_studio.ui.qt_adapter import QThreadPool
-        QThreadPool.globalInstance().start(self._dfn_worker)
-
-    def _on_dfn_progress(self, current: int, total: int, message: str) -> None:
-        """Handle DFN generation progress updates."""
-        self.set_status(f"DFN: {message}")
-        if total > 0:
-            self.show_progress(current, total)
-
-    def _on_dfn_finished(self, realization: DFNRealization) -> None:
-        """Handle completed DFN generation."""
-        self.hide_progress()
-        project = self._project_store.current_project
-        project.dfn_realizations.append(realization)
-
-        self.log_message(
-            f"DFN generation complete: {realization.generation_result.total_fractures} fractures, "
-            f"P32={realization.generation_result.achieved_p32:.3f}, "
-            f"error={realization.generation_result.p32_error_percent:.1f}%"
-        )
-        self.set_status(
-            f"DFN generated: {realization.generation_result.total_fractures} fractures"
-        )
-
-        # Render in 3D viewport (lazy-load DFNRenderer)
-        if self._plotter:
-            try:
-                if self._dfn_renderer is None:
-                    from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
-                    self._dfn_renderer = DFNRenderer()
-                self._dfn_renderer.render_to_plotter(
-                    self._plotter, realization, project.joint_sets
+                self.log_message(
+                    f"DFN: {realization.generation_result.total_fractures} fractures, "
+                    f"P32={realization.generation_result.achieved_p32:.3f}"
                 )
-                self._plotter.reset_camera()
-                self.log_message("3D rendering complete")
-            except Exception as e:
-                self.log_error(f"3D rendering failed: {e}")
+                self.set_status(f"DFN: {realization.generation_result.total_fractures} fractures")
 
-        self._update_project_tree_from_project(project)
+                # Render DFN in 3D
+                if self._plotter:
+                    try:
+                        if self._dfn_renderer is None:
+                            from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                            self._dfn_renderer = DFNRenderer()
+                        self._dfn_renderer.render_to_plotter(
+                            self._plotter, realization, project.joint_sets
+                        )
+                        # Add model bounds box
+                        self._render_bounds_box()
+                        self._plotter.show_axes()
+                        self._plotter.reset_camera()
+                    except Exception as e:
+                        self.log_error(f"3D rendering failed: {e}")
 
-    def _on_dfn_error(self, error_msg: str) -> None:
-        """Handle DFN generation error."""
-        self.hide_progress()
-        self.log_error(f"DFN generation failed: {error_msg}")
-        QMessageBox.critical(self, "DFN Generation Error", error_msg)
+            if "connectivity" in results:
+                stats = results["connectivity"].statistics()
+                self.log_message(
+                    f"Connectivity: {stats.get('n_edges', '?')} edges, "
+                    f"{stats.get('n_components', '?')} clusters, "
+                    f"largest={stats.get('largest_component_size', '?')}"
+                )
+
+            self._update_project_tree_from_project(project)
+
+    def _render_bounds_box(self) -> None:
+        """Render model boundary wireframe box."""
+        if not self._plotter or not self._project_store.has_project:
+            return
+        try:
+            import pyvista as pv
+            b = self._project_store.current_project.model_bounds
+            box = pv.Box(bounds=(b.x_min, b.x_max, b.y_min, b.y_max, b.z_min, b.z_max))
+            self._plotter.add_mesh(box, color="gray", style="wireframe", name="ModelBounds")
+        except Exception:
+            pass
 
     def _on_domain_manager(self) -> None:
         """Open domain manager."""
-        self.log_message("Domain Manager requested")
+        self.log_message("Domain Manager: not yet implemented (planned for M9)")
 
     def _on_connectivity(self) -> None:
-        """Run connectivity analysis."""
-        self.log_message("Connectivity Analysis requested")
+        """Show connectivity results if available."""
+        project = self._project_store.current_project if self._project_store.has_project else None
+        if project and project.dfn_realizations:
+            from dfn_cave_studio.connectivity.connectivity_graph import ConnectivityGraph
+            graph = ConnectivityGraph(project.dfn_realizations[-1])
+            graph.compute_edges()
+            graph.find_components()
+            stats = graph.statistics()
+            msg = (
+                f"Connectivity Analysis\n\n"
+                f"Fractures: {stats['n_fractures']}\n"
+                f"Edges: {stats['n_edges']}\n"
+                f"Components: {stats['n_components']}\n"
+                f"Largest cluster: {stats['largest_component_size']}\n"
+                f"Isolated: {stats['isolated_fractures']}\n"
+                f"Avg degree: {stats['average_degree']:.2f}"
+            )
+            QMessageBox.information(self, "Connectivity Analysis", msg)
+            self.log_message(f"Connectivity: {stats['n_edges']} edges, {stats['n_components']} components")
+        else:
+            QMessageBox.warning(self, "No Data", "Generate a DFN first.")
 
     def _on_fragmentation(self) -> None:
         """Run fragmentation analysis."""
-        self.log_message("Fragmentation Analysis requested")
+        self.log_message("Fragmentation Analysis: not yet implemented (planned for M8)")
 
     def _on_reset_view(self) -> None:
         """Reset the 3D view."""
@@ -631,15 +712,66 @@ class MainWindow(QMainWindow):
 
     def _on_export_3dec(self) -> None:
         """Export for 3DEC."""
-        self.log_message("3DEC Export requested")
+        self._do_export("3DEC")
 
     def _on_export_flac3d(self) -> None:
         """Export for FLAC3D."""
-        self.log_message("FLAC3D Export requested")
+        self._do_export("FLAC3D")
 
     def _on_export_vtk(self) -> None:
         """Export to VTK."""
-        self.log_message("VTK Export requested")
+        self._do_export("VTK")
+
+    def _do_export(self, fmt: str) -> None:
+        """Export current results to the specified format."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "No project to export.")
+            return
+        project = self._project_store.current_project
+        if not project.dfn_realizations:
+            QMessageBox.warning(self, "No Data", "Generate a DFN before exporting.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, f"Export {fmt}", f"export_{fmt.lower()}",
+            "All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            out = Path(path)
+            if fmt == "VTK":
+                import pyvista as pv
+                out.mkdir(parents=True, exist_ok=True)
+                realization = project.dfn_realizations[-1]
+                from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                meshes = []
+                for f in realization.stochastic_fractures[:1000]:
+                    g = f.geometry
+                    disk = DFNRenderer.fracture_to_disk_mesh(g.center, g.normal,
+                        f.radius if f.radius > 0 else (g.radius or 1.0))
+                    meshes.append(disk)
+                if meshes:
+                    merged = meshes[0].merge(meshes[1:]) if len(meshes) > 1 else meshes[0]
+                    merged.save(str(out / "fractures.vtp"))
+                self.log_message(f"Exported {len(meshes)} fractures to {out}/fractures.vtp")
+            else:
+                # Generic CSV export
+                import csv
+                with open(out, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["fracture_id", "set_id", "center_x", "center_y", "center_z", "radius"])
+                    for frac in project.dfn_realizations[-1].stochastic_fractures:
+                        g = frac.geometry
+                        writer.writerow([str(frac.fracture_id), frac.set_id,
+                                       g.center_x, g.center_y, g.center_z, frac.radius])
+                self.log_message(f"Exported to {out}")
+
+            self.set_status(f"Export complete: {out}")
+        except Exception as e:
+            self.log_error(f"Export failed: {e}")
+            QMessageBox.critical(self, "Export Error", str(e))
 
     def _on_settings(self) -> None:
         """Open settings dialog."""
@@ -652,7 +784,7 @@ class MainWindow(QMainWindow):
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.1.0-M0</p>"
+            "<p>Version 0.6.2-M6</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"

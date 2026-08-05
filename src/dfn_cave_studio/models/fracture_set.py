@@ -156,19 +156,21 @@ class SizeDistribution(BaseModel):
             D = self.power_law_exponent
             r_min, r_max = self.min_radius, self.max_radius
             if abs(D - 3.0) < 1e-10:
-                # E[R²] = r_min·r_max · ln(r_max/r_min) / (r_max - r_min) × (r_max + r_min)
-                # Actually for truncated power law with D=3:
-                # f(r) ∝ r^{-4}, E[R²] = ∫r²·r^{-4} dr / ∫r^{-4} dr = ∫r^{-2} / ∫r^{-4}
-                return (r_min * r_max)  # simplifies for D=3
+                # D=3: f(r) ∝ r^{-4}, exact E[R²]:
+                #   E[R²] = 3 / (1/r_min² + 1/(r_min·r_max) + 1/r_max²)
+                #         = 3·r_min²·r_max² / (r_max² + r_min·r_max + r_min²)
+                return 3.0 * r_min**2 * r_max**2 / (r_max**2 + r_min * r_max + r_min**2)
             if abs(D - 2.0) < 1e-10:
-                return r_min * r_max  # approximate
+                # D=2: f(r) ∝ r^{-3}, exact E[R²]:
+                #   E[R²] = 2·r_min²·r_max²·ln(r_max/r_min) / (r_max² - r_min²)
+                if abs(r_max - r_min) < 1e-12:
+                    return r_min**2
+                return (2.0 * r_min**2 * r_max**2 * math.log(r_max / r_min)) / (r_max**2 - r_min**2)
             if D <= 2.0:
                 return self.max_radius ** 2
-            # General: E[R²] = ∫_{r_min}^{r_max} r²·r^{-(D+1)} dr / ∫ r^{-(D+1)} dr
+            # General D: E[R²] = ∫ r^{2}·r^{-(D+1)} / ∫ r^{-(D+1)}
             # = ∫ r^{1-D} / ∫ r^{-D-1}
-            # = [-r^{2-D}/(D-2)] / [-r^{-D}/D]
-            # = (D/(D-2)) · (r_max^{2-D} - r_min^{2-D}) / (r_max^{-D} - r_min^{-D})
-            # Equivalent to:
+            # = [r^{2-D}/(2-D)] / [r^{-D}/(-D)]
             # = (D/(D-2)) · (r_min^{2-D} - r_max^{2-D}) / (r_min^{-D} - r_max^{-D})
             num = r_min ** (2.0 - D) - r_max ** (2.0 - D)
             den = r_min ** (-D) - r_max ** (-D)

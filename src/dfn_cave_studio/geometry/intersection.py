@@ -449,3 +449,205 @@ def fracture_fracture_intersection_detail(
         "line_direction": line_dir,
         "line_point": line_point,
     }
+
+
+# =============================================================================
+# Disk-AABB Intersection Area (Exact Polygon Clipping)
+# =============================================================================
+
+def _build_disk_polygon_2d(radius: float, n_sides: int = 64) -> NDArray[np.float64]:
+    """Build a regular n-gon approximating a unit disk in the XY plane.
+
+    Returns:
+        (n_sides, 2) array of (x, y) vertex coordinates.
+    """
+    angles = np.linspace(0.0, 2.0 * np.pi, n_sides, endpoint=False)
+    return np.column_stack([radius * np.cos(angles), radius * np.sin(angles)])
+
+
+def _clip_polygon_by_half_plane(
+    poly: NDArray[np.float64],
+    plane_normal_2d: NDArray[np.float64],
+    plane_d: float,
+) -> NDArray[np.float64]:
+    """Clip a 2D polygon against the half-plane n·x ≤ d.
+
+    Uses Sutherland-Hodgman algorithm.
+
+    Args:
+        poly: (N, 2) array of vertex coordinates.
+        plane_normal_2d: (2,) unit normal pointing OUT of the valid region.
+        plane_d: Signed distance from origin to the clipping line.
+
+    Returns:
+        (M, 2) array of clipped polygon vertices (may be empty).
+    """
+    if len(poly) == 0:
+        return poly
+
+    n = np.asarray(plane_normal_2d, dtype=np.float64)
+    clipped = []
+
+    n_verts = len(poly)
+    for i in range(n_verts):
+        p_curr = poly[i]
+        p_next = poly[(i + 1) % n_verts]
+
+        d_curr = np.dot(n, p_curr) - plane_d
+        d_next = np.dot(n, p_next) - plane_d
+
+        curr_inside = d_curr <= 0.0
+        next_inside = d_next <= 0.0
+
+        if curr_inside:
+            clipped.append(p_curr)
+            if not next_inside:
+                # Leaving: add intersection point
+                t = d_curr / (d_curr - d_next + 1e-30)
+                intersection = p_curr + t * (p_next - p_curr)
+                clipped.append(intersection)
+        elif next_inside:
+            # Entering: add intersection point
+            t = d_curr / (d_curr - d_next + 1e-30)
+            intersection = p_curr + t * (p_next - p_curr)
+            clipped.append(intersection)
+
+    if len(clipped) == 0:
+        return np.zeros((0, 2), dtype=np.float64)
+    return np.array(clipped, dtype=np.float64)
+
+
+def _build_orthonormal_basis(normal: NDArray[np.float64]) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Build orthonormal basis (u, v) for the plane perpendicular to `normal`.
+
+    Returns:
+        (u, v) — two unit vectors spanning the plane, each (3,).
+    """
+    n = normalize(np.asarray(normal, dtype=np.float64))
+    # Choose a reference vector not parallel to n
+    if abs(n[0]) < 0.9:
+        ref = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    else:
+        ref = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    u = normalize(cross(n, ref))  # perpendicular to n
+    v = cross(n, u)               # perpendicular to n and u
+    return u, v
+
+
+def disk_aabb_intersection_area(
+    disk_center: NDArray[np.float64],
+    disk_normal: NDArray[np.float64],
+    disk_radius: float,
+    box_min: NDArray[np.float64],
+    box_max: NDArray[np.float64],
+    n_sides: int = 64,
+) -> float:
+    """Compute the area of intersection between a circular disk and an AABB.
+
+    Uses polygon clipping: approximates the disk as a regular n-gon,
+    clips it against the 6 half-planes of the AABB faces, and computes
+    the area of the resulting polygon using Newell's method.
+
+    This is the EXACT reference implementation. The previous
+    _estimate_clipped_area() first-order falloff has been removed.
+
+    Args:
+        disk_center: Center of the disk (3,).
+        disk_normal: Normal vector of the disk plane (3,). Need not be unit.
+        disk_radius: Radius of the disk (m).
+        box_min: Minimum corner of AABB (3,).
+        box_max: Maximum corner of AABB (3,).
+        n_sides: Number of polygon sides for disk approximation (default 64).
+
+    Returns:
+        Intersection area in m². Returns 0.0 if no intersection.
+    """
+    center = np.asarray(disk_center, dtype=np.float64)
+    normal = normalize(np.asarray(disk_normal, dtype=np.float64))
+    box_min = np.asarray(box_min, dtype=np.float64)
+    box_max = np.asarray(box_max, dtype=np.float64)
+
+    # Fast reject: if the disk's bounding sphere doesn't intersect the AABB
+    if not disk_aabb_intersects(center, normal, disk_radius, box_min, box_max):
+        return 0.0
+
+    # Build orthonormal basis for the disk plane
+    u, v = _build_orthonormal_basis(normal)
+
+    # Build the disk polygon in 3D, then project to 2D
+    disk_poly_2d = _build_disk_polygon_2d(disk_radius, n_sides)
+
+    # Convert 2D disk polygon to 3D:  center + x*u + y*v
+    disk_poly_3d = center + np.outer(disk_poly_2d[:, 0], u) + np.outer(disk_poly_2d[:, 1], v)
+
+    # Project disk polygon to 2D using (u, v) basis
+    # For any 3D point P, its 2D coords are: (dot(P-center, u), dot(P-center, v))
+    centered = disk_poly_3d - center
+    poly_2d = np.column_stack([
+        np.dot(centered, u),
+        np.dot(centered, v),
+    ])
+
+    # Compute the 6 half-plane constraints from the AABB.
+    # Each box face defines a half-plane: the valid region is INSIDE the box.
+    # Face plane: (x - box_min) · (+e_i) ≥ 0  →  -e_i · x ≤ -box_min[i]
+    # Face plane: (x - box_max) · (-e_i) ≥ 0  →  +e_i · x ≤ +box_max[i]
+    #
+    # We need the half-plane equation in 2D: n_2d · (x,y) ≤ d_2d
+    # For a 3D constraint: n_3d · P ≤ bound
+    # Substituting P = center + x*u + y*v:
+    #   n_3d · (center + x*u + y*v) ≤ bound
+    #   x·(n_3d·u) + y·(n_3d·v) ≤ bound - n_3d·center
+    #
+    # So: n_2d = [n_3d·u, n_3d·v],  d_2d = bound - n_3d·center
+
+    half_planes = []
+    for dim in range(3):
+        for bound, sign in [(box_min[dim], -1.0), (box_max[dim], 1.0)]:
+            n_3d = np.zeros(3, dtype=np.float64)
+            n_3d[dim] = sign
+            # n_3d points inward (negative sign for min, positive for max)
+            # The valid region is n_3d · P ≥ bound  (for min: P ≥ min; for max: P ≤ max)
+            # Rewrite as: -sign·P ≤ -sign·bound if sign = -1 (min)
+            #             sign·P ≤ sign·bound   if sign = +1 (max)
+            # Both become: sign·P ≤ sign·bound for max, -sign·P ≤ -sign·bound for min
+            # Which is equivalent to: n_valid · P ≤ bound_valid where
+            #   n_valid = sign, bound_valid = sign * bound for max
+            #   n_valid = -sign, bound_valid = -sign * bound for min
+            #
+            # Simpler: out of 6 faces, the inward normal always points toward
+            # the box interior. The constraint is n_face · P ≤ n_face · face_point
+            #
+            # For min face: normal = -e_i, point on face = box_min
+            #   -e_i · P ≤ -e_i · box_min → -P_i ≤ -box_min_i → P_i ≥ box_min_i ✓
+            #
+            # For max face: normal = +e_i, point on face = box_max
+            #   +e_i · P ≤ +e_i · box_max → P_i ≤ box_max_i ✓
+
+            if sign == -1.0:  # min face: normal points inward = -e_i
+                n_face_3d = np.zeros(3, dtype=np.float64)
+                n_face_3d[dim] = -1.0
+                bound_3d = -bound  # = -box_min[dim]
+            else:  # max face: normal points inward = +e_i
+                n_face_3d = np.zeros(3, dtype=np.float64)
+                n_face_3d[dim] = 1.0
+                bound_3d = bound  # = box_max[dim]
+
+            n_2d = np.array([np.dot(n_face_3d, u), np.dot(n_face_3d, v)])
+            d_2d = bound_3d - np.dot(n_face_3d, center)
+            half_planes.append((n_2d, d_2d))
+
+    # Clip the disk polygon against all 6 half-planes
+    for n_2d, d_2d in half_planes:
+        if len(poly_2d) == 0:
+            break
+        poly_2d = _clip_polygon_by_half_plane(poly_2d, n_2d, d_2d)
+
+    if len(poly_2d) < 3:
+        return 0.0
+
+    # Convert clipped 2D polygon back to 3D and compute area via Newell's method
+    poly_3d = center + np.outer(poly_2d[:, 0], u) + np.outer(poly_2d[:, 1], v)
+
+    from dfn_cave_studio.geometry.vector import polygon_area_3d
+    return float(polygon_area_3d(poly_3d))

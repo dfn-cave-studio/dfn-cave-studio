@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dfn-cave-studio"
-version = "0.1.0"
+version = "0.6.2"
 description = "Discrete Fracture Network modeling for underground block cave mining research"
 readme = "README.md"
 license = {text = "MIT"}
