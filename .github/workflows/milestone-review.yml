@@ -1,5 +1,9 @@
 name: Milestone Review
 
+permissions:
+  contents: write
+  actions: read
+
 on:
   pull_request:
     branches: [main]
