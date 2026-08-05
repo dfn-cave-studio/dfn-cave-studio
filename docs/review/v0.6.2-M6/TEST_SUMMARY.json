@@ -1,0 +1,15 @@
+{
+  "version": "v0.6.2-M6",
+  "timestamp": "2026-08-05T05:42:58.755188+00:00",
+  "summary": {
+    "total": 289,
+    "passed": 289,
+    "failed": 0,
+    "skipped": 0
+  },
+  "coverage_percent": 82.0,
+  "scientific_validation": {
+    "total": 16,
+    "passed": 16
+  }
+}

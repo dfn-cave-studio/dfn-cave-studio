@@ -1,0 +1,15 @@
+{
+  "version": "v0.6.2-M6",
+  "benchmarks": [
+    {
+      "name": "test_suite",
+      "duration_s": 3.0,
+      "tests": 289
+    },
+    {
+      "name": "scientific_validation",
+      "cases": 16,
+      "passed": 16
+    }
+  ]
+}

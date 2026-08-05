@@ -101,10 +101,14 @@ test_outputs/
 test_logs/
 coverage_reports/
 
-# Review packages (generated — v0.0.0 through v0.6.1)
-docs/review/v0.?.?*/
-docs/review/v0.[0-5].*/
-docs/review/v0.6.[0-1]*/
+# Review packages (generated — ignore v0.0.0 through v0.6.1, track v0.6.2+)
+docs/review/v0.1.0*/
+docs/review/v0.2.0*/
+docs/review/v0.3.0*/
+docs/review/v0.4.0*/
+docs/review/v0.5.0*/
+docs/review/v0.6.0*/
+docs/review/v0.6.1*/
 
 # Temporary files
 tmp/
