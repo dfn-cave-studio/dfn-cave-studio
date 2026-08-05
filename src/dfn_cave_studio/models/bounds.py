@@ -126,15 +126,19 @@ class VoxelConfig(BaseModel):
     def compute_grid_dimensions(self, bounds: ModelBounds) -> tuple[int, int, int]:
         """Compute the number of voxels in each dimension given model bounds.
 
+        Uses math.ceil to ensure the entire model volume is covered —
+        int() would truncate and leave a gap.
+
         Args:
             bounds: Model bounding box.
 
         Returns:
             Tuple of (nx, ny, nz).
         """
-        nx = int(bounds.width / self.cell_size_x)
-        ny = int(bounds.depth / self.cell_size_y)
-        nz = int(bounds.height / self.cell_size_z)
+        import math
+        nx = max(1, math.ceil(bounds.width / self.cell_size_x))
+        ny = max(1, math.ceil(bounds.depth / self.cell_size_y))
+        nz = max(1, math.ceil(bounds.height / self.cell_size_z))
         return nx, ny, nz
 
     def estimate_memory_mb(self, bounds: ModelBounds, n_attributes: int = 1) -> float:

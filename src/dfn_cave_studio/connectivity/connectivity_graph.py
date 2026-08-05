@@ -213,18 +213,22 @@ class ConnectivityGraph:
         x_range: Tuple[float, float],
         y_range: Tuple[float, float],
         z_range: Tuple[float, float],
+        direction: str = "any",
     ) -> List[int]:
         """Find component labels that span from one model face to the opposite face.
 
-        Checks percolation in X, Y, and Z directions.
+        Uses real fracture-boundary intersection (disk-plane distance test)
+        rather than bounding-sphere approximation.
 
         Args:
             x_range: (x_min, x_max) of model.
             y_range: (y_min, y_max) of model.
             z_range: (z_min, z_max) of model.
+            direction: Percolation direction to check.
+                       "x", "y", "z", or "any" (default).
 
         Returns:
-            List of component labels that percolate in at least one direction.
+            List of component labels that percolate in the specified direction.
         """
         if self._component_labels is None:
             self.find_components()
@@ -233,10 +237,61 @@ class ConnectivityGraph:
         percolating = []
 
         for label, comp in enumerate(comps):
-            if self._component_percolates(comp, x_range, y_range, z_range):
+            if self._component_percolates(
+                comp, x_range, y_range, z_range, direction
+            ):
                 percolating.append(label)
 
         return percolating
+
+    def percolation_detail(
+        self,
+        x_range: Tuple[float, float],
+        y_range: Tuple[float, float],
+        z_range: Tuple[float, float],
+    ) -> Dict:
+        """Detailed percolation analysis for all directions.
+
+        Returns a dict with percolating status in X, Y, Z, and the
+        largest percolating cluster size for each direction.
+        Geomechanical connectivity requires additional checks
+        (stress state, dilation, shear displacement) not performed here.
+
+        Returns:
+            Dict with keys: percolates_x, percolates_y, percolates_z,
+            largest_x_size, largest_y_size, largest_z_size,
+            geometric_only (True — mechanical filtering not yet applied).
+        """
+        comps = self.find_components()
+        result = {
+            "percolates_x": False,
+            "percolates_y": False,
+            "percolates_z": False,
+            "largest_x_size": 0,
+            "largest_y_size": 0,
+            "largest_z_size": 0,
+            "geometric_only": True,
+            "x_percolating_labels": [],
+            "y_percolating_labels": [],
+            "z_percolating_labels": [],
+        }
+
+        for label, comp in enumerate(comps):
+            spans = self._component_span_directions(comp, x_range, y_range, z_range)
+            if spans["x"]:
+                result["percolates_x"] = True
+                result["x_percolating_labels"].append(label)
+                result["largest_x_size"] = max(result["largest_x_size"], len(comp))
+            if spans["y"]:
+                result["percolates_y"] = True
+                result["y_percolating_labels"].append(label)
+                result["largest_y_size"] = max(result["largest_y_size"], len(comp))
+            if spans["z"]:
+                result["percolates_z"] = True
+                result["z_percolating_labels"].append(label)
+                result["largest_z_size"] = max(result["largest_z_size"], len(comp))
+
+        return result
 
     def _component_percolates(
         self,
@@ -244,42 +299,161 @@ class ConnectivityGraph:
         x_range: Tuple[float, float],
         y_range: Tuple[float, float],
         z_range: Tuple[float, float],
+        direction: str = "any",
     ) -> bool:
-        """Check if a component spans the model in any direction."""
-        x_min_bound = x_max_bound = False
-        y_min_bound = y_max_bound = False
-        z_min_bound = z_max_bound = False
+        """Check if a component spans the model in the specified direction(s).
 
-        tol = 0.01  # 1 cm tolerance
+        Uses real fracture geometry: a fracture touches a boundary if the
+        perpendicular distance from the fracture center to the boundary
+        plane, projected along the boundary normal, is ≤ the fracture
+        radius times the cosine of the angle between the fracture normal
+        and the boundary normal (i.e., the fracture disk intersects the
+        boundary plane within its radius).
+        """
+        tols = {
+            "x_min": 1e-6, "x_max": 1e-6,
+            "y_min": 1e-6, "y_max": 1e-6,
+            "z_min": 1e-6, "z_max": 1e-6,
+        }
+
+        def _touches_boundary(frac, bound_normal, bound_coord, tol):
+            """Check if fracture disk intersects a boundary plane.
+
+            A disk of radius r centered at c with normal n intersects
+            plane with normal b at coordinate d if:
+                |(d - c)·b| ≤ r · sqrt(1 - (n·b)²)
+            i.e., the distance from center to plane ≤ the projected radius.
+            """
+            r = frac.radius if frac.radius > 0 else (frac.geometry.radius or 1.0)
+            center = frac.geometry.center
+            # Signed distance from center to boundary plane
+            dist = abs(float(np.dot(center - bound_coord, bound_normal)))
+            # Projected radius in the boundary normal direction
+            # cos(θ) where θ = angle between fracture normal and boundary normal
+            cos_theta = abs(float(np.dot(frac.geometry.normal, bound_normal)))
+            proj_radius = r * math.sqrt(max(0.0, 1.0 - cos_theta ** 2))
+            return dist <= proj_radius + tol
+
+        # Check each direction
+        checks = {"x": False, "y": False, "z": False}
 
         for fi in component:
             f = self.fractures[fi]
+
+            # X-percolation: touches both x_min and x_max planes
+            if not checks["x"]:
+                x_min_ok = _touches_boundary(
+                    f, np.array([-1.0, 0.0, 0.0]),
+                    np.array([x_range[0], 0.0, 0.0]), tols["x_min"],
+                )
+                x_max_ok = _touches_boundary(
+                    f, np.array([1.0, 0.0, 0.0]),
+                    np.array([x_range[1], 0.0, 0.0]), tols["x_max"],
+                )
+                # But a single fracture can't satisfy both — need to check
+                # across the whole component. We track the flags per component.
+                # Actually, we need BOTH min and max to be touched by SOME
+                # fractures in the component. So accumulate flags.
+
+            # Early exit
+            if checks["x"] and checks["y"] and checks["z"]:
+                break
+
+        # Actually, the per-fracture check inside the loop needs to aggregate
+        # across all fractures. Let me restructure.
+        x_min_comp = False
+        x_max_comp = False
+        y_min_comp = False
+        y_max_comp = False
+        z_min_comp = False
+        z_max_comp = False
+
+        for fi in component:
+            f = self.fractures[fi]
+
+            if not x_min_comp:
+                x_min_comp = _touches_boundary(
+                    f, np.array([-1.0, 0.0, 0.0]),
+                    np.array([x_range[0], 0.0, 0.0]), tols["x_min"],
+                )
+            if not x_max_comp:
+                x_max_comp = _touches_boundary(
+                    f, np.array([1.0, 0.0, 0.0]),
+                    np.array([x_range[1], 0.0, 0.0]), tols["x_max"],
+                )
+            if not y_min_comp:
+                y_min_comp = _touches_boundary(
+                    f, np.array([0.0, -1.0, 0.0]),
+                    np.array([0.0, y_range[0], 0.0]), tols["y_min"],
+                )
+            if not y_max_comp:
+                y_max_comp = _touches_boundary(
+                    f, np.array([0.0, 1.0, 0.0]),
+                    np.array([0.0, y_range[1], 0.0]), tols["y_max"],
+                )
+            if not z_min_comp:
+                z_min_comp = _touches_boundary(
+                    f, np.array([0.0, 0.0, -1.0]),
+                    np.array([0.0, 0.0, z_range[0]]), tols["z_min"],
+                )
+            if not z_max_comp:
+                z_max_comp = _touches_boundary(
+                    f, np.array([0.0, 0.0, 1.0]),
+                    np.array([0.0, 0.0, z_range[1]]), tols["z_max"],
+                )
+
+        percolates_x = x_min_comp and x_max_comp
+        percolates_y = y_min_comp and y_max_comp
+        percolates_z = z_min_comp and z_max_comp
+
+        if direction == "x":
+            return percolates_x
+        elif direction == "y":
+            return percolates_y
+        elif direction == "z":
+            return percolates_z
+        else:  # "any"
+            return percolates_x or percolates_y or percolates_z
+
+    def _component_span_directions(
+        self,
+        component: Set[int],
+        x_range: Tuple[float, float],
+        y_range: Tuple[float, float],
+        z_range: Tuple[float, float],
+    ) -> Dict[str, bool]:
+        """Check which directions a component spans (for percolation_detail)."""
+        x_min_c = x_max_c = y_min_c = y_max_c = z_min_c = z_max_c = False
+        for fi in component:
+            f = self.fractures[fi]
             r = f.radius if f.radius > 0 else (f.geometry.radius or 1.0)
-            cx, cy, cz = f.geometry.center_x, f.geometry.center_y, f.geometry.center_z
+            center = f.geometry.center
+            normal = f.geometry.normal
 
-            # Check X bounds
-            if cx - r <= x_range[0] + tol:
-                x_min_bound = True
-            if cx + r >= x_range[1] - tol:
-                x_max_bound = True
+            def _touches(bound_normal, bound_val, dim_idx):
+                dist = abs(center[dim_idx] - bound_val)
+                cos_th = abs(float(np.dot(normal, bound_normal)))
+                proj_r = r * math.sqrt(max(0.0, 1.0 - cos_th**2))
+                return dist <= proj_r + 1e-6
 
-            # Check Y bounds
-            if cy - r <= y_range[0] + tol:
-                y_min_bound = True
-            if cy + r >= y_range[1] - tol:
-                y_max_bound = True
+            if not x_min_c:
+                x_min_c = _touches(np.array([-1.,0.,0.]), x_range[0], 0)
+            if not x_max_c:
+                x_max_c = _touches(np.array([1.,0.,0.]), x_range[1], 0)
+            if not y_min_c:
+                y_min_c = _touches(np.array([0.,-1.,0.]), y_range[0], 1)
+            if not y_max_c:
+                y_max_c = _touches(np.array([0.,1.,0.]), y_range[1], 1)
+            if not z_min_c:
+                z_min_c = _touches(np.array([0.,0.,-1.]), z_range[0], 2)
+            if not z_max_c:
+                z_max_c = _touches(np.array([0.,0.,1.]), z_range[1], 2)
 
-            # Check Z bounds
-            if cz - r <= z_range[0] + tol:
-                z_min_bound = True
-            if cz + r >= z_range[1] - tol:
-                z_max_bound = True
-
-            # Early exit if spanning found
-            if (x_min_bound and x_max_bound) or (y_min_bound and y_max_bound) or (z_min_bound and z_max_bound):
-                return True
-
-        return False
+        return {
+            "x": x_min_c and x_max_c,
+            "y": y_min_c and y_max_c,
+            "z": z_min_c and z_max_c,
+        }
 
     # ── Inter-set Matrix ──────────────────────────────────────────────────
 

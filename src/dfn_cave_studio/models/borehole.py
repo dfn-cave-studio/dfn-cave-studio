@@ -135,6 +135,9 @@ class BoreholeSurvey(BaseModel):
             if seg_length <= 1e-10:
                 continue
 
+            # P1 is the 3D position at station s1 (segment start)
+            P1 = points[-1].copy()
+
             n_steps = max(1, int(math.ceil(seg_length / step_length)))
             actual_step = seg_length / n_steps
 
@@ -142,11 +145,13 @@ class BoreholeSurvey(BaseModel):
                 frac = step / n_steps
 
                 if self.trajectory_method == TrajectoryMethod.MINIMUM_CURVATURE:
+                    # Compute absolute position from segment start P1
+                    # using the minimum curvature displacement formula
                     pt = self._min_curvature_interpolate(
-                        points[-1], s1, s2, frac
+                        P1, s1, s2, frac
                     )
                 else:
-                    # Tangential: use weighted average of directions
+                    # Tangential: use incremental step from last point
                     pt = self._tangential_interpolate(
                         points[-1], s1, s2, actual_step
                     )
@@ -180,16 +185,26 @@ class BoreholeSurvey(BaseModel):
 
     def _min_curvature_interpolate(
         self,
-        prev_point: NDArray[np.float64],
+        P1: NDArray[np.float64],
         s1: SurveyStation,
         s2: SurveyStation,
         frac: float,
     ) -> NDArray[np.float64]:
         """Minimum curvature interpolation between two survey stations.
 
-        References:
-          Taylor, H.L. & Mason, C.M. (1972). A systematic approach to
-          well surveying calculations.
+        Computes the absolute 3D position at fraction `frac` along the
+        circular arc from station s1 to s2.
+
+        The minimum curvature method (industry standard) assumes a circular
+
+        Args:
+            P1: 3D position (x,y,z) at station s1 (segment start).
+            s1: Survey station at the start of the segment.
+            s2: Survey station at the end of the segment.
+            frac: Fraction along the segment [0, 1].
+
+        Returns:
+            3D position at the interpolated point.
         """
         az1 = math.radians(s1.azimuth)
         dip1 = math.radians(s1.dip)
@@ -198,7 +213,7 @@ class BoreholeSurvey(BaseModel):
 
         seg_length = s2.measured_depth - s1.measured_depth
 
-        # Unit vectors
+        # Unit vectors along borehole direction at each station
         v1 = np.array([
             math.sin(az1) * math.cos(dip1),
             math.cos(az1) * math.cos(dip1),
@@ -210,21 +225,36 @@ class BoreholeSurvey(BaseModel):
             math.sin(dip2),
         ])
 
-        # Dogleg angle
+        # Dogleg angle (angle between the two borehole direction vectors)
         cos_dogleg = np.clip(np.dot(v1, v2), -1.0, 1.0)
         dogleg = math.acos(cos_dogleg)
 
         if dogleg < 1e-10:
-            # Straight segment
-            return prev_point + v1 * (frac * seg_length)
+            # Straight segment — simple linear interpolation from P1
+            return P1 + v1 * (frac * seg_length)
 
-        # Minimum curvature interpolation
-        rf = math.tan(dogleg / 2)
-        if abs(rf) < 1e-10:
-            return prev_point + v1 * (frac * seg_length)
+        # ── Circular Arc Parameterization ──────────────────────────────
+        # The borehole follows a circular arc of radius R = ΔMD / γ.
+        #
+        # Construct an orthonormal basis in the plane of the arc:
+        #   u = v1                   (tangent at start of segment)
+        #   w = (v2 - cos(γ)·v1) / sin(γ)   (perpendicular to v1 in arc plane)
+        #
+        # v(f) = cos(f·γ)·u + sin(f·γ)·w   (unit direction at fraction f)
+        # P(f) = P1 + R·[sin(f·γ)·u + (1 - cos(f·γ))·w]
+        #
+        # This places points ON the circular arc, preserving the arc length.
+        R = seg_length / dogleg  # radius of curvature (m)
 
-        ratio = math.tan(frac * dogleg / 2) / rf
-        return prev_point + (v1 + v2) * ratio * (seg_length / 2)
+        sin_gamma = math.sin(dogleg)
+        # Perpendicular unit vector in the arc plane
+        w = (v2 - math.cos(dogleg) * v1) / sin_gamma
+
+        angle = frac * dogleg  # angle along the arc
+        sin_angle = math.sin(angle)
+        cos_angle = math.cos(angle)
+
+        return P1 + R * (sin_angle * v1 + (1.0 - cos_angle) * w)
 
     def _tangential_interpolate(
         self,

@@ -199,20 +199,125 @@ class BoreholeImporter:
     # ── File Reading ─────────────────────────────────────────────────────
 
     def _read_file(self, path: str) -> Optional[pd.DataFrame]:
-        """Read CSV or Excel file."""
+        """Read CSV, Excel, or LAS file.
+
+        LAS (Log ASCII Standard) is a common format in geotechnical and
+        petroleum borehole logging. Basic LAS 2.0/3.0 support is provided
+        via the `lasio` library (optional dependency).
+        """
         path = Path(path)
         if not path.exists():
             self._errors.append(f"File not found: {path}")
             return None
 
         try:
-            if path.suffix.lower() in ('.xlsx', '.xls'):
+            suffix = path.suffix.lower()
+            if suffix in ('.xlsx', '.xls'):
                 return pd.read_excel(path)
+            elif suffix == '.las':
+                return self._read_las(path)
             else:
                 return pd.read_csv(path)
         except Exception as e:
             self._errors.append(f"Failed to read {path.name}: {e}")
             return None
+
+    def _read_las(self, path: Path) -> Optional[pd.DataFrame]:
+        """Read LAS (Log ASCII Standard) borehole log file.
+
+        Tries `lasio` first (full LAS 2.0/3.0 parser), falls back to a
+        minimal built-in parser for basic ~V, ~W, ~A sections.
+
+        Args:
+            path: Path to .las file.
+
+        Returns:
+            DataFrame with columns from LAS curves, or None on failure.
+        """
+        # Try lasio (optional dependency)
+        try:
+            import lasio
+            las = lasio.read(str(path))
+            data = {}
+            for curve in las.curves:
+                data[curve.mnemonic] = las.curves[curve.mnemonic].data
+            if "DEPT" in data or "DEPTH" in data:
+                data.setdefault("measured_depth", data.pop("DEPT", data.get("DEPTH")))
+            index_name = las.index_mnemonic if las.index_mnemonic else None
+            if index_name and index_name in data:
+                depth_data = data.pop(index_name)
+                data["measured_depth"] = data.get("measured_depth", depth_data)
+            return pd.DataFrame(data)
+        except ImportError:
+            pass  # Fall through to built-in parser
+        except Exception as e:
+            self._warnings.append(f"lasio failed for {path.name}: {e} — trying built-in parser")
+
+        # Built-in minimal LAS parser
+        try:
+            return self._parse_las_minimal(path)
+        except Exception as e:
+            self._errors.append(f"LAS parse failed for {path.name}: {e}")
+            return None
+
+    def _parse_las_minimal(self, path: Path) -> pd.DataFrame:
+        """Minimal built-in LAS parser for basic well log files.
+
+        Handles ~V (version), ~W (well info), ~C (curve), ~A (ASCII data).
+        """
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+        section = None
+        curves = []
+        data_start = -1
+        well_info = {}
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("~V"):
+                section = "version"
+            elif stripped.startswith("~W"):
+                section = "well"
+            elif stripped.startswith("~C"):
+                section = "curve"
+            elif stripped.startswith("~A") or stripped.startswith("~ASCII"):
+                section = "data"
+                data_start = i + 1
+                break
+            elif section == "well":
+                if "." in stripped and not stripped.startswith("#"):
+                    parts = stripped.split(".", 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip().rstrip(".")
+                        val = parts[1].strip().split(":")[0].strip()
+                        well_info[key] = val
+            elif section == "curve":
+                if stripped and not stripped.startswith("#"):
+                    parts = stripped.split(".", 1)
+                    if len(parts) >= 1:
+                        curves.append(parts[0].strip())
+
+        if data_start < 0 or not curves:
+            raise ValueError("LAS file missing ~A (data) section or ~C (curve) definitions")
+
+        # Parse data rows
+        rows = []
+        for line in lines[data_start:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            values = stripped.split()
+            if len(values) >= len(curves):
+                rows.append([float(v) if v.replace(".", "").replace("-", "").isdigit() else v
+                            for v in values[:len(curves)]])
+
+        df = pd.DataFrame(rows, columns=curves)
+
+        # Attach well info as metadata columns
+        for key, val in well_info.items():
+            df[key] = val
+
+        return df
 
     # ── Field Mapping ────────────────────────────────────────────────────
 
@@ -247,20 +352,50 @@ class BoreholeImporter:
 
     # ── Data Import ──────────────────────────────────────────────────────
 
+    # Mandatory fields that must be present (no default values allowed).
+    MANDATORY_COLLAR_FIELDS = ["borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"]
+    MANDATORY_SURVEY_FIELDS = ["borehole_id", "measured_depth"]
+    MANDATORY_FRACTURE_FIELDS = ["borehole_id", "measured_depth", "dip_direction", "dip"]
+    MANDATORY_RQD_FIELDS = ["borehole_id", "from_depth", "to_depth", "rqd"]
+
+    def _check_mandatory_fields(
+        self, row: pd.Series, mandatory: List[str], row_idx: int, context: str
+    ) -> List[str]:
+        """Verify all mandatory fields are present and non-null in the row.
+
+        Returns list of missing field names (empty = all present).
+        """
+        missing = []
+        for field in mandatory:
+            val = row.get(field)
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                missing.append(field)
+        if missing:
+            self._errors.append(
+                f"Row {row_idx} ({context}): missing mandatory field(s) — {', '.join(missing)}"
+            )
+        return missing
+
     def _import_collars(self, df: pd.DataFrame) -> List[Borehole]:
-        """Import borehole collar data."""
+        """Import borehole collar data with mandatory field enforcement."""
         boreholes = []
         for idx, row in df.iterrows():
             try:
-                bh_id = str(row.get("borehole_id", f"BH-{idx + 1:03d}"))
+                missing = self._check_mandatory_fields(
+                    row, self.MANDATORY_COLLAR_FIELDS, idx, "collar"
+                )
+                if missing:
+                    continue  # Skip rows with missing mandatory fields
+
+                bh_id = str(row["borehole_id"])
                 collar = Collar(
                     borehole_id=bh_id,
-                    collar_x=float(row.get("collar_x", 0)),
-                    collar_y=float(row.get("collar_y", 0)),
-                    collar_z=float(row.get("collar_z", 0)),
+                    collar_x=float(row["collar_x"]),
+                    collar_y=float(row["collar_y"]),
+                    collar_z=float(row["collar_z"]),
                     azimuth=float(row.get("azimuth", 0)),
                     dip=float(row.get("dip", -90)),
-                    final_depth=float(row.get("final_depth", 100)),
+                    final_depth=float(row["final_depth"]),
                 )
                 boreholes.append(Borehole(borehole_id=bh_id, collar=collar))
             except Exception as e:
@@ -270,15 +405,21 @@ class BoreholeImporter:
         return boreholes
 
     def _import_surveys(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
-        """Import survey data and attach to boreholes."""
+        """Import survey data with mandatory field enforcement."""
         bh_map = {bh.borehole_id: bh for bh in boreholes}
         stations_by_bh: Dict[str, List[SurveyStation]] = {}
 
         for idx, row in df.iterrows():
             try:
-                bh_id = str(row.get("borehole_id", ""))
+                missing = self._check_mandatory_fields(
+                    row, self.MANDATORY_SURVEY_FIELDS, idx, "survey"
+                )
+                if missing:
+                    continue
+
+                bh_id = str(row["borehole_id"])
                 station = SurveyStation(
-                    measured_depth=float(row.get("measured_depth", 0)),
+                    measured_depth=float(row["measured_depth"]),
                     azimuth=float(row.get("azimuth", 0)),
                     dip=float(row.get("dip", -90)),
                 )
@@ -291,17 +432,23 @@ class BoreholeImporter:
                 bh_map[bh_id].survey = BoreholeSurvey(stations=stations)
 
     def _import_fractures(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
-        """Import fracture observations."""
+        """Import fracture observations with mandatory field enforcement."""
         bh_map = {bh.borehole_id: bh for bh in boreholes}
 
         for idx, row in df.iterrows():
             try:
-                bh_id = str(row.get("borehole_id", ""))
+                missing = self._check_mandatory_fields(
+                    row, self.MANDATORY_FRACTURE_FIELDS, idx, "fracture"
+                )
+                if missing:
+                    continue
+
+                bh_id = str(row["borehole_id"])
                 obs = FractureObservation(
                     borehole_id=bh_id,
-                    measured_depth=float(row.get("measured_depth", 0)),
-                    dip_direction=float(row.get("dip_direction", 0)),
-                    dip=float(row.get("dip", 0)),
+                    measured_depth=float(row["measured_depth"]),
+                    dip_direction=float(row["dip_direction"]),
+                    dip=float(row["dip"]),
                     aperture=float(row["aperture"]) if pd.notna(row.get("aperture")) else None,
                     filling=str(row.get("filling", "")) if pd.notna(row.get("filling")) else None,
                     fracture_type=FractureType(str(row.get("fracture_type", "joint")).lower()),
@@ -313,17 +460,23 @@ class BoreholeImporter:
                 self._warnings.append(f"Row {idx}: fracture import — {e}")
 
     def _import_rqd(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
-        """Import RQD intervals."""
+        """Import RQD intervals with mandatory field enforcement."""
         bh_map = {bh.borehole_id: bh for bh in boreholes}
 
         for idx, row in df.iterrows():
             try:
-                bh_id = str(row.get("borehole_id", ""))
+                missing = self._check_mandatory_fields(
+                    row, self.MANDATORY_RQD_FIELDS, idx, "RQD"
+                )
+                if missing:
+                    continue
+
+                bh_id = str(row["borehole_id"])
                 rqd = RQDInterval(
                     borehole_id=bh_id,
-                    from_depth=float(row.get("from_depth", 0)),
-                    to_depth=float(row.get("to_depth", 0)),
-                    rqd_value=float(row.get("rqd", 0)),
+                    from_depth=float(row["from_depth"]),
+                    to_depth=float(row["to_depth"]),
+                    rqd_value=float(row["rqd"]),
                     core_recovery=float(row["core_recovery"]) if pd.notna(row.get("core_recovery")) else None,
                 )
                 if bh_id in bh_map:

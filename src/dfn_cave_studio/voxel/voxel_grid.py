@@ -146,12 +146,20 @@ class VoxelGrid:
         x_min: float = 0.0,
         y_min: float = 0.0,
         z_min: float = 0.0,
+        cell_size_x: Optional[float] = None,
+        cell_size_y: Optional[float] = None,
+        cell_size_z: Optional[float] = None,
         chunk_size: int = 32,
         sparse: bool = True,
     ):
         self.nx = nx
         self.ny = ny
         self.nz = nz
+        # Support non-uniform cell sizes (dx, dy, dz may differ)
+        self.cell_size_x = cell_size_x if cell_size_x is not None else cell_size
+        self.cell_size_y = cell_size_y if cell_size_y is not None else cell_size
+        self.cell_size_z = cell_size_z if cell_size_z is not None else cell_size
+        # Backwards-compatible alias
         self.cell_size = cell_size
         self.x_min = x_min
         self.y_min = y_min
@@ -192,6 +200,9 @@ class VoxelGrid:
         return cls(
             nx=nx, ny=ny, nz=nz,
             cell_size=voxel_config.cell_size_x,
+            cell_size_x=voxel_config.cell_size_x,
+            cell_size_y=voxel_config.cell_size_y,
+            cell_size_z=voxel_config.cell_size_z,
             x_min=bounds.x_min, y_min=bounds.y_min, z_min=bounds.z_min,
             chunk_size=chunk_size, sparse=sparse,
         )
@@ -265,10 +276,15 @@ class VoxelGrid:
     def bounds(self) -> Tuple[float, float, float, float, float, float]:
         """Model bounds in meters (x_min, x_max, y_min, y_max, z_min, z_max)."""
         return (
-            self.x_min, self.x_min + self.nx * self.cell_size,
-            self.y_min, self.y_min + self.ny * self.cell_size,
-            self.z_min, self.z_min + self.nz * self.cell_size,
+            self.x_min, self.x_min + self.nx * self.cell_size_x,
+            self.y_min, self.y_min + self.ny * self.cell_size_y,
+            self.z_min, self.z_min + self.nz * self.cell_size_z,
         )
+
+    @property
+    def cell_volume(self) -> float:
+        """Volume of a single voxel cell (m³)."""
+        return self.cell_size_x * self.cell_size_y * self.cell_size_z
 
     # ── Index Conversion ─────────────────────────────────────────────────
 
@@ -278,9 +294,9 @@ class VoxelGrid:
         Returns:
             Tuple of (ix, iy, iz). May be outside grid.
         """
-        ix = int((x - self.x_min) / self.cell_size)
-        iy = int((y - self.y_min) / self.cell_size)
-        iz = int((z - self.z_min) / self.cell_size)
+        ix = int((x - self.x_min) / self.cell_size_x)
+        iy = int((y - self.y_min) / self.cell_size_y)
+        iz = int((z - self.z_min) / self.cell_size_z)
         return ix, iy, iz
 
     def voxel_to_world(self, ix: int, iy: int, iz: int) -> Tuple[float, float, float]:
@@ -289,9 +305,9 @@ class VoxelGrid:
         Returns:
             Tuple of (x, y, z) in meters.
         """
-        x = self.x_min + (ix + 0.5) * self.cell_size
-        y = self.y_min + (iy + 0.5) * self.cell_size
-        z = self.z_min + (iz + 0.5) * self.cell_size
+        x = self.x_min + (ix + 0.5) * self.cell_size_x
+        y = self.y_min + (iy + 0.5) * self.cell_size_y
+        z = self.z_min + (iz + 0.5) * self.cell_size_z
         return x, y, z
 
     def is_inside(self, ix: int, iy: int, iz: int) -> bool:
@@ -461,7 +477,7 @@ class VoxelGrid:
         """Return a human-readable summary of the grid."""
         return (
             f"VoxelGrid: {self.nx}×{self.ny}×{self.nz} = {self.total_voxels:,} total voxels\n"
-            f"  Cell size: {self.cell_size:.2f} m\n"
+            f"  Cell sizes: dx={self.cell_size_x:.2f} dy={self.cell_size_y:.2f} dz={self.cell_size_z:.2f} m\n"
             f"  Chunks: {self.chunk_count} ({self.n_chunks_x}×{self.n_chunks_y}×{self.n_chunks_z} layout)\n"
             f"  Active voxels: {self.active_voxel_count:,}\n"
             f"  Sparse mode: {self.sparse}\n"

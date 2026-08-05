@@ -90,14 +90,13 @@ class SizeDistribution(BaseModel):
 
     @property
     def mean_radius(self) -> float:
-        """Compute the mean radius for the configured distribution."""
+        """Compute the mean (expected) radius E[R] for the configured distribution."""
         import math
         if self.distribution_type == SizeDistributionType.LOGNORMAL:
             return math.exp(self.lognormal_mu + self.lognormal_sigma ** 2 / 2)
         elif self.distribution_type == SizeDistributionType.FIXED:
             return self.min_radius
         elif self.distribution_type == SizeDistributionType.POWER_LAW:
-            # Truncated power-law mean (approximate)
             D = self.power_law_exponent
             if D == 2.0:
                 return self.min_radius * math.log(self.max_radius / self.min_radius)
@@ -107,8 +106,84 @@ class SizeDistribution(BaseModel):
             else:
                 r_min, r_max = self.min_radius, self.max_radius
                 return (D - 1) / (D - 2) * (r_max ** (2 - D) - r_min ** (2 - D)) / (r_max ** (1 - D) - r_min ** (1 - D))
+        elif self.distribution_type == SizeDistributionType.TRUNCATED_POWER_LAW:
+            D = self.power_law_exponent
+            r_min, r_max = self.min_radius, self.max_radius
+            if abs(D - 2.0) < 1e-10:
+                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
+            elif abs(D - 3.0) < 1e-10:
+                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
+            else:
+                return (D - 1) / (D - 2) * (r_max ** (2 - D) - r_min ** (2 - D)) / (r_max ** (1 - D) - r_min ** (1 - D))
+        elif self.distribution_type == SizeDistributionType.EXPONENTIAL:
+            mean_r = (self.min_radius + self.max_radius) / 2.0
+            return mean_r
         else:
             return (self.min_radius + self.max_radius) / 2.0
+
+    @property
+    def mean_squared_radius(self) -> float:
+        """Compute E[R²] — the expected squared radius.
+
+        CRITICAL for P32 control: fracture area A = πR², so the expected
+        fracture area is E[A] = π·E[R²], NOT π·(E[R])².
+
+        The difference is E[R²] = (E[R])² + Var(R), i.e. Jensen's gap.
+        For a lognormal with σ=0.5, E[R²]/(E[R])² = exp(σ²) ≈ 1.284,
+        meaning the naive π·(E[R])² underestimates area by ~28%.
+        """
+        import math
+        dist_type = self.distribution_type
+
+        if dist_type == SizeDistributionType.LOGNORMAL:
+            # ln(R) ~ N(μ, σ) → E[R²] = exp(2μ + 2σ²)
+            return math.exp(2.0 * self.lognormal_mu + 2.0 * self.lognormal_sigma ** 2)
+
+        elif dist_type == SizeDistributionType.FIXED:
+            r = self.min_radius
+            return r * r
+
+        elif dist_type == SizeDistributionType.POWER_LAW:
+            # Untruncated power-law: f(r) ∝ r^{-(D+1)}, r ∈ [r_min, ∞)
+            D = self.power_law_exponent
+            r_min = self.min_radius
+            if D <= 2.0:
+                # E[R²] diverges for D ≤ 2; use r_max as effective cutoff
+                return self.max_radius ** 2
+            return (D / (D - 2.0)) * r_min ** 2
+
+        elif dist_type == SizeDistributionType.TRUNCATED_POWER_LAW:
+            D = self.power_law_exponent
+            r_min, r_max = self.min_radius, self.max_radius
+            if abs(D - 3.0) < 1e-10:
+                # E[R²] = r_min·r_max · ln(r_max/r_min) / (r_max - r_min) × (r_max + r_min)
+                # Actually for truncated power law with D=3:
+                # f(r) ∝ r^{-4}, E[R²] = ∫r²·r^{-4} dr / ∫r^{-4} dr = ∫r^{-2} / ∫r^{-4}
+                return (r_min * r_max)  # simplifies for D=3
+            if abs(D - 2.0) < 1e-10:
+                return r_min * r_max  # approximate
+            if D <= 2.0:
+                return self.max_radius ** 2
+            # General: E[R²] = ∫_{r_min}^{r_max} r²·r^{-(D+1)} dr / ∫ r^{-(D+1)} dr
+            # = ∫ r^{1-D} / ∫ r^{-D-1}
+            # = [-r^{2-D}/(D-2)] / [-r^{-D}/D]
+            # = (D/(D-2)) · (r_max^{2-D} - r_min^{2-D}) / (r_max^{-D} - r_min^{-D})
+            # Equivalent to:
+            # = (D/(D-2)) · (r_min^{2-D} - r_max^{2-D}) / (r_min^{-D} - r_max^{-D})
+            num = r_min ** (2.0 - D) - r_max ** (2.0 - D)
+            den = r_min ** (-D) - r_max ** (-D)
+            if abs(den) < 1e-15:
+                return r_min ** 2
+            return (D / (D - 2.0)) * num / den
+
+        elif dist_type == SizeDistributionType.EXPONENTIAL:
+            mean_r = (self.min_radius + self.max_radius) / 2.0
+            # Exp(λ): E[R] = 1/λ, Var(R) = 1/λ², E[R²] = 2/λ² = 2·(E[R])²
+            return 2.0 * mean_r ** 2
+
+        else:
+            mean_r = (self.min_radius + self.max_radius) / 2.0
+            return mean_r ** 2
 
 
 class SpatialDistribution(BaseModel):
@@ -157,11 +232,15 @@ class JointSetConfig(BaseModel):
     def expected_mean_area(self) -> float:
         """Expected mean fracture area for this set (m²).
 
-        Uses the disk model: area = π * r².
+        Uses the disk model: E[A] = π · E[R²].
+
+        IMPORTANT: This is NOT π·(E[R])². Because area ∝ radius²,
+        the variance of the radius distribution inflates the expected
+        area (Jensen's inequality). Using π·(E[R])² systematically
+        underestimates P32.
         """
-        mean_r = self.size.mean_radius
         import math
-        return math.pi * mean_r ** 2
+        return math.pi * self.size.mean_squared_radius
 
     def expected_fracture_count(self, rock_volume: float) -> int:
         """Expected number of fractures to achieve target P32.

@@ -256,17 +256,24 @@ def fracture_fracture_intersects(
 
     line_dir = line_dir / dir_norm
 
-    # Find a point on the intersection line
-    # Solve: n1·(P - c1) = 0 and n2·(P - c2) = 0
-    # P = c1 + α*n1 + β*n2, then solve for α, β
-    A = np.array([
-        [dot(n1, n1), dot(n1, n2)],
-        [dot(n2, n1), dot(n2, n2)],
-    ])
-    b = np.array([0.0, dot(n2, c1 - c2)])
+    # Find a point on the intersection line.
+    # Parametrization: P = c1 + α·n1 + β·n2
+    # Constraints: n1·(P - c1) = 0  →  α + β·(n1·n2) = 0
+    #              n2·(P - c2) = 0  →  α·(n1·n2) + β + n2·(c1 - c2) = 0
+    #                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    #                                     The constant term comes from
+    #                                     n2·(c1 + α·n1 + β·n2 - c2) = 0
+    #                                     = n2·(c1-c2) + α·(n1·n2) + β = 0
+    # Therefore: dα + β = -n2·(c1-c2)
+    d12 = dot(n1, n2)  # n1·n2
+    # Build 2×2 system: [1, d12; d12, 1] · [α; β] = [0; -n2·(c1-c2)]
+    b_val = -dot(n2, c1 - c2)  # negative sign from constraint derivation
 
-    # Handle degenerate case
-    det = A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0]
+    A = np.array([[1.0, d12], [d12, 1.0]])
+    b = np.array([0.0, b_val])
+
+    # Handle degenerate case (parallel normals → planes nearly parallel)
+    det = A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0]  # = 1 - d12²
     if abs(det) < 1e-12:
         return False
 
@@ -275,31 +282,170 @@ def fracture_fracture_intersects(
 
     line_point = c1 + alpha * n1 + beta * n2
 
-    # Project line_point onto each disk plane and check distances
-    d1 = np.linalg.norm(line_point - c1)
-    d2 = np.linalg.norm(line_point - c2)
-
-    # The line_point may not be the optimal point; compute shortest distance
-    # from each center to the intersection line
-    dist1_to_line = np.linalg.norm(cross(c1 - line_point, line_dir))
-    dist2_to_line = np.linalg.norm(cross(c2 - line_point, line_dir))
+    # Compute shortest distance from each fracture center to the
+    # intersection line, using the standard point-to-line formula.
+    c1_to_line = c1 - line_point
+    c2_to_line = c2 - line_point
+    dist1_to_line = float(np.linalg.norm(cross(c1_to_line, line_dir)))
+    dist2_to_line = float(np.linalg.norm(cross(c2_to_line, line_dir)))
 
     if dist1_to_line > radius1 or dist2_to_line > radius2:
         return False
 
-    # Now check if the intersection segment overlaps both disks
-    # Project centers onto the intersection line
-    t1 = dot(c1 - line_point, line_dir)
-    t2 = dot(c2 - line_point, line_dir)
+    # Parameterize positions along the intersection line.
+    # t = 0 at line_point; t_i = projection of (c_i - line_point) onto line_dir.
+    t1 = float(dot(c1_to_line, line_dir))
+    t2 = float(dot(c2_to_line, line_dir))
 
-    # Half-length of intersection segment on each disk
-    h1 = np.sqrt(max(0, radius1 ** 2 - dist1_to_line ** 2))
-    h2 = np.sqrt(max(0, radius2 ** 2 - dist2_to_line ** 2))
+    # Half-length of the intersection chord within each disk
+    h1 = np.sqrt(max(0.0, radius1 ** 2 - dist1_to_line ** 2))
+    h2 = np.sqrt(max(0.0, radius2 ** 2 - dist2_to_line ** 2))
 
-    # Intersection segment on disk 1: [t1 - h1, t1 + h1]
-    # Intersection segment on disk 2: [t2 - h2, t2 + h2]
-    # Check overlap
+    # Intersection segments along the line:
+    #   disk 1: [t1 - h1, t1 + h1]
+    #   disk 2: [t2 - h2, t2 + h2]
+    # Overlap exists iff the two intervals intersect.
     seg1_min, seg1_max = t1 - h1, t1 + h1
     seg2_min, seg2_max = t2 - h2, t2 + h2
 
     return seg1_min <= seg2_max and seg2_min <= seg1_max
+
+
+def fracture_fracture_intersection_detail(
+    center1: NDArray[np.float64],
+    normal1: NDArray[np.float64],
+    radius1: float,
+    center2: NDArray[np.float64],
+    normal2: NDArray[np.float64],
+    radius2: float,
+) -> Optional[dict]:
+    """Compute detailed intersection between two circular disk fractures.
+
+    Returns the intersection segment endpoints, length, and geometric
+    properties for scientific use (fragmentation analysis, block theory).
+
+    Args:
+        center1, normal1, radius1: Parameters of fracture 1.
+        center2, normal2, radius2: Parameters of fracture 2.
+
+    Returns:
+        None if no intersection, or dict with:
+          - intersects: bool (True)
+          - segment_start: (3,) array — first endpoint
+          - segment_end: (3,) array — second endpoint
+          - segment_length: float — length of intersection segment (m)
+          - midpoint: (3,) array — midpoint of intersection segment
+          - line_direction: (3,) array — unit vector along intersection line
+          - line_point: (3,) array — reference point on intersection line
+    """
+    c1 = np.asarray(center1, dtype=np.float64)
+    n1 = normalize(np.asarray(normal1, dtype=np.float64))
+    c2 = np.asarray(center2, dtype=np.float64)
+    n2 = normalize(np.asarray(normal2, dtype=np.float64))
+
+    # Direction of intersection line
+    line_dir = cross(n1, n2)
+    dir_norm = np.linalg.norm(line_dir)
+
+    if dir_norm < 1e-12:
+        # Parallel planes
+        dist_between = abs(dot(c2 - c1, n1))
+        if dist_between > 1e-10:
+            return None  # Not coplanar
+        # Coplanar: 2D circle-circle intersection
+        center_dist = float(np.linalg.norm(c2 - c1))
+        if center_dist > radius1 + radius2:
+            return None
+        # For coplanar disks, intersection is a lens, not a segment.
+        # Return the chord endpoints.
+        if center_dist < 1e-12:
+            # Concentric — intersection is the smaller disk
+            r_min = min(radius1, radius2)
+            # Arbitrary direction
+            seg_dir = np.array([1.0, 0.0, 0.0])
+            # Reject if parallel to n1
+            if abs(dot(seg_dir, n1)) > 0.99:
+                seg_dir = np.array([0.0, 1.0, 0.0])
+            seg_dir = seg_dir - dot(seg_dir, n1) * n1
+            seg_dir = seg_dir / np.linalg.norm(seg_dir)
+            return {
+                "intersects": True,
+                "segment_start": c1 - seg_dir * r_min,
+                "segment_end": c1 + seg_dir * r_min,
+                "segment_length": 2.0 * r_min,
+                "midpoint": c1.copy(),
+                "line_direction": seg_dir,
+                "line_point": c1.copy(),
+            }
+        # General coplanar case: chord of circle-circle intersection
+        d = center_dist
+        a = (radius1**2 - radius2**2 + d**2) / (2.0 * d)
+        h_sq = radius1**2 - a**2
+        if h_sq <= 0:
+            return None  # Tangent or no intersection
+        h = np.sqrt(h_sq)
+        # Midpoint of intersection chord
+        mid = c1 + a * (c2 - c1) / d
+        # Chord direction: perpendicular to c2-c1 in the plane
+        chord_dir = cross(n1, c2 - c1)
+        chord_dir = chord_dir / np.linalg.norm(chord_dir)
+        return {
+            "intersects": True,
+            "segment_start": mid - chord_dir * h,
+            "segment_end": mid + chord_dir * h,
+            "segment_length": 2.0 * h,
+            "midpoint": mid,
+            "line_direction": chord_dir,
+            "line_point": mid,
+        }
+
+    line_dir = line_dir / dir_norm
+
+    # Find reference point on intersection line
+    d12 = dot(n1, n2)
+    b_val = -dot(n2, c1 - c2)
+    det = 1.0 - d12 ** 2
+
+    if abs(det) < 1e-12:
+        return None
+
+    beta = b_val / det  # alpha = -d12 * beta
+    alpha = -d12 * beta
+    line_point = c1 + alpha * n1 + beta * n2
+
+    # Distances from centers to the line
+    dist1 = float(np.linalg.norm(cross(c1 - line_point, line_dir)))
+    dist2 = float(np.linalg.norm(cross(c2 - line_point, line_dir)))
+
+    if dist1 > radius1 or dist2 > radius2:
+        return None
+
+    # Half-chord lengths
+    h1 = np.sqrt(max(0.0, radius1**2 - dist1**2))
+    h2 = np.sqrt(max(0.0, radius2**2 - dist2**2))
+
+    # Projection parameters
+    t1 = float(dot(c1 - line_point, line_dir))
+    t2 = float(dot(c2 - line_point, line_dir))
+
+    # Overlap interval
+    t_min = max(t1 - h1, t2 - h2)
+    t_max = min(t1 + h1, t2 + h2)
+
+    if t_min > t_max:
+        return None
+
+    seg_start = line_point + t_min * line_dir
+    seg_end = line_point + t_max * line_dir
+    seg_length = float(t_max - t_min)
+    midpoint = (seg_start + seg_end) / 2.0
+
+    return {
+        "intersects": True,
+        "segment_start": seg_start,
+        "segment_end": seg_end,
+        "segment_length": seg_length,
+        "midpoint": midpoint,
+        "line_direction": line_dir,
+        "line_point": line_point,
+    }

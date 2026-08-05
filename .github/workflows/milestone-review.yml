@@ -27,27 +27,32 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest-cov pytest-html pytest-json-report
 
       - name: Run unit tests
+        shell: pwsh
         run: pytest tests/unit/ -v --tb=short --json-report --json-report-file=test-results-unit.json
 
       - name: Run integration tests
+        shell: pwsh
         run: pytest tests/integration/ -v --tb=short --json-report --json-report-file=test-results-integration.json
 
       - name: Run scientific validation
+        shell: pwsh
         run: pytest tests/scientific/ -v --tb=short --json-report --json-report-file=test-results-scientific.json
 
       - name: Run all tests with coverage
+        shell: pwsh
         run: |
-          pytest tests/ -v --tb=short \
-            --cov=src/dfn_cave_studio \
-            --cov-report=xml:coverage.xml \
-            --cov-report=html:coverage_html \
-            --html=test-report.html \
+          pytest tests/ -v --tb=short `
+            --cov=src/dfn_cave_studio `
+            --cov-report=xml:coverage.xml `
+            --cov-report=html:coverage_html `
+            --html=test-report.html `
             --self-contained-html
 
       - name: Upload test results
@@ -101,12 +106,12 @@ jobs:
           python scripts/build_review_package.py
 
       - name: Compress review package
-        shell: bash
+        shell: pwsh
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          mkdir -p dist
-          7z a "dist/dfn-cave-studio-${VERSION}-review.zip" docs/review/
-          7z a "dist/dfn-cave-studio-${VERSION}-source.zip" src/ tests/ *.md *.toml *.txt LICENSE conftest.py
+          $VERSION = $env:GITHUB_REF -replace 'refs/tags/', ''
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path docs/review/* -DestinationPath "dist/dfn-cave-studio-${VERSION}-review.zip" -Force
+          Compress-Archive -Path src/,tests/,*.md,*.toml,*.txt,LICENSE,conftest.py -DestinationPath "dist/dfn-cave-studio-${VERSION}-source.zip" -Force
 
       - name: Upload review package
         uses: actions/upload-artifact@v4

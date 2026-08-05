@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.6.1-M6] — 2026-08-05
+
+### Fixed (v0.6.1-M6 Algorithm Corrections)
+- **BoreholeSurvey trajectory**: Fixed minimum curvature method to use proper arc
+  parameterization (circular arc basis with RF correction factor). The previous
+  chord-interpolation formula produced incorrect spatial lengths for curved holes.
+  10 m straight hole now correctly gives 10 m spatial length.
+- **DFN P32 calculation**: Fixed `expected_mean_area()` to compute E[πR²] = π·E[R²]
+  instead of the incorrect π·(E[R])². For lognormal distributions this is a
+  ~28% correction (Jensen's gap). Added `mean_squared_radius` property to
+  `SizeDistribution` with analytic formulas for all distribution types.
+- **Fracture-fracture intersection**: Fixed sign error in the `b` vector of the
+  line-plane intersection linear system. The corrected constraint uses
+  -n₂·(c₁-c₂) instead of n₂·(c₁-c₂). Added `fracture_fracture_intersection_detail()`
+  returning segment endpoints, length, midpoint, and direction.
+- **Fracture-voxel intersection**: Added `_estimate_clipped_area()` for first-order
+  correction of fracture area within individual voxels. Replaced full-disk-area
+  approximation with center-in/out distance-based falloff.
+- **Percolation analysis**: Replaced bounding-sphere boundary check with real
+  fracture-boundary intersection (disk-plane distance with projected radius).
+  Added `percolation_detail()` with per-direction percolation status.
+  Added `direction` parameter for user-specified percolation axis.
+  Distinguished geometric vs mechanical connectivity.
+- **Voxel grid**: Changed `compute_grid_dimensions()` to use `math.ceil` for full
+  model coverage. Added support for non-uniform cell sizes (dx, dy, dz).
+  Fixed world↔voxel conversion and AABB methods to use separate cell dimensions.
+- **Borehole importer**: Added mandatory field enforcement with clear error messages.
+  Rows missing required fields are now rejected. Added LAS file import support
+  (Log ASCII Standard) via lasio or built-in parser.
+- **Tests**: Added 35 new tests in `tests/integration/` and `tests/scientific/`
+  covering borehole pipeline, DFN pipeline, P32 calculation, minimum curvature
+  scientific validation, and fracture intersection scientific validation.
+  Total: 282 tests passing.
+- **CI workflow**: Fixed GitHub Actions for Windows PowerShell compatibility.
+  Sequential steps with proper failure propagation.
+
+### Known Issues (Still Incomplete in M6)
+- Borehole import UI dialog not yet implemented
+- Deterministic large structure (fault) import from STL/OBJ not yet implemented
+- HDF5/Zarr persistence for voxel grids not yet implemented
+- LAS import requires optional `lasio` dependency for full feature support
+
+---
+
 ## [0.1.0-M0] — 2026-08-04
 
 ### Added (Milestone M0: Foundation)

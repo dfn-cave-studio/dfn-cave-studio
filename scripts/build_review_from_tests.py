@@ -443,6 +443,10 @@ def build_review(version: str, milestone: str, tag: str, commit: str,
     for sub in ["screenshots", "sample_outputs", "logs"]:
         (review_dir / sub).mkdir(exist_ok=True)
 
+    # Resolve full SHA
+    full_sha = _get_full_sha(commit)
+    print(f"  Commit: {commit} → {full_sha}")
+
     # Run validations
     print(f"  Running scientific validations for {tag}...")
     sci_results = run_scientific_validations(seed=42)
@@ -458,7 +462,8 @@ def build_review(version: str, milestone: str, tag: str, commit: str,
         "project_name": "DFN Cave Studio",
         "version": version,
         "milestone": milestone,
-        "commit_sha": commit,
+        "commit_sha": full_sha,
+        "short_sha": commit,
         "branch": "main",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
@@ -479,7 +484,7 @@ def build_review(version: str, milestone: str, tag: str, commit: str,
         "release_url": f"https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/{tag}",
         "source_archive": f"https://github.com/dfn-cave-studio/dfn-cave-studio/archive/refs/tags/{tag}.zip",
         "previous_version": prev_version,
-        "reproducibility_command": f"git checkout {tag} && python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/",
+        "reproducibility_command": f"git checkout {full_sha} && python -m venv .venv && .venv/Scripts/pip install -e \".[dev]\" && pytest tests/",
     }
     (review_dir / "REVIEW_MANIFEST.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -585,6 +590,20 @@ def _get_changed_files(commit: str) -> List[str]:
 # =============================================================================
 # Main
 # =============================================================================
+
+def _get_full_sha(short_sha: str) -> str:
+    """Resolve short SHA to full 40-char SHA using git."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", short_sha],
+            capture_output=True, text=True, cwd=PROJECT_ROOT,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return short_sha  # fallback
+
 
 VERSIONS = [
     {
