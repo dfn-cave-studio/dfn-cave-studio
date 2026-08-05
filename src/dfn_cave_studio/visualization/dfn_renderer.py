@@ -15,6 +15,7 @@ References:
 
 from __future__ import annotations
 
+import logging
 from typing import Optional, List, Dict, Tuple, Callable
 import math
 
@@ -25,6 +26,8 @@ from dfn_cave_studio.models.fracture import StochasticFracture, DeterministicFra
 from dfn_cave_studio.models.fracture_set import JointSetConfig
 from dfn_cave_studio.models.bounds import ModelBounds
 from dfn_cave_studio.models.dfn_realization import DFNRealization
+
+_logger = logging.getLogger(__name__)
 
 
 class DFNRenderer:
@@ -155,7 +158,8 @@ class DFNRenderer:
                     n_sides=n_sides,
                 )
                 meshes.append(disk)
-            except Exception:
+            except Exception as e:
+                _logger.error(f"fracture_to_disk_mesh failed for fracture: {e}", exc_info=True)
                 continue
 
         if not meshes:
@@ -214,8 +218,8 @@ class DFNRenderer:
         for name in list(self._actors.keys()):
             try:
                 plotter.remove_actor(self._actors[name])
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.error(f"renderer operation failed: {e}", exc_info=True)
         self._actors.clear()
         self._visibility.clear()
         self._opacity.clear()
@@ -227,8 +231,8 @@ class DFNRenderer:
             try:
                 self._actors[set_name].SetVisibility(visible)
                 self._visibility[set_name] = visible
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.error(f"renderer operation failed: {e}", exc_info=True)
 
     def set_opacity(self, plotter, set_name: str, opacity: float) -> None:
         """Set opacity for a fracture set."""
@@ -236,8 +240,8 @@ class DFNRenderer:
             try:
                 self._actors[set_name].GetProperty().SetOpacity(opacity)
                 self._opacity[set_name] = opacity
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.error(f"renderer operation failed: {e}", exc_info=True)
 
     def get_statistics(self) -> Dict[str, int]:
         """Get fracture count per set."""
@@ -280,8 +284,8 @@ class DFNRenderer:
                 plotter.add_mesh(box, color="white", opacity=0.2,
                                  style="wireframe", line_width=1,
                                  name="Model Bounds")
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.error(f"_add_bounding_box failed: {e}", exc_info=True)
 
     # ── Borehole Rendering ─────────────────────────────────────────────
 
@@ -306,8 +310,8 @@ class DFNRenderer:
                 plotter.add_mesh(tube, color=color, name=f"BH-{bh.borehole_id}",
                                  label=f"BH-{bh.borehole_id}",
                                  show_edges=False, smooth_shading=True)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.error(f"render_boreholes failed: {e}", exc_info=True)
 
     def render_fracture_observations(self, collection, plotter) -> None:
         """Render fracture observation positions as small spheres.
@@ -330,48 +334,64 @@ class DFNRenderer:
                     plotter.add_mesh(sphere, color=color,
                                      name=f"Obs-{bh.borehole_id}-{obs.measured_depth:.1f}",
                                      show_edges=False)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.error(f"render_fracture_observations failed: {e}", exc_info=True)
 
-    def render_voxel_p32(self, voxel_p32_dict, bounds, voxel_config, plotter,
-                         cmap: str = "viridis") -> None:
+    def render_voxel_p32(self, voxel_p32_data, bounds, voxel_config, plotter,
+                         cmap: str = "viridis") -> bool:
         """Render voxel grid colored by local P32 values.
 
         Args:
-            voxel_p32_dict: Dict mapping (i,j,k) → P32 value.
+            voxel_p32_data: List of dicts [{i,j,k,local_p32,...}] or
+                            dict mapping (i,j,k) → P32 value.
             bounds: ModelBounds.
             voxel_config: VoxelConfig.
             plotter: PyVista plotter.
             cmap: Matplotlib colormap name.
+
+        Returns:
+            True if rendering succeeded, False on error.
         """
+        import pyvista as pv
+        import math
         try:
-            import pyvista as pv
-            import math
             nx = int(math.ceil((bounds.x_max - bounds.x_min) / voxel_config.cell_size_x))
             ny = int(math.ceil((bounds.y_max - bounds.y_min) / voxel_config.cell_size_y))
             nz = int(math.ceil((bounds.z_max - bounds.z_min) / voxel_config.cell_size_z))
             nx = max(1, nx); ny = max(1, ny); nz = max(1, nz)
 
-            grid = pv.UniformGrid()
-            grid.dimensions = (nx + 1, ny + 1, nz + 1)
-            grid.origin = (bounds.x_min, bounds.y_min, bounds.z_min)
-            grid.spacing = (voxel_config.cell_size_x,
-                            voxel_config.cell_size_y,
-                            voxel_config.cell_size_z)
+            # pv.ImageData is the correct class in PyVista 0.48.x
+            grid = pv.ImageData(
+                dimensions=(nx + 1, ny + 1, nz + 1),
+                spacing=(voxel_config.cell_size_x,
+                         voxel_config.cell_size_y,
+                         voxel_config.cell_size_z),
+                origin=(bounds.x_min, bounds.y_min, bounds.z_min),
+            )
 
             p32_values = np.zeros(nx * ny * nz, dtype=np.float64)
-            for (i, j, k), val in voxel_p32_dict.items():
-                idx = int(i) * ny * nz + int(j) * nz + int(k)
-                if 0 <= idx < len(p32_values):
-                    p32_values[idx] = float(val)
+            if isinstance(voxel_p32_data, dict):
+                for (i, j, k), val in voxel_p32_data.items():
+                    idx = int(i) * ny * nz + int(j) * nz + int(k)
+                    if 0 <= idx < len(p32_values):
+                        p32_values[idx] = float(val)
+            elif isinstance(voxel_p32_data, (list, tuple)):
+                for entry in voxel_p32_data:
+                    if isinstance(entry, dict):
+                        i, j, k = entry.get("i", 0), entry.get("j", 0), entry.get("k", 0)
+                        idx = int(i) * ny * nz + int(j) * nz + int(k)
+                        if 0 <= idx < len(p32_values):
+                            p32_values[idx] = float(entry.get("local_p32", 0.0))
 
             grid.cell_data["local_p32"] = p32_values
             plotter.add_mesh(grid, scalars="local_p32", cmap=cmap,
                              opacity=0.5, show_edges=True,
                              name="Voxel P32", show_scalar_bar=True,
                              scalar_bar_args={"title": "P32 (m²/m³)"})
-        except Exception:
-            pass
+            return True
+        except Exception as e:
+            _logger.error(f"render_voxel_p32 failed: {e}", exc_info=True)
+            return False
 
     def screenshot(self, plotter, path: str, transparent: bool = True) -> bool:
         """Save a screenshot of the current plotter view.
@@ -387,46 +407,71 @@ class DFNRenderer:
         try:
             plotter.screenshot(path, transparent_background=transparent)
             return True
-        except Exception:
+        except Exception as e:
+            _logger.error(f"screenshot failed: {e}", exc_info=True)
             return False
 
-    def export_voxels_vtu(self, voxel_p32_dict, bounds, voxel_config, path: str) -> bool:
-        """Export voxel grid with P32 as VTU (unstructured VTK XML).
+    def export_voxels_vtu(self, voxel_p32_data, bounds, voxel_config, path: str) -> bool:
+        """Export voxel grid with P32 as VTI (ImageData) or VTR (RectilinearGrid).
 
         Args:
-            voxel_p32_dict: Dict mapping (i,j,k) → P32 value.
+            voxel_p32_data: List of dicts [{i,j,k,local_p32,...}] or
+                            dict mapping (i,j,k) → P32 value.
             bounds: ModelBounds.
             voxel_config: VoxelConfig.
-            path: Output .vtu file path.
+            path: Output file path (.vti or .vtr).
 
         Returns:
-            True if export succeeded.
+            True if export succeeded, False on error.
         """
+        import pyvista as pv
+        import math
         try:
-            import pyvista as pv
-            import math
             nx = int(math.ceil((bounds.x_max - bounds.x_min) / voxel_config.cell_size_x))
             ny = int(math.ceil((bounds.y_max - bounds.y_min) / voxel_config.cell_size_y))
             nz = int(math.ceil((bounds.z_max - bounds.z_min) / voxel_config.cell_size_z))
             nx = max(1, nx); ny = max(1, ny); nz = max(1, nz)
 
-            grid = pv.UniformGrid()
-            grid.dimensions = (nx + 1, ny + 1, nz + 1)
-            grid.origin = (bounds.x_min, bounds.y_min, bounds.z_min)
-            grid.spacing = (voxel_config.cell_size_x,
-                            voxel_config.cell_size_y,
-                            voxel_config.cell_size_z)
+            grid = pv.ImageData(
+                dimensions=(nx + 1, ny + 1, nz + 1),
+                spacing=(voxel_config.cell_size_x,
+                         voxel_config.cell_size_y,
+                         voxel_config.cell_size_z),
+                origin=(bounds.x_min, bounds.y_min, bounds.z_min),
+            )
 
             p32_values = np.zeros(nx * ny * nz, dtype=np.float64)
-            for (i, j, k), val in voxel_p32_dict.items():
-                idx = int(i) * ny * nz + int(j) * nz + int(k)
-                if 0 <= idx < len(p32_values):
-                    p32_values[idx] = float(val)
+            frac_count = np.zeros(nx * ny * nz, dtype=np.int32)
+            if isinstance(voxel_p32_data, dict):
+                for (i, j, k), val in voxel_p32_data.items():
+                    idx = int(i) * ny * nz + int(j) * nz + int(k)
+                    if 0 <= idx < len(p32_values):
+                        p32_values[idx] = float(val)
+            elif isinstance(voxel_p32_data, (list, tuple)):
+                for entry in voxel_p32_data:
+                    if isinstance(entry, dict):
+                        i = entry.get("i", 0)
+                        j = entry.get("j", 0)
+                        k = entry.get("k", 0)
+                        idx = int(i) * ny * nz + int(j) * nz + int(k)
+                        if 0 <= idx < len(p32_values):
+                            p32_values[idx] = float(entry.get("local_p32", 0.0))
+                            frac_count[idx] = int(entry.get("fracture_count", 0))
 
             grid.cell_data["local_p32"] = p32_values
-            grid.save(path)
+            grid.cell_data["fracture_count"] = frac_count
+            from pathlib import Path
+            out_path = Path(path)
+            if out_path.suffix.lower() in ('.vti',):
+                grid.save(str(out_path))
+            elif out_path.suffix.lower() in ('.vtr',):
+                grid.save(str(out_path))
+            else:
+                # Default to .vti for ImageData
+                grid.save(str(out_path.with_suffix('.vti')))
             return True
-        except Exception:
+        except Exception as e:
+            _logger.error(f"export_voxels_vtu failed: {e}", exc_info=True)
             return False
 
     def render_model_bounds(self, bounds, plotter) -> None:
@@ -446,8 +491,8 @@ class DFNRenderer:
             plotter.add_mesh(box, color="white", opacity=0.3,
                              style="wireframe", line_width=2,
                              name="Model Bounds", label="Model Bounds")
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.error(f"render_model_bounds failed: {e}", exc_info=True)
 
     def add_coordinate_axes(self, plotter) -> None:
         """Add XYZ coordinate axes with labels to the plotter.
@@ -457,8 +502,8 @@ class DFNRenderer:
         """
         try:
             plotter.show_axes()
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.error(f"add_coordinate_axes failed: {e}", exc_info=True)
 
     def add_legend(self, plotter, items: dict) -> None:
         """Add a color legend to the plotter.
@@ -474,5 +519,5 @@ class DFNRenderer:
                 legend_entries.append([label, color])
             if legend_entries:
                 plotter.add_legend(legend_entries)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.error(f"add_legend failed: {e}", exc_info=True)

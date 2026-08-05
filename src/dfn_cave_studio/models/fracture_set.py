@@ -109,9 +109,15 @@ class SizeDistribution(BaseModel):
             # Equivalent to truncated power-law with clamping.
             D = self.power_law_exponent
             if abs(D - 1.0) < 1e-10:
-                return (r_max - r_min) / math.log(r_max / r_min)
+                # D=1 truncated: E[R] = r_min*r_max*ln(r_max/r_min) / (r_max - r_min)
+                return r_min * r_max * math.log(r_max / r_min) / (r_max - r_min)
             elif abs(D - 2.0) < 1e-10:
-                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
+                # General formula applied at D=2: 2*(r_min⁻¹-r_max⁻¹)/(r_min⁻²-r_max⁻²)
+                num2 = r_min ** (-1.0) - r_max ** (-1.0)
+                den2 = r_min ** (-2.0) - r_max ** (-2.0)
+                if abs(den2) < 1e-15:
+                    return r_min
+                return 2.0 * num2 / den2
             elif abs(D - 3.0) < 1e-10:
                 # D=3 truncated power-law: E[R] = 1.5 * r_min*r_max*(r_max+r_min) / (r_max² + r_min*r_max + r_min²)
                 return 1.5 * r_min * r_max * (r_max + r_min) / (r_max**2 + r_min * r_max + r_min**2)
@@ -126,9 +132,15 @@ class SizeDistribution(BaseModel):
         elif self.distribution_type == SizeDistributionType.TRUNCATED_POWER_LAW:
             D = self.power_law_exponent
             if abs(D - 1.0) < 1e-10:
-                return (r_max - r_min) / math.log(r_max / r_min)
+                # D=1 truncated: E[R] = r_min*r_max*ln(r_max/r_min) / (r_max - r_min)
+                return r_min * r_max * math.log(r_max / r_min) / (r_max - r_min)
             elif abs(D - 2.0) < 1e-10:
-                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
+                # General formula applied at D=2: 2*(r_min⁻¹-r_max⁻¹)/(r_min⁻²-r_max⁻²)
+                num2 = r_min ** (-1.0) - r_max ** (-1.0)
+                den2 = r_min ** (-2.0) - r_max ** (-2.0)
+                if abs(den2) < 1e-15:
+                    return r_min
+                return 2.0 * num2 / den2
             elif abs(D - 3.0) < 1e-10:
                 # D=3 truncated power-law: E[R] = 1.5 * r_min*r_max*(r_max+r_min) / (r_max² + r_min*r_max + r_min²)
                 return 1.5 * r_min * r_max * (r_max + r_min) / (r_max**2 + r_min * r_max + r_min**2)
@@ -140,11 +152,19 @@ class SizeDistribution(BaseModel):
                 return (D / (D - 1.0)) * num / den
 
         elif self.distribution_type == SizeDistributionType.EXPONENTIAL:
-            # Generator: exponential(mean) with mean = (min+max)/2, clipped to [min, max].
-            # For a truncated exponential, E[R] ≈ (min+max)/2 when the truncation
-            # window captures most of the distribution mass.
-            mean_r = (r_min + r_max) / 2.0
-            return mean_r
+            # Truncated exponential. λ = 2/(min+max).
+            # E[R] = ∫ r·λ·e^{-λr} / (e^{-λr_min} - e^{-λr_max}) dr
+            # = [B(r_min) - B(r_max)] / [e^{-λr_min} - e^{-λr_max}]
+            # where B(r) = (r + 1/λ)·e^{-λr}
+            lam = 2.0 / (r_min + r_max) if (r_min + r_max) > 0 else 1.0
+            exp_min = math.exp(-lam * r_min)
+            exp_max = math.exp(-lam * r_max)
+            denom = exp_min - exp_max
+            if abs(denom) < 1e-15:
+                return (r_min + r_max) / 2.0
+            B_min = (r_min + 1.0 / lam) * exp_min
+            B_max = (r_max + 1.0 / lam) * exp_max
+            return (B_min - B_max) / denom
 
         else:
             return (r_min + r_max) / 2.0
@@ -188,7 +208,10 @@ class SizeDistribution(BaseModel):
                 # D=3 truncated: E[R²] = 3*r_min²*r_max² / (r_max² + r_min*r_max + r_min²)
                 return 3.0 * r_min**2 * r_max**2 / (r_max**2 + r_min * r_max + r_min**2)
             elif D <= 2.0:
-                return r_max ** 2
+                # For D ≤ 2 the untruncated power-law diverges, but the
+                # truncated distribution has finite moments.  Use the general
+                # formula below instead of a shortcut.
+                pass
             # General D truncated: E[R²] = D/(D-2) * (r_min^{2-D} - r_max^{2-D}) / (r_min^{-D} - r_max^{-D})
             num = r_min ** (2.0 - D) - r_max ** (2.0 - D)
             den = r_min ** (-D) - r_max ** (-D)
@@ -205,7 +228,7 @@ class SizeDistribution(BaseModel):
             elif abs(D - 3.0) < 1e-10:
                 return 3.0 * r_min**2 * r_max**2 / (r_max**2 + r_min * r_max + r_min**2)
             elif D <= 2.0:
-                return r_max ** 2
+                pass  # fall through to general formula below
             num = r_min ** (2.0 - D) - r_max ** (2.0 - D)
             den = r_min ** (-D) - r_max ** (-D)
             if abs(den) < 1e-15:
@@ -213,11 +236,22 @@ class SizeDistribution(BaseModel):
             return (D / (D - 2.0)) * num / den
 
         elif dist_type == SizeDistributionType.EXPONENTIAL:
-            mean_r = (r_min + r_max) / 2.0
-            # For a truncated exponential with mean λ = 1/mean_r,
-            # untruncated E[R²] = 2/λ² = 2·(E[R])².
-            # This is an approximation; the truncation modifies the moments slightly.
-            return 2.0 * mean_r ** 2
+            # Truncated exponential. λ = 2/(min+max).
+            # E[R²] = ∫ r²·λ·e^{-λr} / (e^{-λr_min} - e^{-λr_max}) dr from r_min to r_max
+            # Closed form:
+            #   ∫ r²·λ·e^{-λr} = -(r² + 2r/λ + 2/λ²)·e^{-λr}
+            #   E[R²] = [A(r_min) - A(r_max)] / [e^{-λr_min} - e^{-λr_max}]
+            #   where A(r) = (r² + 2r/λ + 2/λ²)·e^{-λr}
+            lam = 2.0 / (r_min + r_max) if (r_min + r_max) > 0 else 1.0
+            exp_min = math.exp(-lam * r_min)
+            exp_max = math.exp(-lam * r_max)
+            denom = exp_min - exp_max
+            if abs(denom) < 1e-15:
+                mean_r = (r_min + r_max) / 2.0
+                return mean_r ** 2
+            A_min = (r_min**2 + 2.0 * r_min / lam + 2.0 / lam**2) * exp_min
+            A_max = (r_max**2 + 2.0 * r_max / lam + 2.0 / lam**2) * exp_max
+            return (A_min - A_max) / denom
 
         else:
             mean_r = (r_min + r_max) / 2.0

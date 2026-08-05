@@ -272,7 +272,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.6.3-M6</p>"
+                "<p>Version 0.6.4-M6</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.6.3-M6 started")
+        self.log_message("DFN Cave Studio v0.6.4-M6 started")
         self.log_message(f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}")
         if HAS_PYVISTAQT:
             self.log_message("3D Visualization: Available (PyVistaQt)")
@@ -445,22 +445,26 @@ class MainWindow(QMainWindow):
             self.log_error(f"Failed to create project: {e}")
 
     def _on_open_project(self) -> None:
-        """Open an existing project."""
+        """Open an existing project (.dfnproj or legacy .dfncs)."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", "",
-            "DFN Cave Studio Projects (*.dfncs);;JSON Files (*.json);;All Files (*)",
+            "DFN Cave Studio Projects (*.dfnproj *.dfncs);;"
+            "ZIP Projects (*.dfnproj);;"
+            "Legacy JSON Projects (*.dfncs);;"
+            "All Files (*)",
         )
         if not path:
             return
 
         self.log_message(f"Opening project: {path}")
         try:
-            project = self._project_store.open(Path(path))
+            project = self._load_project(Path(path))
             self._recent_manager.add(Path(path), project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {project.metadata.name}")
             self.set_status(f"Loaded: {Path(path).name}")
             self._update_project_tree_from_project(project)
             self._update_recent_menu()
+            self._restore_project_to_ui(project)
             self.log_message(f"Project '{project.metadata.name}' loaded ({project.model_volume:.0f} m³)")
         except Exception as e:
             self.log_error(f"Failed to open project: {e}")
@@ -483,19 +487,21 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Save Error", str(e))
 
     def _on_save_project_as(self) -> None:
-        """Save project to a new location."""
+        """Save project to a new location (.dfnproj or .dfncs)."""
         if not self._project_store.has_project:
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project As", "untitled.dfncs",
-            "DFN Cave Studio Projects (*.dfncs);;All Files (*)",
+            self, "Save Project As", "untitled.dfnproj",
+            "DFN Cave Studio ZIP Projects (*.dfnproj);;"
+            "Legacy JSON Projects (*.dfncs);;"
+            "All Files (*)",
         )
         if not path:
             return
 
         try:
-            saved_path = self._project_store.save_as(Path(path))
+            saved_path = self._save_project_to(Path(path))
             self._recent_manager.add(saved_path, self._project_store.current_project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
             self.set_status(f"Saved: {saved_path.name}")
@@ -573,6 +579,7 @@ class MainWindow(QMainWindow):
             joint_sets=project.joint_sets,
             model_volume=project.model_bounds.volume,
             parent=self,
+            borehole_collection=project.borehole_collection,
         )
         if dlg.exec() == JointSetManagerDialog.DialogCode.Accepted:
             project.joint_sets = dlg.get_joint_sets()
@@ -634,26 +641,80 @@ class MainWindow(QMainWindow):
                         self.log_error(f"3D rendering failed: {e}")
 
             if "connectivity" in results:
-                stats = results["connectivity"].statistics()
+                conn = results["connectivity"]
+                stats = conn.statistics()
+                project.connectivity_results = stats
+                project.connectivity_clusters = conn.component_labels().tolist()
                 self.log_message(
                     f"Connectivity: {stats.get('n_edges', '?')} edges, "
                     f"{stats.get('n_components', '?')} clusters, "
                     f"largest={stats.get('largest_component_size', '?')}"
                 )
+                # Percolation detail
+                b = project.model_bounds
+                percolation = conn.percolation_detail(
+                    (b.x_min, b.x_max), (b.y_min, b.y_max), (b.z_min, b.z_max)
+                )
+                if percolation:
+                    project.connectivity_results["percolation"] = percolation
+
+            if "voxel_grid" in results and "dfn" in results:
+                from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+                try:
+                    voxel_data = ZipProjectStore.extract_voxel_p32_results(
+                        results["voxel_grid"],
+                        project.connectivity_clusters,
+                    )
+                    project.voxel_p32_results = voxel_data
+                    self.log_message(f"Voxel P32: {len(voxel_data)} active cells")
+                except Exception as e:
+                    self.log_warning(f"Voxel data extraction: {e}")
+
+                # Render voxel P32
+                if self._plotter and project.voxel_p32_results:
+                    try:
+                        if self._dfn_renderer is None:
+                            from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                            self._dfn_renderer = DFNRenderer()
+                        self._dfn_renderer.render_voxel_p32(
+                            project.voxel_p32_results,
+                            project.model_bounds,
+                            project.voxel_config,
+                            self._plotter,
+                        )
+                    except Exception as e:
+                        self.log_error(f"Voxel rendering failed: {e}")
+
+            # Render boreholes and observations
+            if self._plotter and project.borehole_collection:
+                try:
+                    if self._dfn_renderer is None:
+                        from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                        self._dfn_renderer = DFNRenderer()
+                    self._dfn_renderer.render_boreholes(project.borehole_collection, self._plotter)
+                    self._dfn_renderer.render_fracture_observations(project.borehole_collection, self._plotter)
+                except Exception as e:
+                    self.log_error(f"Borehole rendering failed: {e}")
+
+            # Render model bounds
+            if self._plotter:
+                self._render_bounds_box()
 
             self._update_project_tree_from_project(project)
 
     def _render_bounds_box(self) -> None:
-        """Render model boundary wireframe box."""
+        """Render model boundary wireframe box using DFNRenderer."""
         if not self._plotter or not self._project_store.has_project:
             return
         try:
-            import pyvista as pv
+            if self._dfn_renderer is None:
+                from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                self._dfn_renderer = DFNRenderer()
             b = self._project_store.current_project.model_bounds
-            box = pv.Box(bounds=(b.x_min, b.x_max, b.y_min, b.y_max, b.z_min, b.z_max))
-            self._plotter.add_mesh(box, color="gray", style="wireframe", name="ModelBounds")
-        except Exception:
-            pass
+            self._dfn_renderer.render_model_bounds(b, self._plotter)
+            self._dfn_renderer.add_coordinate_axes(self._plotter)
+        except Exception as e:
+            self.log_error(f"Bounds rendering failed: {e}")
 
     def _on_domain_manager(self) -> None:
         """Open domain manager."""
@@ -784,7 +845,7 @@ class MainWindow(QMainWindow):
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.6.3-M6</p>"
+            "<p>Version 0.6.4-M6</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"
@@ -844,6 +905,70 @@ class MainWindow(QMainWindow):
         if self._project_store.tick_auto_save():
             self.log_message("Auto-saved project")
             self.set_status("Auto-saved")
+
+    def _load_project(self, path: Path):
+        """Load project, auto-detecting .dfnproj vs .dfncs format."""
+        suffix = path.suffix.lower()
+        if suffix == '.dfnproj':
+            from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+            zps = ZipProjectStore()
+            return zps.load(path)
+        else:
+            return self._project_store.open(path)
+
+    def _save_project_to(self, path: Path) -> Path:
+        """Save project, auto-detecting .dfnproj vs .dfncs format."""
+        project = self._project_store.current_project
+        suffix = path.suffix.lower()
+        if suffix == '.dfnproj':
+            from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+            zps = ZipProjectStore()
+            zps.save(project, path)
+            return path
+        else:
+            return self._project_store.save_as(path)
+
+    def _restore_project_to_ui(self, project) -> None:
+        """Restore project state to UI: 3D rendering of stored data."""
+        if not self._plotter:
+            return
+        try:
+            if self._dfn_renderer is None:
+                from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                self._dfn_renderer = DFNRenderer()
+
+            # Render boreholes
+            if project.borehole_collection:
+                self._dfn_renderer.render_boreholes(project.borehole_collection, self._plotter)
+                self._dfn_renderer.render_fracture_observations(project.borehole_collection, self._plotter)
+
+            # Render DFN
+            if project.dfn_realizations:
+                last = project.dfn_realizations[-1]
+                self._dfn_renderer.render_to_plotter(self._plotter, last, project.joint_sets)
+                # Connectivity cluster coloring
+                if project.connectivity_clusters:
+                    labels = project.connectivity_clusters
+                    # Use cluster labels to color fractures
+                    from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+                    # Reset and re-render with cluster colors via DFNRenderer
+                    pass
+
+            # Render voxel P32
+            if project.voxel_p32_results:
+                self._dfn_renderer.render_voxel_p32(
+                    project.voxel_p32_results,
+                    project.model_bounds,
+                    project.voxel_config,
+                    self._plotter,
+                )
+
+            # Render model bounds and axes
+            self._dfn_renderer.render_model_bounds(project.model_bounds, self._plotter)
+            self._dfn_renderer.add_coordinate_axes(self._plotter)
+            self._plotter.reset_camera()
+        except Exception as e:
+            self.log_error(f"Failed to restore project to UI: {e}")
 
     def _update_project_tree_from_project(self, project) -> None:
         """Refresh the project tree to reflect the current project."""

@@ -414,11 +414,17 @@ class ConnectivityGraph:
         #    plane must overlap the face rectangle.
 
         if proj_radius < 1e-12:
-            # Disk is parallel to boundary plane (edge-on view).
-            # Only the center's projection matters.
+            # Disk is coplanar (parallel) with boundary plane.
+            # Check circle-rectangle intersection, not just center-in-rectangle.
+            # The disk may overlap the face even when its center is outside the
+            # rectangle (centre-outside-but-edge-overlaps case).
             d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
-            return (face_range_a[0] - 1e-6 <= center[d1] <= face_range_a[1] + 1e-6 and
-                    face_range_b[0] - 1e-6 <= center[d2] <= face_range_b[1] + 1e-6)
+            c_u, c_v = float(center[d1]), float(center[d2])
+            # Closest point on rectangle to circle center
+            closest_u = max(face_range_a[0], min(c_u, face_range_a[1]))
+            closest_v = max(face_range_b[0], min(c_v, face_range_b[1]))
+            dist_sq = (c_u - closest_u) ** 2 + (c_v - closest_v) ** 2
+            return dist_sq <= r * r + 1e-6
 
         # Compute the intersection line between the disk plane and the boundary
         # plane, expressed in the face-plane coordinate system.

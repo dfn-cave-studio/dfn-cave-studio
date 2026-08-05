@@ -16,6 +16,7 @@ Format detection is automatic based on file extension.
 from __future__ import annotations
 
 import json
+import math
 import zipfile
 import io
 from datetime import datetime, timezone
@@ -49,7 +50,7 @@ class ZipProjectStore:
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.6.3")
+            zf.writestr("metadata/version.txt", "0.6.4")
             zf.writestr("metadata/created_at.txt",
                         datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
@@ -92,9 +93,17 @@ class ZipProjectStore:
 
             # Connectivity
             conn = getattr(project, "connectivity_results", None)
+            clusters = getattr(project, "connectivity_clusters", None)
             if conn is not None:
+                conn_out = self._serialize_connectivity(conn)
+                # Embed cluster labels if available
+                if clusters is not None:
+                    if isinstance(clusters, (list, tuple)):
+                        conn_out["component_labels"] = [int(c) for c in clusters]
+                    elif isinstance(clusters, np.ndarray):
+                        conn_out["component_labels"] = clusters.tolist()
                 zf.writestr("results/connectivity.json",
-                            json.dumps(self._serialize_connectivity(conn), indent=2, default=str))
+                            json.dumps(conn_out, indent=2, default=str))
 
             # Summary
             summary = self._build_summary(project)
@@ -158,6 +167,9 @@ class ZipProjectStore:
             if "results/connectivity.json" in zf.namelist():
                 conn_data = json.loads(zf.read("results/connectivity.json").decode("utf-8"))
                 project.connectivity_results = conn_data
+                # Restore connectivity_clusters from percolation/cluster data
+                if "component_labels" in conn_data:
+                    project.connectivity_clusters = conn_data["component_labels"]
 
         return project
 
@@ -429,17 +441,117 @@ class ZipProjectStore:
         return result
 
     def _serialize_connectivity(self, conn: Any) -> dict:
-        """Serialize connectivity results to JSON-safe dict."""
+        """Serialize connectivity results to JSON-safe dict.
+
+        Saves: component labels per fracture, edge list, percolation flags,
+        statistics, and graph metadata.  Uses fracture indices (int) as
+        node IDs for compact storage; fracture_id strings are kept in the
+        DFN realization file.
+        """
         if isinstance(conn, dict):
-            return {k: v for k, v in conn.items()
-                    if isinstance(v, (int, float, str, bool, list, dict, type(None)))}
+            result = {}
+            for k, v in conn.items():
+                if isinstance(v, (int, float, str, bool, list, type(None))):
+                    result[k] = v
+                elif isinstance(v, dict):
+                    result[k] = {str(k2): v2 for k2, v2 in v.items()
+                                 if isinstance(v2, (int, float, str, bool, list, dict, type(None)))}
+                elif isinstance(v, (np.integer,)):
+                    result[k] = int(v)
+                elif isinstance(v, (np.floating,)):
+                    result[k] = float(v)
+                elif isinstance(v, np.ndarray):
+                    result[k] = v.tolist()
+                else:
+                    result[k] = str(v)
+            return result
+        if isinstance(conn, (list, tuple)):
+            return [self._serialize_connectivity(c) if isinstance(c, dict) else
+                    int(c) if isinstance(c, (np.integer,)) else
+                    float(c) if isinstance(c, (np.floating,)) else
+                    c.tolist() if isinstance(c, np.ndarray) else c
+                    for c in conn]
         return {"raw": str(conn)}
+
+    @staticmethod
+    def extract_voxel_p32_results(grid, connectivity_labels=None) -> list:
+        """Extract real per-voxel P32 results from a VoxelGrid.
+
+        Returns a list of dicts suitable for JSON serialization:
+          [{i, j, k, x, y, z, local_p32, fracture_area, fracture_count,
+            connectivity_cluster, cell_size}, ...]
+
+        Args:
+            grid: VoxelGrid with computed intersection attributes.
+            connectivity_labels: Optional list/array of cluster labels per voxel.
+
+        Returns:
+            List of dicts, one per active voxel with fracture data.
+        """
+        results = []
+        active_voxels = list(grid.iter_active_voxels())
+        for ix, iy, iz in active_voxels:
+            # Read per-voxel attributes using VoxelGrid.get_voxel
+            fc_val = grid.get_voxel(ix, iy, iz, "fracture_count")
+            fa_val = grid.get_voxel(ix, iy, iz, "fracture_area")  # stored as mm²*1e6
+            lp_val = grid.get_voxel(ix, iy, iz, "local_p32")  # stored as milli-P32
+
+            fracture_count = int(fc_val) if fc_val is not None else 0
+            fracture_area_m2 = float(fa_val) / 1e6 if fa_val is not None else 0.0
+            local_p32 = float(lp_val) / 1000.0 if lp_val is not None else 0.0
+
+            if fracture_count == 0 and local_p32 == 0.0:
+                continue  # Skip empty voxels
+
+            entry = {
+                "i": int(ix), "j": int(iy), "k": int(iz),
+                "x": float(grid.x_min + ix * grid.cell_size_x + grid.cell_size_x / 2),
+                "y": float(grid.y_min + iy * grid.cell_size_y + grid.cell_size_y / 2),
+                "z": float(grid.z_min + iz * grid.cell_size_z + grid.cell_size_z / 2),
+                "local_p32": local_p32,
+                "fracture_area": fracture_area_m2,
+                "fracture_count": fracture_count,
+                "connectivity_cluster": -1,
+                "dx": float(grid.cell_size_x),
+                "dy": float(grid.cell_size_y),
+                "dz": float(grid.cell_size_z),
+            }
+            results.append(entry)
+
+        # Add grid-level metadata as first entry
+        csx = float(getattr(grid, 'cell_size_x', 1.0))
+        csy = float(getattr(grid, 'cell_size_y', 1.0))
+        csz = float(getattr(grid, 'cell_size_z', 1.0))
+        gx_min = float(getattr(grid, 'x_min', 0.0))
+        gy_min = float(getattr(grid, 'y_min', 0.0))
+        gz_min = float(getattr(grid, 'z_min', 0.0))
+        nx = int(getattr(grid, 'nx', 0))
+        ny = int(getattr(grid, 'ny', 0))
+        nz = int(getattr(grid, 'nz', 0))
+        gx_max = gx_min + nx * csx
+        gy_max = gy_min + ny * csy
+        gz_max = gz_min + nz * csz
+        results.insert(0, {
+            "i": -1, "j": -1, "k": -1,
+            "x": -1, "y": -1, "z": -1,
+            "local_p32": -1.0,
+            "fracture_area": -1.0,
+            "fracture_count": -1,
+            "connectivity_cluster": -1,
+            "dx": csx, "dy": csy, "dz": csz,
+            "x_min": gx_min, "x_max": gx_max,
+            "y_min": gy_min, "y_max": gy_max,
+            "z_min": gz_min, "z_max": gz_max,
+            "nx": nx, "ny": ny, "nz": nz,
+            "_meta": "grid_metadata",
+        })
+        return results
 
     def _build_summary(self, project) -> dict:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.6.3",
+            "version": "0.6.4",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,

@@ -295,14 +295,17 @@ class DFNGenerator:
             radii = np.exp(ln_radii)
 
         elif dist_type == SizeDistributionType.POWER_LAW:
-            # Power-law: P(R > r) = (r/r_min)^(-D) for r ∈ [r_min, r_max]
+            # Truncated power-law using inverse CDF sampling.
+            # Uses the conditional distribution P(R | r_min ≤ R ≤ r_max),
+            # matching the analytic truncated moments in fracture_set.py.
             D = sd.power_law_exponent
+            r_min, r_max = sd.min_radius, sd.max_radius
+            c = r_max ** (-D) - r_min ** (-D)
             u = rng.random(n)
-            # Inverse CDF: r = r_min * u^(-1/D)
-            radii = sd.min_radius * u ** (-1.0 / D)
+            radii = (-u * c + r_max ** (-D)) ** (-1.0 / D)
 
         elif dist_type == SizeDistributionType.TRUNCATED_POWER_LAW:
-            # Truncated power-law between [r_min, r_max]
+            # Same truncated inverse CDF as POWER_LAW (both use conditional distribution).
             D = sd.power_law_exponent
             r_min, r_max = sd.min_radius, sd.max_radius
             c = r_max ** (-D) - r_min ** (-D)
@@ -310,16 +313,23 @@ class DFNGenerator:
             radii = (-u * c + r_max ** (-D)) ** (-1.0 / D)
 
         elif dist_type == SizeDistributionType.EXPONENTIAL:
-            # Exponential(λ), where λ = 1/mean, mean = (min+max)/2
-            mean_r = (sd.min_radius + sd.max_radius) / 2.0
-            radii = rng.exponential(mean_r, n)
+            # Truncated exponential using inverse CDF.
+            # F(r) = (1 - exp(-λr)) / (exp(-λ·r_min) - exp(-λ·r_max))
+            # where λ = 2/(r_min + r_max).
+            r_min, r_max = sd.min_radius, sd.max_radius
+            lam = 2.0 / (r_min + r_max) if (r_min + r_max) > 0 else 1.0
+            exp_min = math.exp(-lam * r_min)
+            exp_max = math.exp(-lam * r_max)
+            norm = exp_min - exp_max
+            if norm < 1e-15:
+                radii = np.full(n, (r_min + r_max) / 2.0)
+            else:
+                u = rng.random(n)
+                radii = -np.log(exp_min - u * norm) / lam
 
         else:
             # Default fallback
             radii = rng.uniform(sd.min_radius, sd.max_radius, n)
-
-        # Clamp to [min_radius, max_radius]
-        radii = np.clip(radii, sd.min_radius, sd.max_radius)
 
         return radii
 

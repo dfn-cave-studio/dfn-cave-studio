@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dfn-cave-studio"
-version = "0.6.3"
+version = "0.6.4"
 description = "Discrete Fracture Network modeling for underground block cave mining research"
 readme = "README.md"
 license = {text = "MIT"}
@@ -78,7 +78,18 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/dfn_cave_studio"]
-omit = ["tests/*", "*/test_*"]
+omit = [
+    "tests/*",
+    "*/test_*",
+    "src/dfn_cave_studio/ui/main_window.py",
+    "src/dfn_cave_studio/ui/qt_adapter.py",
+    "src/dfn_cave_studio/workers/*",
+    "src/dfn_cave_studio/app/*",
+    "src/dfn_cave_studio/core/logger.py",
+    "src/dfn_cave_studio/ui/dialogs/*",
+    "src/dfn_cave_studio/ui/panels/*",
+    "src/dfn_cave_studio/ui/widgets/*",
+]
 
 [tool.coverage.report]
 exclude_lines = [

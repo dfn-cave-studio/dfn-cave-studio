@@ -80,6 +80,7 @@ STANDARD_FRACTURE_FIELDS = {
     "filling": ["filling", "infill", "fill", "filling_type"],
     "fracture_type": ["fracture_type", "type", "frac_type", "discontinuity_type"],
     "confidence": ["confidence", "certainty", "quality"],
+    "set_id": ["set_id", "set", "joint_set_id", "family", "fracture_set_id"],
 }
 
 STANDARD_RQD_FIELDS = {
@@ -184,12 +185,18 @@ class BoreholeImporter:
                 else:
                     self._warnings.append(str(ve))
 
+            # Count fracture observation rows
+            frac_imported = getattr(self, '_rows_fractures_imported', 0)
+            frac_skipped = getattr(self, '_rows_fractures_skipped', 0)
+            total_rows = len(boreholes) + frac_imported
+
             return ImportResult(
                 success=len(self._errors) == 0,
                 collection=collection,
                 errors=self._errors,
                 warnings=self._warnings,
-                rows_imported=len(boreholes),
+                rows_imported=total_rows,
+                rows_skipped=frac_skipped,
             )
 
         except Exception as e:
@@ -432,8 +439,15 @@ class BoreholeImporter:
                 bh_map[bh_id].survey = BoreholeSurvey(stations=stations)
 
     def _import_fractures(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
-        """Import fracture observations with mandatory field enforcement."""
+        """Import fracture observations with mandatory field enforcement.
+
+        Reads set_id from CSV, validates as integer, and attaches observations
+        to the correct borehole.  Unknown borehole IDs are reported as errors
+        (not silently dropped).
+        """
         bh_map = {bh.borehole_id: bh for bh in boreholes}
+        rows_imported = 0
+        rows_skipped = 0
 
         for idx, row in df.iterrows():
             try:
@@ -441,9 +455,39 @@ class BoreholeImporter:
                     row, self.MANDATORY_FRACTURE_FIELDS, idx, "fracture"
                 )
                 if missing:
+                    rows_skipped += 1
                     continue
 
                 bh_id = str(row["borehole_id"])
+                if bh_id not in bh_map:
+                    self._errors.append(
+                        f"Row {idx}: unknown borehole ID '{bh_id}' — "
+                        f"no matching collar record found. Observation skipped."
+                    )
+                    rows_skipped += 1
+                    continue
+
+                # Parse and validate set_id
+                set_id = None
+                raw_set_id = row.get("set_id")
+                if raw_set_id is not None and (not isinstance(raw_set_id, float) or not pd.isna(raw_set_id)):
+                    try:
+                        set_id_float = float(raw_set_id)
+                        set_id_int = int(set_id_float)
+                        if abs(set_id_float - set_id_int) > 1e-6:
+                            self._errors.append(
+                                f"Row {idx}: set_id '{raw_set_id}' is not an integer"
+                            )
+                            rows_skipped += 1
+                            continue
+                        set_id = set_id_int
+                    except (ValueError, TypeError):
+                        self._errors.append(
+                            f"Row {idx}: set_id '{raw_set_id}' is not a valid integer"
+                        )
+                        rows_skipped += 1
+                        continue
+
                 obs = FractureObservation(
                     borehole_id=bh_id,
                     measured_depth=float(row["measured_depth"]),
@@ -453,11 +497,16 @@ class BoreholeImporter:
                     filling=str(row.get("filling", "")) if pd.notna(row.get("filling")) else None,
                     fracture_type=FractureType(str(row.get("fracture_type", "joint")).lower()),
                     confidence=float(row.get("confidence", 1.0)),
+                    set_id=set_id,
                 )
-                if bh_id in bh_map:
-                    bh_map[bh_id].fracture_observations.append(obs)
+                bh_map[bh_id].fracture_observations.append(obs)
+                rows_imported += 1
             except Exception as e:
                 self._warnings.append(f"Row {idx}: fracture import — {e}")
+                rows_skipped += 1
+
+        self._rows_fractures_imported = rows_imported
+        self._rows_fractures_skipped = rows_skipped
 
     def _import_rqd(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
         """Import RQD intervals with mandatory field enforcement."""

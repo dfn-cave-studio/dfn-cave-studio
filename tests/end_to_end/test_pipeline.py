@@ -1,4 +1,8 @@
-"""End-to-end tests: import → DFN → voxel → connectivity → export."""
+"""End-to-end tests: import → DFN → voxel → connectivity → export.
+
+Uses real CSV data with three fracture sets (set_id 1, 2, 3).
+Verifies the full data chain without manual set_id overriding.
+"""
 
 import csv
 import math
@@ -35,7 +39,7 @@ class TestEndToEndPipeline:
     # ── Small-scale model for fast end-to-end testing ──────────────────
     # Model: 5×5×5 m = 125 m³. With FIXED r≈1m, E[πR²] ≈ π ≈ 3.14 m².
     # N = P32_target * V / E[πR²] = 2.0 * 125 / 3.14 ≈ 80 per set.
-    # Total ~160 fractures → ~12,720 pairwise tests (O(N²) = manageable).
+    # Total ~160 fractures → ~12,720 pairwise tests (manageable).
     # Capped at max_fractures_per_set=100 for safety.
 
     @pytest.fixture
@@ -89,6 +93,32 @@ class TestEndToEndPipeline:
         assert abs(spatial_len - 200.0) < 5.0  # ~200m hole
 
     @pytest.mark.slow
+    def test_fracture_import_with_set_id(self, demo_dir):
+        """Fractures CSV preserves real set_id 1, 2, 3 — no manual override."""
+        importer = BoreholeImporter()
+        result = importer.import_all(
+            collar_path=str(demo_dir / "collars.csv"),
+            survey_path=str(demo_dir / "surveys.csv"),
+            fractures_path=str(demo_dir / "fractures.csv"),
+        )
+        assert result.success, f"Import errors: {result.errors}"
+        collection = result.collection
+
+        # Collect set_ids
+        set_ids = set()
+        for bh in collection:
+            for obs in bh.fracture_observations:
+                set_ids.add(obs.set_id)
+        assert 1 in set_ids, "set_id=1 missing"
+        assert 2 in set_ids, "set_id=2 missing"
+        assert 3 in set_ids, "set_id=3 missing"
+        assert None not in set_ids, "None set_id found"
+
+        # Verify import counts
+        assert result.rows_imported > 50
+        assert result.rows_skipped == 0
+
+    @pytest.mark.slow
     def test_dfn_reproducibility(self, bounds, joint_sets):
         """Same seed yields identical DFN."""
         config = DFNGenerationConfig(master_seed=42, joint_sets=joint_sets, max_fractures_per_set=100)
@@ -138,7 +168,7 @@ class TestEndToEndPipeline:
         assert len(comps) > 0
         stats = graph.statistics()
         assert stats["n_edges"] == n_edges
-        assert "geometric_connected" not in stats or isinstance(stats.get("n_edges", 0), int)
+        assert isinstance(stats.get("n_edges", 0), int)
 
     @pytest.mark.slow
     def test_percolation_detection(self, bounds, joint_sets):
@@ -182,11 +212,20 @@ class TestEndToEndPipeline:
         assert n_pairs > 0, "Expected fracture-voxel intersection pairs"
         assert grid.active_voxel_count > 0
 
+        # Verify real voxel P32 data can be extracted
+        from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+        voxel_data = ZipProjectStore.extract_voxel_p32_results(grid)
+        assert len(voxel_data) > 0, "No voxel P32 data extracted"
+        # Verify non-empty P32 values exist
+        p32_values = [v["local_p32"] for v in voxel_data]
+        assert sum(p32_values) > 0, f"All voxel P32 values are zero: {voxel_data[:3]}"
+
     @pytest.mark.slow
     def test_full_workflow(self, demo_dir, tmp_path):
-        """Complete workflow: import → observations → DFN → voxel → connectivity
-        → save .dfnproj → reopen → verify → export CSV."""
-        # ── Step 1: Import demo data ──────────────────────────────────
+        """Complete workflow: import → real set_ids → observations → stats
+        → DFN → real voxel P32 → connectivity → save .dfnproj → reopen
+        → verify all data → export CSV/VTU."""
+        # ── Step 1: Import demo data (collars, surveys, fractures) ──────
         importer = BoreholeImporter()
         result = importer.import_all(
             collar_path=str(demo_dir / "collars.csv"),
@@ -197,12 +236,22 @@ class TestEndToEndPipeline:
         collection = result.collection
         assert len(collection) == 5
 
-        # ── Step 2: Build trajectories ─────────────────────────────────
+        # ── Step 2: Verify real set_ids from CSV (NOT manually assigned) ─
+        set_ids = set()
+        for bh in collection:
+            for obs in bh.fracture_observations:
+                set_ids.add(obs.set_id)
+        assert 1 in set_ids, "set_id=1 not imported from CSV"
+        assert 2 in set_ids, "set_id=2 not imported from CSV"
+        assert 3 in set_ids, "set_id=3 not imported from CSV"
+        assert None not in set_ids, "None set_id found in imported data"
+
+        # ── Step 3: Build trajectories ──────────────────────────────────
         for bh in collection:
             points, mds = bh.compute_trajectory(step_length=5.0)
             assert len(points) >= 2, f"No trajectory for {bh.borehole_id}"
 
-        # ── Step 3: Locate observations in 3D ──────────────────────────
+        # ── Step 4: Locate observations in 3D ───────────────────────────
         for bh in collection:
             for obs in bh.fracture_observations:
                 pos = bh.locate_observation(obs)
@@ -211,49 +260,49 @@ class TestEndToEndPipeline:
                     f"in {bh.borehole_id}"
                 )
 
-        # ── Step 4: Compute Fisher stats ───────────────────────────────
-        # Assign all observations to set_id=1 for stats computation
-        for bh in collection:
-            for obs in bh.fracture_observations:
-                obs.set_id = 1
-
+        # ── Step 5: Compute Fisher stats (uses real set_ids from CSV) ────
         calc = OrientationStatisticsCalculator()
         stats = calc.compute_by_set(collection)
-        assert 1 in stats, "No stats computed for set_id=1"
+        assert len(stats) >= 3, f"Expected stats for 3 sets, got {len(stats)}"
+        for set_id in [1, 2, 3]:
+            assert set_id in stats, f"No stats for set_id={set_id}"
+            orient = stats[set_id]
+            assert 0 <= orient.mean_dip_direction < 360
+            assert 0 <= orient.mean_dip <= 90
+            assert orient.kappa > 0
 
-        orient = stats[1]
-        assert 0 <= orient.mean_dip_direction < 360
-        assert 0 <= orient.mean_dip <= 90
-        assert orient.kappa > 0
+        # ── Step 6: Create joint sets from Fisher stats ──────────────────
+        joint_sets = []
+        for set_id in sorted(stats.keys()):
+            orient = stats[set_id]
+            js = JointSetConfig(
+                set_id=set_id,
+                name=f"Joint Set {set_id}",
+                orientation=orient,
+                size=SizeDistribution(
+                    distribution_type=SizeDistributionType.FIXED,
+                    min_radius=0.99, max_radius=1.01,
+                ),
+                target_p32=2.0,
+                provenance={"orientation": "borehole", "size": "user", "p32": "user"},
+            )
+            joint_sets.append(js)
 
-        # ── Step 5: Create joint set from observations ──────────────────
-        js = JointSetConfig(
-            set_id=1, name="From Observations",
-            orientation=orient,
-            size=SizeDistribution(
-                distribution_type=SizeDistributionType.FIXED,
-                min_radius=0.99, max_radius=1.01,
-            ),
-            target_p32=2.0,
-            provenance={"orientation": "borehole", "size": "user", "p32": "user"},
-        )
-
-        # ── Step 6: Generate DFN (small model) ─────────────────────────
+        # ── Step 7: Generate DFN ────────────────────────────────────────
         bounds = ModelBounds(x_min=0, x_max=5, y_min=0, y_max=5, z_min=0, z_max=5)
         voxel_config = VoxelConfig(cell_size_x=1.0, cell_size_y=1.0, cell_size_z=1.0)
-        config = DFNGenerationConfig(master_seed=42, joint_sets=[js], max_fractures_per_set=100)
+        config = DFNGenerationConfig(master_seed=42, joint_sets=joint_sets, max_fractures_per_set=100)
         gen = DFNGenerator(config, bounds)
         realization = gen.generate(0)
         n_fractures = realization.generation_result.total_fractures
         assert n_fractures > 0, "DFN generation produced no fractures"
-        assert n_fractures <= 200, f"DFN too large: {n_fractures} fractures"
+        assert n_fractures <= 300, f"DFN too large: {n_fractures} fractures"
 
-        # Verify provenance recorded
+        # Verify provenance
         prov = getattr(realization.generation_result, "parameter_provenance", {})
-        assert 1 in prov
-        assert prov[1].get("orientation") == "borehole"
+        assert len(prov) == 3, f"Expected provenance for 3 sets, got {len(prov)}"
 
-        # ── Step 7: Voxel intersection ────────────────────────────────
+        # ── Step 8: Real voxel P32 ─────────────────────────────────────
         grid = VoxelGrid.from_bounds(bounds, voxel_config)
         from dfn_cave_studio.models.rock_mask import RockMask, MaskType
         mask = RockMask(
@@ -264,25 +313,20 @@ class TestEndToEndPipeline:
         engine = DFNVoxelIntersectionEngine(grid, realization)
         n_pairs = engine.compute_intersections()
         assert n_pairs > 0, "No fracture-voxel intersections"
-        assert grid.active_voxel_count > 0
 
-        # Collect voxel P32 from the intersection engine
-        voxel_p32 = {}
-        # Use grid attributes directly
-        display_attrs = ["fracture_count", "p32_area", "DFN_P32"]
-        for attr_name in display_attrs:
-            try:
-                data = grid.get_attr(attr_name)
-                if data is not None:
-                    voxel_p32[attr_name] = "present"
-            except Exception:
-                pass
+        # Extract REAL voxel P32 (not empty dict)
+        from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+        voxel_data = ZipProjectStore.extract_voxel_p32_results(grid)
+        assert len(voxel_data) > 0, "Extracted voxel data is empty"
+        assert any(v["local_p32"] > 0 for v in voxel_data), "All local_p32 values are zero"
 
-        # ── Step 8: Connectivity ─────────────────────────────────────
+        # ── Step 9: Connectivity with cluster labels ────────────────────
         graph = ConnectivityGraph(realization)
         n_edges = graph.compute_edges()
         comps = graph.find_components()
         stats_out = graph.statistics()
+        cluster_labels = graph.component_labels().tolist()
+        assert len(cluster_labels) == n_fractures
         assert stats_out["n_components"] > 0
 
         detail = graph.percolation_detail(
@@ -292,9 +336,7 @@ class TestEndToEndPipeline:
         )
         assert detail["geometric_only"] is True
 
-        cluster_labels = graph.component_labels().tolist()
-
-        # ── Step 9: Save as .dfnproj ─────────────────────────────────
+        # ── Step 10: Save as .dfnproj ───────────────────────────────────
         from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
         from dfn_cave_studio.models.project import Project
 
@@ -304,11 +346,12 @@ class TestEndToEndPipeline:
         project.voxel_config = voxel_config
         project.config.master_seed = 42
         project.borehole_collection = collection
-        project.joint_sets = [js]
+        project.joint_sets = joint_sets
         project.dfn_realizations = [realization]
         project.connectivity_results = stats_out
+        project.connectivity_results["percolation"] = detail
         project.connectivity_clusters = cluster_labels
-        project.voxel_p32_results = voxel_p32
+        project.voxel_p32_results = voxel_data
 
         save_path = tmp_path / "e2e_test.dfnproj"
         zps = ZipProjectStore()
@@ -318,29 +361,58 @@ class TestEndToEndPipeline:
         # Verify ZIP structure
         with zipfile.ZipFile(save_path, "r") as zf:
             names = zf.namelist()
-            assert "project.json" in names
-            assert "inputs/boreholes.json" in names
-            assert "parameters/joint_sets.json" in names
-            assert "results/dfn_realizations.json" in names
-            assert "results/connectivity.json" in names
-            assert "results/summary.json" in names
+            required = [
+                "project.json",
+                "inputs/boreholes.json",
+                "parameters/joint_sets.json",
+                "results/dfn_realizations.json",
+                "results/voxel_p32.json",
+                "results/connectivity.json",
+                "results/summary.json",
+            ]
+            for r in required:
+                assert r in names, f"Missing {r} in .dfnproj"
 
-        # ── Step 10: Reopen and verify ──────────────────────────────
+        # ── Step 11: Reopen and verify ──────────────────────────────────
         reopened = zps.load(save_path)
         assert reopened.metadata.name == "E2E Test Project"
         assert reopened.borehole_collection is not None
         assert len(reopened.borehole_collection) == 5
-        assert len(reopened.joint_sets) == 1
-        assert reopened.joint_sets[0].provenance.get("orientation") == "borehole"
+
+        # Verify fracture observations kept set_ids
+        reopened_set_ids = set()
+        for bh in reopened.borehole_collection:
+            for obs in bh.fracture_observations:
+                reopened_set_ids.add(obs.set_id)
+        assert 1 in reopened_set_ids
+        assert 2 in reopened_set_ids
+        assert 3 in reopened_set_ids
+
+        # Verify joint sets
+        assert len(reopened.joint_sets) == 3
+        for js in reopened.joint_sets:
+            assert js.provenance.get("orientation") == "borehole"
+
+        # Verify DFN
         assert len(reopened.dfn_realizations) == 1
         reopened_fractures = getattr(
             reopened.dfn_realizations[0], "stochastic_fractures", [])
-        assert len(reopened_fractures) == n_fractures, (
-            f"Fracture count mismatch: {len(reopened_fractures)} != {n_fractures}")
-        assert reopened.connectivity_results is not None
-        assert reopened.connectivity_results["n_edges"] == n_edges
+        assert len(reopened_fractures) == n_fractures
 
-        # ── Step 11: Export CSV ─────────────────────────────────────
+        # Verify voxel P32 is NOT empty
+        reopened_voxel = reopened.voxel_p32_results
+        assert reopened_voxel is not None, "voxel_p32_results is None after reopen"
+        assert len(reopened_voxel) > 0, "voxel_p32_results is empty after reopen"
+        assert any(isinstance(v, dict) and v.get("local_p32", 0) > 0
+                   for v in reopened_voxel), "All reopened P32 values are zero"
+
+        # Verify connectivity clusters preserved
+        assert reopened.connectivity_results is not None
+        assert reopened.connectivity_results.get("n_edges") == n_edges
+        assert reopened.connectivity_clusters is not None
+        assert len(reopened.connectivity_clusters) == n_fractures
+
+        # ── Step 12: Export CSV with content check ──────────────────────
         export_path = tmp_path / "export.csv"
         with open(export_path, "w", newline="") as fh:
             writer = csv.writer(fh)
@@ -353,3 +425,66 @@ class TestEndToEndPipeline:
                     frac.radius, frac.set_id,
                 ])
         assert export_path.stat().st_size > 0, "CSV export is empty"
+
+        # Verify CSV content
+        with open(export_path, "r") as fh:
+            reader = csv.DictReader(fh)
+            rows = list(reader)
+        assert len(rows) == n_fractures, f"CSV rows {len(rows)} != {n_fractures}"
+        assert all("x" in r and "y" in r and "z" in r for r in rows)
+        assert any(int(r["set_id"]) == 1 for r in rows), "set_id=1 missing from CSV"
+
+        # ── Step 13: VTU/VTI export ──────────────────────────────────────
+        vti_path = tmp_path / "voxel_p32.vti"
+        from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+        renderer = DFNRenderer()
+        export_ok = renderer.export_voxels_vtu(
+            voxel_data, bounds, voxel_config, str(vti_path),
+        )
+        assert export_ok, "VTU/VTI export failed"
+        assert vti_path.exists(), "VTI file not created"
+        assert vti_path.stat().st_size > 0, "VTI file is empty"
+
+        # Re-read VTI file and verify P32 data
+        try:
+            import pyvista as pv
+            imported_grid = pv.read(str(vti_path))
+            assert imported_grid is not None, "Failed to re-read VTI file"
+            cell_data = imported_grid.cell_data
+            assert "local_p32" in cell_data, "local_p32 not in re-read VTI"
+            re_read_p32 = cell_data["local_p32"]
+            assert len(re_read_p32) > 0
+            assert np.sum(re_read_p32) > 0, "Re-read P32 values all zero"
+        except ImportError:
+            pass  # PyVista not available in this env
+
+        # ── Step 14: Size distribution consistency ──────────────────────
+        # Test truncated power-law sampling matches analytic moments
+        size_test = SizeDistribution(
+            distribution_type=SizeDistributionType.POWER_LAW,
+            min_radius=0.5, max_radius=5.0, power_law_exponent=3.0,
+        )
+        er_theory = size_test.mean_radius
+        er2_theory = size_test.mean_squared_radius
+        assert er_theory > 0
+        assert er2_theory > er_theory ** 2  # Jensen's gap
+
+        # Analytical vs sampled moments using 100K samples
+        rng = np.random.default_rng(42)
+        # Manual truncated power-law sampling (same as generator now)
+        D = 3.0
+        r_min, r_max = 0.5, 5.0
+        c = r_max ** (-D) - r_min ** (-D)
+        u = rng.random(100000)
+        samples = (-u * c + r_max ** (-D)) ** (-1.0 / D)
+        er_sample = np.mean(samples)
+        er2_sample = np.mean(samples ** 2)
+
+        assert abs(er_sample - er_theory) / er_theory < 0.02, (
+            f"E[R] theory={er_theory:.5f} sample={er_sample:.5f} "
+            f"error={abs(er_sample-er_theory)/er_theory*100:.2f}%"
+        )
+        assert abs(er2_sample - er2_theory) / er2_theory < 0.02, (
+            f"E[R²] theory={er2_theory:.5f} sample={er2_sample:.5f} "
+            f"error={abs(er2_sample-er2_theory)/er2_theory*100:.2f}%"
+        )

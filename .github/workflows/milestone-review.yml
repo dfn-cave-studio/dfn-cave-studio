@@ -23,6 +23,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -35,7 +37,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov pytest-html pytest-json-report
+          pip install pytest-cov pytest-html pytest-json-report pytest-qt pytest-timeout
 
       - name: Run unit tests
         shell: pwsh
@@ -58,18 +60,36 @@ jobs:
           PYTHONPATH: src
         run: pytest tests/scientific/ -v --tb=short --json-report --json-report-file=test-results-scientific.json
 
-      - name: Run all tests with coverage (excl. slow/GUI)
+      - name: Run end-to-end tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: pytest tests/end_to_end/ -v --tb=short --json-report --json-report-file=test-results-e2e.json --timeout=120
+
+      - name: Run GUI tests (offscreen)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: pytest tests/gui/ -v --tb=short --json-report --json-report-file=test-results-gui.json --timeout=60
+        continue-on-error: true
+
+      - name: Run all tests with coverage
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
         run: |
-          pytest tests/unit/ tests/integration/ tests/scientific/ -v --tb=short `
+          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
+            -v --tb=short `
             --cov=src/dfn_cave_studio `
             --cov-report=xml:coverage.xml `
             --cov-report=html:coverage_html `
+            --cov-fail-under=80 `
             --html=test-report.html `
-            --self-contained-html
+            --self-contained-html `
+            --timeout=120
 
       - name: Upload test results
         if: always()
@@ -97,6 +117,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -109,7 +131,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov pytest-html pytest-json-report
+          pip install pytest-cov pytest-html pytest-json-report pytest-timeout
 
       - name: Run full test suite
         shell: pwsh
@@ -117,14 +139,17 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
         run: |
-          pytest tests/unit/ tests/integration/ tests/scientific/ -v --tb=long `
+          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
+            -v --tb=long `
             --junitxml=junit.xml `
             --json-report --json-report-file=test_results.json `
             --cov=src/dfn_cave_studio `
             --cov-report=xml:coverage.xml `
             --cov-report=html:coverage_html `
+            --cov-fail-under=80 `
             --html=test-report.html `
-            --self-contained-html
+            --self-contained-html `
+            --timeout=120
 
       - name: Generate review package
         shell: pwsh

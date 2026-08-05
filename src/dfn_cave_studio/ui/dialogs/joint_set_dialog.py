@@ -23,11 +23,13 @@ class JointSetManagerDialog(QDialog):
     """Dialog for creating and editing joint sets with live statistics."""
 
     def __init__(self, joint_sets: Optional[List[JointSetConfig]] = None,
-                 model_volume: float = 1000000.0, parent=None):
+                 model_volume: float = 1000000.0, parent=None,
+                 borehole_collection=None):
         super().__init__(parent)
         self.setWindowTitle("Joint Set Manager")
         self.resize(800, 550)
         self._volume = model_volume
+        self._borehole_collection = borehole_collection
         self._sets: List[JointSetConfig] = list(joint_sets) if joint_sets else []
         if not self._sets:
             self._sets.append(self._default_set(0))
@@ -105,6 +107,16 @@ class JointSetManagerDialog(QDialog):
         of.addRow("Mean Dip Direction (°):", self._dd_spin)
         of.addRow("Mean Dip (°):", self._dip_spin)
         of.addRow("Kappa (concentration):", self._kappa_spin)
+        self._import_from_obs_btn = QPushButton("从钻孔裂隙观测建立/更新裂隙组")
+        self._import_from_obs_btn.setToolTip(
+            "Group fracture observations by set_id, compute Fisher statistics, "
+            "and populate orientation parameters from borehole data."
+        )
+        self._import_from_obs_btn.clicked.connect(self._on_import_from_observations)
+        if self._borehole_collection is None:
+            self._import_from_obs_btn.setEnabled(False)
+            self._import_from_obs_btn.setToolTip("No borehole data loaded. Import borehole fractures first.")
+        of.addRow(self._import_from_obs_btn)
         right.addTab(orient_tab, "Orientation")
 
         # Size tab
@@ -226,6 +238,91 @@ class JointSetManagerDialog(QDialog):
             )
         except Exception:
             self._stats_lbl.setText("(invalid parameters)")
+
+    def _on_import_from_observations(self) -> None:
+        """Import orientation from borehole fracture observations.
+
+        Groups observations by set_id, computes Fisher statistics, and
+        creates or updates joint sets with computed orientation parameters.
+        Size distribution and P32 remain at user-defined values.
+        """
+        if self._borehole_collection is None:
+            return
+
+        from dfn_cave_studio.borehole.orientation_statistics import OrientationStatisticsCalculator
+        calc = OrientationStatisticsCalculator()
+        stats = calc.compute_by_set(self._borehole_collection)
+
+        if not stats:
+            from dfn_cave_studio.ui.qt_adapter import QMessageBox
+            QMessageBox.warning(
+                self, "No Data",
+                "No fracture observations with valid set_id found.\n\n"
+                "Ensure fracture observations have set_id assigned (1, 2, 3, ...) "
+                "before importing."
+            )
+            return
+
+        # Build preview message
+        lines = ["Computed Fisher statistics from borehole observations:\n"]
+        for set_id in sorted(stats.keys()):
+            orient = stats[set_id]
+            n_obs = sum(
+                1 for bh in self._borehole_collection
+                for obs in bh.fracture_observations
+                if obs.set_id == set_id
+            )
+            lines.append(
+                f"  Set {set_id}: dd={orient.mean_dip_direction:.1f}°, "
+                f"dip={orient.mean_dip:.1f}°, kappa={orient.kappa:.1f} "
+                f"({n_obs} observations)"
+            )
+
+        lines.append("\nOrientation will be set from borehole observations.")
+        lines.append("Size distribution and P32 remain at current values.\n")
+        lines.append("Proceed with updating joint sets?")
+
+        from dfn_cave_studio.ui.qt_adapter import QMessageBox
+        reply = QMessageBox.question(
+            self, "Import from Observations",
+            "\n".join(lines),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Update or create joint sets for each set_id
+        existing_ids = {s.set_id for s in self._sets}
+        for set_id in sorted(stats.keys()):
+            orient = stats[set_id]
+            if set_id in existing_ids:
+                # Update existing set
+                for s in self._sets:
+                    if s.set_id == set_id:
+                        s.orientation = orient
+                        s.provenance["orientation"] = "borehole"
+                        break
+            else:
+                # Create new set
+                name = f"Joint Set {set_id}"
+                js = JointSetConfig(
+                    set_id=set_id,
+                    name=name,
+                    color=SET_COLORS[(set_id - 1) % len(SET_COLORS)],
+                    orientation=orient,
+                    size=SizeDistribution(
+                        distribution_type=SizeDistributionType.FIXED,
+                        min_radius=0.5, max_radius=5.0,
+                    ),
+                    target_p32=1.0,
+                    provenance={"orientation": "borehole", "size": "user", "p32": "user"},
+                )
+                self._sets.append(js)
+
+        # Refresh UI
+        self._refresh_list()
+        self._list.setCurrentRow(0)
+        self._on_set_selected(0)
 
     def _on_accept(self) -> None:
         self._update_stats()

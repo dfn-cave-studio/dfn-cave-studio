@@ -97,11 +97,12 @@ class OrientationStatisticsCalculator:
                 f"Need at least {self.MIN_OBSERVATIONS} observations, got {n}"
             )
 
-        # Convert dip_direction/dip to unit normal vectors.
-        # Dip direction (0-360° clockwise from North), dip (0-90° from horizontal).
-        # Normal vector points DOWNWARD (positive Z is up, so Z component is negative).
+        # Convert dip_direction/dip to unit normal vectors using the
+        # canonical coordinate module (ensures upper-hemisphere convention).
+        from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal
+
         normals = np.array([
-            self._dip_to_normal(o.dip_direction, o.dip)
+            dip_dir_dip_to_normal(o.dip_direction, o.dip)
             for o in observations
         ], dtype=np.float64)
 
@@ -122,7 +123,8 @@ class OrientationStatisticsCalculator:
         mean_normal = R_vec / R
 
         # Convert mean normal back to dip_direction/dip
-        mean_dd, mean_dip = self._normal_to_dip(mean_normal)
+        from dfn_cave_studio.geometry.coordinate import normal_to_dip_dir_dip
+        mean_dd, mean_dip = normal_to_dip_dir_dip(mean_normal)
 
         # Fisher kappa estimate.
         # For n >= 16: kappa ≈ (n-1)/(n-R)  (approximate MLE)
@@ -164,62 +166,5 @@ class OrientationStatisticsCalculator:
         return positions
 
     # ── Coordinate Conversion Helpers ─────────────────────────────────────
-
-    @staticmethod
-    def _dip_to_normal(dip_direction: float, dip: float) -> NDArray[np.float64]:
-        """Convert dip_direction (°) and dip (°) to a unit normal vector.
-
-        Convention:
-          - dip_direction = 0° → North (Y+), 90° → East (X+)
-          - dip = 0° → horizontal, 90° → vertical (straight down)
-          - Normal vector points INTO the rock mass (roughly downward for
-            sub-horizontal fractures).
-
-        For a fracture with dip_direction dd and dip angle δ:
-          Strike direction = dd - 90° (right-hand rule)
-          Normal (pointing down) has:
-            nx = -sin(dd) * sin(δ)
-            ny = -cos(dd) * sin(δ)
-            nz = -cos(δ)
-        """
-        dd_rad = math.radians(dip_direction)
-        dip_rad = math.radians(dip)
-        sin_dd = math.sin(dd_rad)
-        cos_dd = math.cos(dd_rad)
-        sin_dip = math.sin(dip_rad)
-        cos_dip = math.cos(dip_rad)
-
-        return np.array([
-            -sin_dd * sin_dip,   # X (easting) component
-            -cos_dd * sin_dip,   # Y (northing) component
-            -cos_dip,             # Z (elevation) component — downward
-        ], dtype=np.float64)
-
-    @staticmethod
-    def _normal_to_dip(normal: NDArray[np.float64]) -> tuple:
-        """Convert a unit normal vector back to (dip_direction, dip) in degrees.
-
-        The normal may point either up or down. We always return the
-        downward-pointing hemisphere direction (dip 0-90°).
-        """
-        nx, ny, nz = float(normal[0]), float(normal[1]), float(normal[2])
-
-        # Ensure downward-pointing hemisphere
-        if nz > 0:
-            nx, ny, nz = -nx, -ny, -nz
-
-        # Dip: angle from horizontal plane
-        norm_xy = math.sqrt(nx**2 + ny**2)
-        dip = math.degrees(math.atan2(abs(nz), norm_xy))
-
-        # Dip direction: direction of steepest descent
-        if norm_xy < 1e-10:
-            # Vertical — dip direction undefined, default to 0
-            dip_direction = 0.0
-        else:
-            # The dip direction is the azimuth of the projection of the normal
-            # onto the horizontal plane. For a downward-pointing normal,
-            # dip_direction = atan2(-nx, -ny) converted to [0, 360).
-            dip_direction = math.degrees(math.atan2(-nx, -ny)) % 360.0
-
-        return dip_direction, dip
+    # Delegates to dfn_cave_studio.geometry.coordinate for all dip/direction
+    # ↔ normal conversions.  No independent transform code is maintained here.
