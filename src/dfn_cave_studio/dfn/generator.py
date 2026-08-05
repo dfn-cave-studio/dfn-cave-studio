@@ -136,8 +136,15 @@ class DFNGenerator:
         set_statistics: Dict[int, Dict[str, Any]] = {}
 
         total_sets = len(self.config.joint_sets)
+        parameter_provenance: Dict[int, Dict[str, str]] = {}
 
         for idx, joint_set in enumerate(self.config.joint_sets):
+            # Record parameter provenance for this set
+            prov = dict(joint_set.provenance) if hasattr(joint_set, 'provenance') else {}
+            prov.setdefault("orientation", "user")
+            prov.setdefault("size", "user")
+            prov.setdefault("p32", "user")
+            parameter_provenance[joint_set.set_id] = prov
             self._check_cancelled()
             set_seed = seed + joint_set.set_id * 10000
             set_rng = np.random.default_rng(set_seed)
@@ -240,6 +247,7 @@ class DFNGenerator:
             convergence_achieved=p32_error <= (self.config.joint_sets[0].p32_tolerance * 100 if self.config.joint_sets else 5.0),
             elapsed_seconds=elapsed,
             cancelled=self._cancelled,
+            parameter_provenance=parameter_provenance,
         )
 
         # Build realization

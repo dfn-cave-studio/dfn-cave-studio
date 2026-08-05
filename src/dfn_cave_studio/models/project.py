@@ -143,6 +143,8 @@ class Project(BaseModel):
     connectivity_results: Optional[Dict[str, Any]] = None
     fragmentation_results: Optional[Dict[str, Any]] = None
     validation_results: Optional[Dict[str, Any]] = None
+    voxel_p32_results: Optional[Dict[str, Any]] = None  # per-voxel P32 values
+    connectivity_clusters: Optional[List[int]] = None    # per-fracture component IDs
 
     # ── Version Control ───────────────────────────────────────────────────
     schema_version: int = CURRENT_PROJECT_VERSION

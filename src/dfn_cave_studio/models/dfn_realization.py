@@ -61,6 +61,11 @@ class DFNGenerationResult(BaseModel):
     elapsed_seconds: float = 0.0
     cancelled: bool = False
 
+    # Provenance: for each set_id, records which parameters came from
+    # borehole observations vs user input.
+    # Example: {1: {"orientation": "borehole", "size": "user", "p32": "user"}}
+    parameter_provenance: Dict[int, Dict[str, str]] = Field(default_factory=dict)
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 

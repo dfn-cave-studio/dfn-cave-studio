@@ -303,113 +303,12 @@ class ConnectivityGraph:
     ) -> bool:
         """Check if a component spans the model in the specified direction(s).
 
-        Uses real fracture geometry: a fracture touches a boundary if the
-        perpendicular distance from the fracture center to the boundary
-        plane, projected along the boundary normal, is ≤ the fracture
-        radius times the cosine of the angle between the fracture normal
-        and the boundary normal (i.e., the fracture disk intersects the
-        boundary plane within its radius).
+        Uses rigorous fracture-face intersection geometry via
+        _fracture_touches_face(), which computes the exact intersection
+        segment between the fracture disk and the boundary face, clips it
+        against the face rectangle (Liang-Barsky), and returns True only
+        if a non-degenerate overlap exists.
         """
-        def _touches_boundary(frac, bound_normal, bound_val, dim_idx, range_a, range_b):
-            """Check if fracture disk intersects a FINITE model boundary face.
-
-            A fracture touches a boundary if:
-            1. The perpendicular distance from the disk center to the boundary
-               plane ≤ the disk's projected radius (infinite plane check)
-            2. The intersection between the disk and the boundary plane lies
-               within the finite face rectangle (finite face check).
-
-            Args:
-                frac: Fracture object.
-                bound_normal: Inward-pointing normal of the boundary (3,).
-                bound_val: Coordinate value of the boundary (e.g., x_min).
-                dim_idx: Index of the boundary dimension (0=x, 1=y, 2=z).
-                range_a: (min, max) for the first non-boundary dimension.
-                range_b: (min, max) for the second non-boundary dimension.
-            """
-            r = frac.radius if frac.radius > 0 else (frac.geometry.radius or 1.0)
-            center = frac.geometry.center
-            n = frac.geometry.normal
-
-            # 1. Infinite plane check: distance from center to boundary plane
-            dist = abs(float(center[dim_idx] - bound_val))
-            # Projected radius in the boundary normal direction
-            # cos(θ) = |n·bound_normal|, effective radius = r·sin(θ) = r·√(1-cos²θ)
-            cos_theta = abs(float(n[dim_idx]))  # bound_normal is axis-aligned
-            proj_radius = r * math.sqrt(max(0.0, 1.0 - cos_theta ** 2))
-            if dist > proj_radius + 1e-6:
-                return False
-
-            # 2. Finite face check: the intersection of the disk with the
-            #    boundary plane must overlap the face rectangle.
-            #    The intersection of the disk plane with the boundary plane
-            #    is a line. Parametrize the line, find the segment within
-            #    the disk, and check if it overlaps the face.
-            if proj_radius < 1e-12:
-                # Disk is parallel to boundary plane — only the center
-                # matters for the infinite plane check.
-                # Check if center lies within face rectangle.
-                d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
-                return (range_a[0] - 1e-6 <= center[d1] <= range_a[1] + 1e-6 and
-                        range_b[0] - 1e-6 <= center[d2] <= range_b[1] + 1e-6)
-
-            # Compute the intersection line. The line direction is
-            # n_disk × n_boundary (both lie in the boundary plane).
-            # Simpler: solve for the line in the boundary plane coordinates.
-
-            # The disk plane: n·(P - c) = 0
-            # On boundary plane x = x_min (for dim=0):
-            #   nx*(x-x_min) + nx*(x_min-cx) + ny*(y-cy) + nz*(z-cz) = 0
-            # But P is on x=x_min, so first term is 0:
-            #   ny*(y-cy) + nz*(z-cz) + nx*(x_min-cx) = 0
-            # This is a line in the (y,z) plane.
-
-            d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
-            a = float(n[d1])   # coefficient for first free coordinate
-            b = float(n[d2])   # coefficient for second free coordinate
-            c_offset = float(n[dim_idx]) * (bound_val - float(center[dim_idx]))
-
-            # Line equation in the face plane: a·(u-c_u) + b·(v-c_v) + c_offset = 0
-            # where u = coord[d1], v = coord[d2]
-            # The distance from center projection to this line is |c_offset| / sqrt(a²+b²)
-
-            line_normal_mag = math.sqrt(a**2 + b**2)
-            if line_normal_mag < 1e-12:
-                # Disk normal is parallel to boundary normal — shouldn't reach here
-                # (handled by proj_radius check above)
-                return False
-
-            # Distance from (center[d1], center[d2]) to the line in the face plane
-            dist_face = abs(c_offset) / line_normal_mag
-            if dist_face > proj_radius + 1e-6:
-                return False
-
-            # The intersection segment on the line within the disk has
-            # half-length h = sqrt(proj_radius² - dist_face²) in the face plane
-            h_face = math.sqrt(max(0.0, proj_radius**2 - dist_face**2))
-
-            # The line's closest point to (center[d1], center[d2]) in the face plane:
-            p0_u = float(center[d1]) - a * c_offset / line_normal_mag**2
-            p0_v = float(center[d2]) - b * c_offset / line_normal_mag**2
-
-            # Direction along the line in the face plane: perpendicular to (a,b)
-            line_dir_u = -b / line_normal_mag
-            line_dir_v = a / line_normal_mag
-
-            # Intersection segment on the line: from p0 ± h_face * line_dir
-            seg_u_min = p0_u - h_face * abs(line_dir_u) - 1e-6
-            seg_u_max = p0_u + h_face * abs(line_dir_u) + 1e-6
-            seg_v_min = p0_v - h_face * abs(line_dir_v) - 1e-6
-            seg_v_max = p0_v + h_face * abs(line_dir_v) + 1e-6
-
-            # Check overlap with the face rectangle
-            face_u_min, face_u_max = range_a
-            face_v_min, face_v_max = range_b
-
-            return (seg_u_min <= face_u_max and seg_u_max >= face_u_min and
-                    seg_v_min <= face_v_max and seg_v_max >= face_v_min)
-
-        # Aggregate boundary-touching flags across all fractures in the component
         x_min_comp = False
         x_max_comp = False
         y_min_comp = False
@@ -421,29 +320,33 @@ class ConnectivityGraph:
             f = self.fractures[fi]
 
             if not x_min_comp:
-                x_min_comp = _touches_boundary(
-                    f, None, x_range[0], 0, y_range, z_range,
+                x_min_comp = self._fracture_touches_face(
+                    f, x_range[0], 0, y_range, z_range,
                 )
             if not x_max_comp:
-                x_max_comp = _touches_boundary(
-                    f, None, x_range[1], 0, y_range, z_range,
+                x_max_comp = self._fracture_touches_face(
+                    f, x_range[1], 0, y_range, z_range,
                 )
             if not y_min_comp:
-                y_min_comp = _touches_boundary(
-                    f, None, y_range[0], 1, x_range, z_range,
+                y_min_comp = self._fracture_touches_face(
+                    f, y_range[0], 1, x_range, z_range,
                 )
             if not y_max_comp:
-                y_max_comp = _touches_boundary(
-                    f, None, y_range[1], 1, x_range, z_range,
+                y_max_comp = self._fracture_touches_face(
+                    f, y_range[1], 1, x_range, z_range,
                 )
             if not z_min_comp:
-                z_min_comp = _touches_boundary(
-                    f, None, z_range[0], 2, x_range, y_range,
+                z_min_comp = self._fracture_touches_face(
+                    f, z_range[0], 2, x_range, y_range,
                 )
             if not z_max_comp:
-                z_max_comp = _touches_boundary(
-                    f, None, z_range[1], 2, x_range, y_range,
+                z_max_comp = self._fracture_touches_face(
+                    f, z_range[1], 2, x_range, y_range,
                 )
+
+            # Early exit if all six faces are already touched
+            if x_min_comp and x_max_comp and y_min_comp and y_max_comp and z_min_comp and z_max_comp:
+                break
 
         percolates_x = x_min_comp and x_max_comp
         percolates_y = y_min_comp and y_max_comp
@@ -466,11 +369,20 @@ class ConnectivityGraph:
         face_range_a: Tuple[float, float],
         face_range_b: Tuple[float, float],
     ) -> bool:
-        """Check if a fracture touches a finite model boundary face.
+        """Check if a fracture disk intersects a FINITE model boundary face.
 
-        Performs both:
-        1. Infinite plane check (distance + projected radius)
-        2. Finite face rectangle overlap check
+        Uses rigorous disk-plane intersection geometry:
+        1. Compute the perpendicular distance from disk center to boundary plane.
+        2. Compute the projected radius in the boundary-normal direction.
+        3. If the disk reaches the boundary plane, compute the intersection
+           line between the disk plane and the boundary plane.
+        4. Find the segment of this line that lies within the disk.
+        5. Check whether this segment overlaps the finite face rectangle using
+           proper line-segment vs rectangle intersection.
+
+        This replaces the previous bounding-box approximation which could
+        produce false positives when the disk's AABB overlapped the face
+        but the actual intersection missed.
 
         Args:
             frac: Fracture object with .radius and .geometry (center, normal).
@@ -482,28 +394,119 @@ class ConnectivityGraph:
         Returns:
             True if the fracture disk intersects the finite boundary face.
         """
+        import math
         r = frac.radius if frac.radius > 0 else (frac.geometry.radius or 1.0)
         center = frac.geometry.center
         n = frac.geometry.normal
 
-        # 1. Distance to boundary plane
+        # 1. Infinite plane check: distance from center to boundary plane.
         dist = abs(float(center[dim_idx]) - bound_val)
+        # cos_theta = |n · boundary_normal| = fraction of radius along boundary normal.
         cos_theta = abs(float(n[dim_idx]))
-        proj_radius = r * math.sqrt(max(0.0, 1.0 - cos_theta**2))
+        # The disk can reach the boundary plane if its center is within a distance
+        # of r * sqrt(1 - cos_theta^2) = r * sin(theta) of that plane.
+        # (Equivalently: the disk's extent in the boundary-normal direction.)
+        proj_radius = r * math.sqrt(max(0.0, 1.0 - cos_theta ** 2))
         if dist > proj_radius + 1e-6:
             return False
 
-        # 2. Finite face: check center coordinates fall within face bounds
-        #    (with margin = proj_radius for the disk's extent)
-        d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
-        c1, c2 = float(center[d1]), float(center[d2])
+        # 2. Finite face check: the intersection of the disk with the boundary
+        #    plane must overlap the face rectangle.
 
-        # The disk's footprint on the boundary face extends up to proj_radius
-        # from the center's projection in all face-plane directions
-        return (c1 - proj_radius <= face_range_a[1] + 1e-6 and
-                c1 + proj_radius >= face_range_a[0] - 1e-6 and
-                c2 - proj_radius <= face_range_b[1] + 1e-6 and
-                c2 + proj_radius >= face_range_b[0] - 1e-6)
+        if proj_radius < 1e-12:
+            # Disk is parallel to boundary plane (edge-on view).
+            # Only the center's projection matters.
+            d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
+            return (face_range_a[0] - 1e-6 <= center[d1] <= face_range_a[1] + 1e-6 and
+                    face_range_b[0] - 1e-6 <= center[d2] <= face_range_b[1] + 1e-6)
+
+        # Compute the intersection line between the disk plane and the boundary
+        # plane, expressed in the face-plane coordinate system.
+        d1, d2 = (1, 2) if dim_idx == 0 else ((0, 2) if dim_idx == 1 else (0, 1))
+        a = float(n[d1])   # coefficient for first free coordinate
+        b = float(n[d2])   # coefficient for second free coordinate
+        c_offset = float(n[dim_idx]) * (bound_val - float(center[dim_idx]))
+
+        # Line equation in face plane: a·(u - c_u) + b·(v - c_v) + c_offset = 0
+        # i.e., a·u + b·v + (c_offset - a·c_u - b·c_v) = 0
+        line_normal_mag = math.sqrt(a**2 + b**2)
+        if line_normal_mag < 1e-12:
+            # Disk normal is parallel to boundary normal — couldn't reach here
+            # (handled by proj_radius check above).
+            return False
+
+        # Distance from (center[d1], center[d2]) to the line in face plane.
+        dist_face = abs(c_offset) / line_normal_mag
+        if dist_face > proj_radius + 1e-6:
+            return False
+
+        # The intersection segment within the disk has half-length
+        # h_face = sqrt(proj_radius² - dist_face²) in the face plane.
+        h_face = math.sqrt(max(0.0, proj_radius**2 - dist_face**2))
+
+        # Closest point on the line to (center[d1], center[d2]):
+        p0_u = float(center[d1]) - a * c_offset / line_normal_mag**2
+        p0_v = float(center[d2]) - b * c_offset / line_normal_mag**2
+
+        # Direction along the line in face plane: perpendicular to (a, b).
+        line_dir_u = -b / line_normal_mag
+        line_dir_v = a / line_normal_mag
+
+        # Intersection segment endpoints in face plane:
+        seg_start_u = p0_u - h_face * line_dir_u
+        seg_start_v = p0_v - h_face * line_dir_v
+        seg_end_u = p0_u + h_face * line_dir_u
+        seg_end_v = p0_v + h_face * line_dir_v
+
+        # Liang-Barsky line clipping against face rectangle.
+        # Parameterize: S(t) = start + t * (end - start), t in [0, 1].
+        # Clip against 4 edges of the rectangle.
+        dx = seg_end_u - seg_start_u
+        dy = seg_end_v - seg_start_v
+
+        t_min, t_max = 0.0, 1.0
+
+        # Left edge: u >= face_u_min
+        if abs(dx) > 1e-12:
+            t = (face_range_a[0] - seg_start_u) / dx
+            if dx > 0:
+                t_min = max(t_min, t)
+            else:
+                t_max = min(t_max, t)
+        elif seg_start_u < face_range_a[0] - 1e-6:
+            return False
+
+        # Right edge: u <= face_u_max
+        if abs(dx) > 1e-12:
+            t = (face_range_a[1] - seg_start_u) / dx
+            if dx < 0:
+                t_min = max(t_min, t)
+            else:
+                t_max = min(t_max, t)
+        elif seg_start_u > face_range_a[1] + 1e-6:
+            return False
+
+        # Bottom edge: v >= face_v_min
+        if abs(dy) > 1e-12:
+            t = (face_range_b[0] - seg_start_v) / dy
+            if dy > 0:
+                t_min = max(t_min, t)
+            else:
+                t_max = min(t_max, t)
+        elif seg_start_v < face_range_b[0] - 1e-6:
+            return False
+
+        # Top edge: v <= face_v_max
+        if abs(dy) > 1e-12:
+            t = (face_range_b[1] - seg_start_v) / dy
+            if dy < 0:
+                t_min = max(t_min, t)
+            else:
+                t_max = min(t_max, t)
+        elif seg_start_v > face_range_b[1] + 1e-6:
+            return False
+
+        return t_min <= t_max + 1e-9
 
     def _component_span_directions(
         self,

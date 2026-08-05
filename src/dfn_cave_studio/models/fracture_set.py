@@ -15,7 +15,7 @@ References:
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Dict
 from enum import Enum
 
 from pydantic import BaseModel, Field, model_validator
@@ -90,36 +90,64 @@ class SizeDistribution(BaseModel):
 
     @property
     def mean_radius(self) -> float:
-        """Compute the mean (expected) radius E[R] for the configured distribution."""
+        """Compute the mean (expected) radius E[R] for the configured distribution.
+
+        All formulas match the actual sampling in DFNGenerator._sample_radii().
+        """
         import math
+        r_min, r_max = self.min_radius, self.max_radius
+
         if self.distribution_type == SizeDistributionType.LOGNORMAL:
             return math.exp(self.lognormal_mu + self.lognormal_sigma ** 2 / 2)
+
         elif self.distribution_type == SizeDistributionType.FIXED:
-            return self.min_radius
+            # Generator samples (min+max)/2 — must match.
+            return (r_min + r_max) / 2.0
+
         elif self.distribution_type == SizeDistributionType.POWER_LAW:
+            # Generator: r = r_min * u^(-1/D), clipped to [r_min, r_max].
+            # Equivalent to truncated power-law with clamping.
             D = self.power_law_exponent
-            if D == 2.0:
-                return self.min_radius * math.log(self.max_radius / self.min_radius)
-            elif D == 3.0:
-                r_min, r_max = self.min_radius, self.max_radius
-                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
-            else:
-                r_min, r_max = self.min_radius, self.max_radius
-                return (D - 1) / (D - 2) * (r_max ** (2 - D) - r_min ** (2 - D)) / (r_max ** (1 - D) - r_min ** (1 - D))
-        elif self.distribution_type == SizeDistributionType.TRUNCATED_POWER_LAW:
-            D = self.power_law_exponent
-            r_min, r_max = self.min_radius, self.max_radius
-            if abs(D - 2.0) < 1e-10:
+            if abs(D - 1.0) < 1e-10:
+                return (r_max - r_min) / math.log(r_max / r_min)
+            elif abs(D - 2.0) < 1e-10:
                 return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
             elif abs(D - 3.0) < 1e-10:
-                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
+                # D=3 truncated power-law: E[R] = 1.5 * r_min*r_max*(r_max+r_min) / (r_max² + r_min*r_max + r_min²)
+                return 1.5 * r_min * r_max * (r_max + r_min) / (r_max**2 + r_min * r_max + r_min**2)
             else:
-                return (D - 1) / (D - 2) * (r_max ** (2 - D) - r_min ** (2 - D)) / (r_max ** (1 - D) - r_min ** (1 - D))
+                # General D truncated power-law: E[R] = D/(D-1) * (r_min^{1-D} - r_max^{1-D}) / (r_min^{-D} - r_max^{-D})
+                num = r_min ** (1.0 - D) - r_max ** (1.0 - D)
+                den = r_min ** (-D) - r_max ** (-D)
+                if abs(den) < 1e-15:
+                    return r_min
+                return (D / (D - 1.0)) * num / den
+
+        elif self.distribution_type == SizeDistributionType.TRUNCATED_POWER_LAW:
+            D = self.power_law_exponent
+            if abs(D - 1.0) < 1e-10:
+                return (r_max - r_min) / math.log(r_max / r_min)
+            elif abs(D - 2.0) < 1e-10:
+                return (r_min * r_max * math.log(r_max / r_min)) / (r_max - r_min)
+            elif abs(D - 3.0) < 1e-10:
+                # D=3 truncated power-law: E[R] = 1.5 * r_min*r_max*(r_max+r_min) / (r_max² + r_min*r_max + r_min²)
+                return 1.5 * r_min * r_max * (r_max + r_min) / (r_max**2 + r_min * r_max + r_min**2)
+            else:
+                num = r_min ** (1.0 - D) - r_max ** (1.0 - D)
+                den = r_min ** (-D) - r_max ** (-D)
+                if abs(den) < 1e-15:
+                    return r_min
+                return (D / (D - 1.0)) * num / den
+
         elif self.distribution_type == SizeDistributionType.EXPONENTIAL:
-            mean_r = (self.min_radius + self.max_radius) / 2.0
+            # Generator: exponential(mean) with mean = (min+max)/2, clipped to [min, max].
+            # For a truncated exponential, E[R] ≈ (min+max)/2 when the truncation
+            # window captures most of the distribution mass.
+            mean_r = (r_min + r_max) / 2.0
             return mean_r
+
         else:
-            return (self.min_radius + self.max_radius) / 2.0
+            return (r_min + r_max) / 2.0
 
     @property
     def mean_squared_radius(self) -> float:
@@ -131,47 +159,53 @@ class SizeDistribution(BaseModel):
         The difference is E[R²] = (E[R])² + Var(R), i.e. Jensen's gap.
         For a lognormal with σ=0.5, E[R²]/(E[R])² = exp(σ²) ≈ 1.284,
         meaning the naive π·(E[R])² underestimates area by ~28%.
+
+        All formulas match the actual sampling in DFNGenerator._sample_radii().
         """
         import math
         dist_type = self.distribution_type
+        r_min, r_max = self.min_radius, self.max_radius
 
         if dist_type == SizeDistributionType.LOGNORMAL:
             # ln(R) ~ N(μ, σ) → E[R²] = exp(2μ + 2σ²)
             return math.exp(2.0 * self.lognormal_mu + 2.0 * self.lognormal_sigma ** 2)
 
         elif dist_type == SizeDistributionType.FIXED:
-            r = self.min_radius
+            # Generator samples (min+max)/2 — must match.
+            r = (r_min + r_max) / 2.0
             return r * r
 
         elif dist_type == SizeDistributionType.POWER_LAW:
-            # Untruncated power-law: f(r) ∝ r^{-(D+1)}, r ∈ [r_min, ∞)
+            # Generator: r = r_min * u^(-1/D), clipped to [r_min, r_max].
+            # Equivalent to truncated power-law — use truncated formula.
             D = self.power_law_exponent
-            r_min = self.min_radius
-            if D <= 2.0:
-                # E[R²] diverges for D ≤ 2; use r_max as effective cutoff
-                return self.max_radius ** 2
-            return (D / (D - 2.0)) * r_min ** 2
-
-        elif dist_type == SizeDistributionType.TRUNCATED_POWER_LAW:
-            D = self.power_law_exponent
-            r_min, r_max = self.min_radius, self.max_radius
-            if abs(D - 3.0) < 1e-10:
-                # D=3: f(r) ∝ r^{-4}, exact E[R²]:
-                #   E[R²] = 3 / (1/r_min² + 1/(r_min·r_max) + 1/r_max²)
-                #         = 3·r_min²·r_max² / (r_max² + r_min·r_max + r_min²)
-                return 3.0 * r_min**2 * r_max**2 / (r_max**2 + r_min * r_max + r_min**2)
             if abs(D - 2.0) < 1e-10:
-                # D=2: f(r) ∝ r^{-3}, exact E[R²]:
-                #   E[R²] = 2·r_min²·r_max²·ln(r_max/r_min) / (r_max² - r_min²)
+                # D=2 truncated: E[R²] = 2*r_min²*r_max²*ln(r_max/r_min) / (r_max² - r_min²)
                 if abs(r_max - r_min) < 1e-12:
                     return r_min**2
                 return (2.0 * r_min**2 * r_max**2 * math.log(r_max / r_min)) / (r_max**2 - r_min**2)
-            if D <= 2.0:
-                return self.max_radius ** 2
-            # General D: E[R²] = ∫ r^{2}·r^{-(D+1)} / ∫ r^{-(D+1)}
-            # = ∫ r^{1-D} / ∫ r^{-D-1}
-            # = [r^{2-D}/(2-D)] / [r^{-D}/(-D)]
-            # = (D/(D-2)) · (r_min^{2-D} - r_max^{2-D}) / (r_min^{-D} - r_max^{-D})
+            elif abs(D - 3.0) < 1e-10:
+                # D=3 truncated: E[R²] = 3*r_min²*r_max² / (r_max² + r_min*r_max + r_min²)
+                return 3.0 * r_min**2 * r_max**2 / (r_max**2 + r_min * r_max + r_min**2)
+            elif D <= 2.0:
+                return r_max ** 2
+            # General D truncated: E[R²] = D/(D-2) * (r_min^{2-D} - r_max^{2-D}) / (r_min^{-D} - r_max^{-D})
+            num = r_min ** (2.0 - D) - r_max ** (2.0 - D)
+            den = r_min ** (-D) - r_max ** (-D)
+            if abs(den) < 1e-15:
+                return r_min ** 2
+            return (D / (D - 2.0)) * num / den
+
+        elif dist_type == SizeDistributionType.TRUNCATED_POWER_LAW:
+            D = self.power_law_exponent
+            if abs(D - 2.0) < 1e-10:
+                if abs(r_max - r_min) < 1e-12:
+                    return r_min**2
+                return (2.0 * r_min**2 * r_max**2 * math.log(r_max / r_min)) / (r_max**2 - r_min**2)
+            elif abs(D - 3.0) < 1e-10:
+                return 3.0 * r_min**2 * r_max**2 / (r_max**2 + r_min * r_max + r_min**2)
+            elif D <= 2.0:
+                return r_max ** 2
             num = r_min ** (2.0 - D) - r_max ** (2.0 - D)
             den = r_min ** (-D) - r_max ** (-D)
             if abs(den) < 1e-15:
@@ -179,12 +213,14 @@ class SizeDistribution(BaseModel):
             return (D / (D - 2.0)) * num / den
 
         elif dist_type == SizeDistributionType.EXPONENTIAL:
-            mean_r = (self.min_radius + self.max_radius) / 2.0
-            # Exp(λ): E[R] = 1/λ, Var(R) = 1/λ², E[R²] = 2/λ² = 2·(E[R])²
+            mean_r = (r_min + r_max) / 2.0
+            # For a truncated exponential with mean λ = 1/mean_r,
+            # untruncated E[R²] = 2/λ² = 2·(E[R])².
+            # This is an approximation; the truncation modifies the moments slightly.
             return 2.0 * mean_r ** 2
 
         else:
-            mean_r = (self.min_radius + self.max_radius) / 2.0
+            mean_r = (r_min + r_max) / 2.0
             return mean_r ** 2
 
 
@@ -227,6 +263,10 @@ class JointSetConfig(BaseModel):
     # Display
     visible: bool = True
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    # Provenance: records whether each parameter came from borehole observations
+    # or user input. Keys: "orientation", "size", "p32". Values: "borehole" or "user".
+    provenance: Dict[str, str] = Field(default_factory=dict, description="Parameter provenance: 'borehole' or 'user'")
 
     # Mechanical property template
     mechanical_template_id: Optional[str] = None

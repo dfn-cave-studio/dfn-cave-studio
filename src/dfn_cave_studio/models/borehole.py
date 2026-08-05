@@ -292,6 +292,7 @@ class FractureObservation(BaseModel):
     filling: Optional[str] = Field(default=None, description="Filling material description")
     fracture_type: FractureType = FractureType.JOINT
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Observation confidence (0-1)")
+    set_id: Optional[int] = Field(default=None, description="Assigned fracture set ID for DFN parameter inference")
 
     @model_validator(mode="after")
     def validate_angles(self) -> "FractureObservation":
