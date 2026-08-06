@@ -233,14 +233,51 @@ class TestRendererMethodsCall:
         )
         assert success, "render_voxel_p32 with dict format returned False"
 
-    def test_screenshot_success(self, renderer, plotter, tmp_path, sample_bounds):
-        """Screenshot saves a valid PNG file."""
-        renderer.render_model_bounds(sample_bounds, plotter)
+    def test_screenshot_success(self, renderer, tmp_path):
+        """screenshot() calls plotter.screenshot with correct path and returns True.
+
+        Uses a MagicMock plotter — no real VTK/OpenGL rendering.
+        This avoids Windows fatal exception on headless CI runners.
+        """
+        from unittest.mock import MagicMock
+        mock_plotter = MagicMock()
+        mock_plotter.screenshot.return_value = None  # succeeds (no exception)
         path = str(tmp_path / "test.png")
-        success = renderer.screenshot(plotter, path)
-        assert success, "screenshot returned False"
-        assert os.path.exists(path), "Screenshot file not created"
-        assert os.path.getsize(path) > 0, "Screenshot file is empty"
+        success = renderer.screenshot(mock_plotter, path)
+        assert success is True, "screenshot should return True on success"
+        mock_plotter.screenshot.assert_called_once_with(
+            path, transparent_background=True,
+        )
+
+    def test_screenshot_success_opaque(self, renderer):
+        """screenshot() passes transparent=False to plotter."""
+        from unittest.mock import MagicMock
+        mock_plotter = MagicMock()
+        mock_plotter.screenshot.return_value = None
+        success = renderer.screenshot(mock_plotter, "/tmp/opaque.png", transparent=False)
+        assert success is True
+        mock_plotter.screenshot.assert_called_once_with(
+            "/tmp/opaque.png", transparent_background=False,
+        )
+
+    def test_screenshot_failure_returns_false(self, renderer):
+        """When plotter.screenshot raises, renderer.screenshot returns False."""
+        from unittest.mock import MagicMock
+        mock_plotter = MagicMock()
+        mock_plotter.screenshot.side_effect = RuntimeError("OpenGL error")
+        success = renderer.screenshot(mock_plotter, "/tmp/fail.png")
+        assert success is False, "screenshot should return False on exception"
+
+    def test_screenshot_failure_logs_error(self, renderer, caplog):
+        """Exception in screenshot is logged, not silently swallowed."""
+        import logging
+        from unittest.mock import MagicMock
+        caplog.set_level(logging.ERROR)
+        mock_plotter = MagicMock()
+        mock_plotter.screenshot.side_effect = RuntimeError("OpenGL error")
+        renderer.screenshot(mock_plotter, "/tmp/fail.png")
+        assert len(caplog.records) >= 1, "Error should be logged"
+        assert "screenshot failed" in caplog.records[0].message.lower()
 
     def test_axes_rendered(self, renderer, plotter):
         """add_coordinate_axes does not raise."""
