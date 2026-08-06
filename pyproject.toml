@@ -74,6 +74,7 @@ markers = [
     "gui: GUI tests",
     "slow: Slow tests (>5s)",
     "performance: Performance benchmarks",
+    "vtk_render: Tests that require real VTK/OpenGL rendering (not run on headless CI)",
 ]
 
 [tool.coverage.run]

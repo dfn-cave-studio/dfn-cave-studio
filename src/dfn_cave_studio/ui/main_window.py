@@ -257,18 +257,30 @@ class MainWindow(QMainWindow):
         self._coords_label = QLabel("X: --  Y: --  Z: --")
         self._status_bar.addPermanentWidget(self._coords_label)
 
+    # ── Plotter factory (overridable for testing) ──────────────────────────
+
+    @staticmethod
+    def _create_plotter(parent: QWidget):
+        """Create the 3D plotter widget.
+
+        Override or monkeypatch this in tests to inject a FakePlotter
+        that does not initialise real VTK/OpenGL.
+        """
+        if HAS_PYVISTAQT:
+            return PyVistaQtInteractor(parent)
+        return None
+
     def _init_central_widget(self) -> None:
         """Create the central widget with 3D view or welcome page."""
         self._central_splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.setCentralWidget(self._central_splitter)
 
         # 3D view area
-        if HAS_PYVISTAQT:
-            self._plotter = PyVistaQtInteractor(self)
+        self._plotter = self._create_plotter(self)
+        if self._plotter is not None:
             self._central_splitter.addWidget(self._plotter)
         else:
             # Fallback: show welcome/label
-            self._plotter = None
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"

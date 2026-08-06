@@ -39,57 +39,67 @@ jobs:
           pip install -r requirements.txt
           pip install pytest-cov pytest-html pytest-json-report pytest-qt pytest-timeout
 
-      - name: Run unit tests
+      # ── Process 1: Core tests (unit / integration / scientific / e2e) ──
+      # Must pass.  Writes .coverage for later combination with GUI coverage.
+      - name: Run core tests with coverage
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
-        run: pytest tests/unit/ -v --tb=short --json-report --json-report-file=test-results-unit.json
+        run: |
+          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ `
+            -v --tb=short `
+            --json-report --json-report-file=test-results-core.json `
+            --cov=src/dfn_cave_studio `
+            --cov-report= `
+            --timeout=120 `
+            --junitxml=junit-core.xml
 
-      - name: Run integration tests
+      # ── Process 2: GUI smoke tests (separate process — no Qt resource leak) ──
+      # Must pass.  Appends to .coverage so combined report covers everything.
+      - name: Run GUI smoke tests with coverage
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
-        run: pytest tests/integration/ -v --tb=short --json-report --json-report-file=test-results-integration.json
+        run: |
+          pytest tests/gui/ `
+            -v --tb=short `
+            --json-report --json-report-file=test-results-gui.json `
+            --cov=src/dfn_cave_studio `
+            --cov-append `
+            --cov-report= `
+            --timeout=60 `
+            --junitxml=junit-gui.xml
 
-      - name: Run scientific validation
+      # ── Combined coverage report ───────────────────────────────────────
+      - name: Combine coverage and report
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
-        run: pytest tests/scientific/ -v --tb=short --json-report --json-report-file=test-results-scientific.json
+        run: |
+          coverage xml -o coverage.xml
+          coverage html -d coverage_html
+          coverage report --fail-under=80
 
-      - name: Run end-to-end tests
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
-        run: pytest tests/end_to_end/ -v --tb=short --json-report --json-report-file=test-results-e2e.json --timeout=120
-
-      - name: Run GUI tests (offscreen)
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
-        run: pytest tests/gui/ -v --tb=short --json-report --json-report-file=test-results-gui.json --timeout=60
-        continue-on-error: true
-
-      - name: Run all tests with coverage
+      # ── HTML test report (core + GUI) ──────────────────────────────────
+      - name: Generate HTML test report
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
         run: |
           pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
-            -v --tb=short `
-            --cov=src/dfn_cave_studio `
-            --cov-report=xml:coverage.xml `
-            --cov-report=html:coverage_html `
-            --cov-fail-under=80 `
-            --html=test-report.html `
-            --self-contained-html `
-            --timeout=120
+            --collect-only -q
+          python -c "
+          import json
+          core = json.load(open('test-results-core.json'))
+          gui  = json.load(open('test-results-gui.json'))
+          total = core['summary']['total'] + gui['summary']['total']
+          passed = core['summary']['passed'] + gui['summary']['passed']
+          print(f'Total: {total}, Passed: {passed}')
+          "
 
       - name: Upload test results
         if: always()
@@ -97,18 +107,11 @@ jobs:
         with:
           name: test-results-${{ matrix.python-version }}
           path: |
-            test-report.html
             coverage.xml
             coverage_html/
             test-results-*.json
+            junit-*.xml
             .pytest_cache/
-
-      - name: Upload coverage to artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.python-version }}
-          path: coverage.xml
 
   review-package:
     name: Build Review Package
@@ -131,25 +134,57 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov pytest-html pytest-json-report pytest-timeout
+          pip install pytest-cov pytest-html pytest-json-report pytest-timeout pytest-qt
 
-      - name: Run full test suite
+      # ── Core tests + coverage ────────────────────────────────────────
+      - name: Run core test suite with coverage
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
         run: |
-          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
+          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ `
             -v --tb=long `
-            --junitxml=junit.xml `
-            --json-report --json-report-file=test_results.json `
+            --junitxml=junit-core.xml `
+            --json-report --json-report-file=test_results_core.json `
             --cov=src/dfn_cave_studio `
-            --cov-report=xml:coverage.xml `
-            --cov-report=html:coverage_html `
-            --cov-fail-under=80 `
+            --cov-report= `
+            --timeout=120
+
+      # ── GUI smoke tests + append coverage ─────────────────────────────
+      - name: Run GUI smoke tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: |
+          pytest tests/gui/ `
+            -v --tb=long `
+            --junitxml=junit-gui.xml `
+            --json-report --json-report-file=test_results_gui.json `
+            --cov=src/dfn_cave_studio `
+            --cov-append `
+            --cov-report= `
+            --timeout=60
+
+      # ── Combined coverage + HTML report ──────────────────────────────
+      - name: Combine coverage and generate reports
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: |
+          coverage xml -o coverage.xml
+          coverage html -d coverage_html
+          coverage report --fail-under=80
+          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
+            --collect-only -q --no-header `
             --html=test-report.html `
             --self-contained-html `
-            --timeout=120
+            --cov=src/dfn_cave_studio `
+            --cov-report= `
+            --timeout=120 `
+            -m "not vtk_render"
 
       - name: Generate review package
         shell: pwsh
