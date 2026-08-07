@@ -16,15 +16,19 @@ Format detection is automatic based on file extension.
 from __future__ import annotations
 
 import json
-import math
+import logging
 import zipfile
-import io
 from datetime import datetime, timezone
+
+_logger = logging.getLogger(__name__)
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+import pandas as pd
+
+if TYPE_CHECKING:
+    from dfn_cave_studio.models.project import Project
 
 
 class ZipProjectStore:
@@ -50,9 +54,8 @@ class ZipProjectStore:
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.6.4")
-            zf.writestr("metadata/created_at.txt",
-                        datetime.now(timezone.utc).isoformat())
+            zf.writestr("metadata/version.txt", "0.7.0")
+            zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
             # --- project.json (core metadata) ---
@@ -62,34 +65,31 @@ class ZipProjectStore:
             # --- inputs ---
             if hasattr(project, "borehole_collection") and project.borehole_collection is not None:
                 bh_data = self._serialize_borehole_collection(project.borehole_collection)
-                zf.writestr("inputs/boreholes.json",
-                            json.dumps(bh_data, indent=2, default=str))
+                zf.writestr("inputs/boreholes.json", json.dumps(bh_data, indent=2, default=str))
 
             # --- parameters ---
             joint_sets = getattr(project, "joint_sets", [])
             if joint_sets:
                 js_data = [self._serialize_joint_set(js) for js in joint_sets]
-                zf.writestr("parameters/joint_sets.json",
-                            json.dumps(js_data, indent=2, default=str))
+                zf.writestr("parameters/joint_sets.json", json.dumps(js_data, indent=2, default=str))
 
             voxel_config = getattr(project, "voxel_config", None)
             if voxel_config is not None:
-                zf.writestr("parameters/voxel_config.json",
-                            json.dumps(voxel_config.model_dump(), indent=2, default=str))
+                zf.writestr(
+                    "parameters/voxel_config.json", json.dumps(voxel_config.model_dump(), indent=2, default=str)
+                )
 
             # --- results ---
             # DFN realization (fracture geometries)
             realizations = getattr(project, "dfn_realizations", [])
             if realizations:
                 dfn_data = self._serialize_realizations(realizations)
-                zf.writestr("results/dfn_realizations.json",
-                            json.dumps(dfn_data, indent=2, default=str))
+                zf.writestr("results/dfn_realizations.json", json.dumps(dfn_data, indent=2, default=str))
 
             # Voxel P32
             voxel_p32 = getattr(project, "voxel_p32_results", None)
             if voxel_p32 is not None:
-                zf.writestr("results/voxel_p32.json",
-                            json.dumps(voxel_p32, indent=2, default=str))
+                zf.writestr("results/voxel_p32.json", json.dumps(voxel_p32, indent=2, default=str))
 
             # Connectivity
             conn = getattr(project, "connectivity_results", None)
@@ -102,13 +102,73 @@ class ZipProjectStore:
                         conn_out["component_labels"] = [int(c) for c in clusters]
                     elif isinstance(clusters, np.ndarray):
                         conn_out["component_labels"] = clusters.tolist()
-                zf.writestr("results/connectivity.json",
-                            json.dumps(conn_out, indent=2, default=str))
+                zf.writestr("results/connectivity.json", json.dumps(conn_out, indent=2, default=str))
+
+            # ── M7 data ──────────────────────────────────────────────────
+            m7_data = getattr(project, "_m7_data", None)
+            if m7_data is None:
+                m7_data = {}
+            # Raw DataFrames — save as CSV inside ZIP
+            for key in [
+                "raw_surveys",
+                "raw_fractures",
+                "raw_rqd",
+                "raw_domain_intervals",
+                "cleaned_rqd",
+            ]:
+                df = m7_data.get(key)
+                if df is not None and hasattr(df, "to_csv"):
+                    zf.writestr(f"m7/{key}.csv", df.to_csv(index=False))
+            # Workflow state
+            wf = m7_data.get("workflow")
+            if wf is not None:
+                zf.writestr("m7/workflow.json", json.dumps(wf.to_dict(), indent=2, default=str))
+            # Holdout
+            ho = m7_data.get("holdout")
+            if ho is not None:
+                zf.writestr("m7/holdout.json", json.dumps(ho.to_dict(), indent=2, default=str))
+            # Domain intervals
+            di = m7_data.get("domain_intervals", [])
+            if di:
+                zf.writestr(
+                    "m7/domain_intervals.json",
+                    json.dumps([d.model_dump() if hasattr(d, "model_dump") else d for d in di], indent=2, default=str),
+                )
+            # Structural domains (full definitions with name, color, notes, etc.)
+            sd = getattr(project, "structural_domains", None)
+            if sd is not None and hasattr(sd, "domains") and sd.domains:
+                zf.writestr(
+                    "m7/structural_domains.json",
+                    json.dumps([d.model_dump() for d in sd.domains], indent=2, default=str),
+                )
+            # Field mappings
+            fm = m7_data.get("field_mappings", {})
+            if fm:
+                zf.writestr(
+                    "m7/field_mappings.json",
+                    json.dumps(
+                        {k: v.model_dump() if hasattr(v, "model_dump") else v for k, v in fm.items()},
+                        indent=2,
+                        default=str,
+                    ),
+                )
+            # Quality issues
+            qi = m7_data.get("quality_issues", [])
+            if qi:
+                zf.writestr(
+                    "m7/quality_issues.json",
+                    json.dumps([q.model_dump() if hasattr(q, "model_dump") else q for q in qi], indent=2, default=str),
+                )
+            excluded = m7_data.get("excluded_records", [])
+            if excluded:
+                zf.writestr(
+                    "m7/excluded_records.json",
+                    json.dumps(excluded, indent=2, default=str),
+                )
 
             # Summary
             summary = self._build_summary(project)
-            zf.writestr("results/summary.json",
-                        json.dumps(summary, indent=2, default=str))
+            zf.writestr("results/summary.json", json.dumps(summary, indent=2, default=str))
 
     # ── Load ──────────────────────────────────────────────────────────────
 
@@ -151,6 +211,7 @@ class ZipProjectStore:
 
             if "parameters/voxel_config.json" in zf.namelist():
                 from dfn_cave_studio.models.bounds import VoxelConfig
+
                 vc_dict = json.loads(zf.read("parameters/voxel_config.json").decode("utf-8"))
                 project.voxel_config = VoxelConfig(**vc_dict)
 
@@ -161,8 +222,7 @@ class ZipProjectStore:
 
             # Voxel P32 and connectivity are stored as plain dicts
             if "results/voxel_p32.json" in zf.namelist():
-                project.voxel_p32_results = json.loads(
-                    zf.read("results/voxel_p32.json").decode("utf-8"))
+                project.voxel_p32_results = json.loads(zf.read("results/voxel_p32.json").decode("utf-8"))
 
             if "results/connectivity.json" in zf.namelist():
                 conn_data = json.loads(zf.read("results/connectivity.json").decode("utf-8"))
@@ -171,23 +231,97 @@ class ZipProjectStore:
                 if "component_labels" in conn_data:
                     project.connectivity_clusters = conn_data["component_labels"]
 
+            # ── M7 data restore ────────────────────────────────────────
+            m7_data = {}
+            # Raw DataFrames from CSV
+            for key in [
+                "raw_surveys",
+                "raw_fractures",
+                "raw_rqd",
+                "raw_domain_intervals",
+                "cleaned_rqd",
+            ]:
+                csv_path = f"m7/{key}.csv"
+                if csv_path in zf.namelist():
+                    import io as _io
+
+                    try:
+                        m7_data[key] = pd.read_csv(_io.BytesIO(zf.read(csv_path)))
+                    except (
+                        OSError,
+                        UnicodeDecodeError,
+                        ValueError,
+                        pd.errors.ParserError,
+                    ):
+                        _logger.warning(
+                            "Failed to restore M7 DataFrame '%s' from %s in %s", key, csv_path, path, exc_info=True
+                        )
+            if "m7/workflow.json" in zf.namelist():
+                from dfn_cave_studio.services.workflow_controller import WorkflowController
+
+                wf_data = json.loads(zf.read("m7/workflow.json").decode("utf-8"))
+                wf = WorkflowController()
+                wf.from_dict(wf_data)
+                m7_data["workflow"] = wf
+            if "m7/holdout.json" in zf.namelist():
+                from dfn_cave_studio.services.holdout_service import HoldoutService
+
+                ho_data = json.loads(zf.read("m7/holdout.json").decode("utf-8"))
+                m7_data["holdout"] = HoldoutService.from_dict(ho_data)
+            if "m7/domain_intervals.json" in zf.namelist():
+                from dfn_cave_studio.models.data_management import DomainInterval
+
+                di_data = json.loads(zf.read("m7/domain_intervals.json").decode("utf-8"))
+                m7_data["domain_intervals"] = [DomainInterval(**d) for d in di_data]
+            if "m7/structural_domains.json" in zf.namelist():
+                from dfn_cave_studio.models.structural_domain import (
+                    StructuralDomain,
+                )
+
+                sd_data = json.loads(zf.read("m7/structural_domains.json").decode("utf-8"))
+                restored_domains = [StructuralDomain(**d) for d in sd_data]
+                # Replace project's structural domains (preserves Global if not in file)
+                project.structural_domains.domains = restored_domains
+                # Ensure Global (id=0) always exists
+                if not any(d.domain_id == 0 for d in restored_domains):
+                    project.structural_domains.domains.insert(0, StructuralDomain(domain_id=0, name="Global Domain"))
+            if "m7/field_mappings.json" in zf.namelist():
+                from dfn_cave_studio.models.data_management import FieldMapping
+
+                fm_data = json.loads(zf.read("m7/field_mappings.json").decode("utf-8"))
+                m7_data["field_mappings"] = {k: FieldMapping(**v) for k, v in fm_data.items()}
+            if "m7/quality_issues.json" in zf.namelist():
+                from dfn_cave_studio.models.data_management import DataQualityIssue
+
+                qi_data = json.loads(zf.read("m7/quality_issues.json").decode("utf-8"))
+                m7_data["quality_issues"] = [DataQualityIssue(**q) for q in qi_data]
+            if "m7/excluded_records.json" in zf.namelist():
+                m7_data["excluded_records"] = json.loads(zf.read("m7/excluded_records.json").decode("utf-8"))
+            if m7_data:
+                project._m7_data = m7_data
+
         return project
 
     # ── Serialization Helpers ─────────────────────────────────────────────
 
     def _serialize_project_core(self, project) -> dict:
         """Serialize core project metadata."""
-        from dfn_cave_studio.models.bounds import ModelBounds
+
         d = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
             "schema_version": getattr(project, "schema_version", 1),
         }
+        if hasattr(project, "metadata"):
+            d["metadata"] = project.metadata.model_dump(mode="json")
         if hasattr(project, "model_bounds") and project.model_bounds is not None:
             b = project.model_bounds
             d["model_bounds"] = {
-                "x_min": b.x_min, "x_max": b.x_max,
-                "y_min": b.y_min, "y_max": b.y_max,
-                "z_min": b.z_min, "z_max": b.z_max,
+                "x_min": b.x_min,
+                "x_max": b.x_max,
+                "y_min": b.y_min,
+                "y_max": b.y_max,
+                "z_min": b.z_min,
+                "z_max": b.z_max,
             }
         if hasattr(project, "master_seed"):
             d["master_seed"] = project.master_seed
@@ -198,17 +332,25 @@ class ZipProjectStore:
     def _deserialize_project_core(self, project, d: dict) -> None:
         """Deserialize core project metadata into a Project instance."""
         from dfn_cave_studio.models.bounds import ModelBounds
+
         if "name" in d and hasattr(project, "metadata"):
             project.metadata.name = d["name"]
+        if "metadata" in d and hasattr(project, "metadata"):
+            from dfn_cave_studio.models.project import ProjectMetadata
+
+            project.metadata = ProjectMetadata(**d["metadata"])
         if "master_seed" in d:
             if hasattr(project, "config"):
                 project.config.master_seed = d["master_seed"]
         if "model_bounds" in d:
             b = d["model_bounds"]
             project.model_bounds = ModelBounds(
-                x_min=b["x_min"], x_max=b["x_max"],
-                y_min=b["y_min"], y_max=b["y_max"],
-                z_min=b["z_min"], z_max=b["z_max"],
+                x_min=b["x_min"],
+                x_max=b["x_max"],
+                y_min=b["y_min"],
+                y_max=b["y_max"],
+                z_min=b["z_min"],
+                z_max=b["z_max"],
             )
 
     def _serialize_borehole_collection(self, collection) -> dict:
@@ -231,11 +373,13 @@ class ZipProjectStore:
             # Survey stations
             stations = []
             for s in bh.survey.stations:
-                stations.append({
-                    "measured_depth": s.measured_depth,
-                    "azimuth": s.azimuth,
-                    "dip": s.dip,
-                })
+                stations.append(
+                    {
+                        "measured_depth": s.measured_depth,
+                        "azimuth": s.azimuth,
+                        "dip": s.dip,
+                    }
+                )
             bh_dict["survey_stations"] = stations
 
             # Fracture observations with 3D positions
@@ -247,7 +391,9 @@ class ZipProjectStore:
                     "dip_direction": obs.dip_direction,
                     "dip": obs.dip,
                     "aperture": obs.aperture,
-                    "fracture_type": str(obs.fracture_type.value) if hasattr(obs.fracture_type, "value") else str(obs.fracture_type),
+                    "fracture_type": (
+                        str(obs.fracture_type.value) if hasattr(obs.fracture_type, "value") else str(obs.fracture_type)
+                    ),
                     "confidence": obs.confidence,
                     "set_id": obs.set_id,
                     "position_3d": [float(pos[0]), float(pos[1]), float(pos[2])] if pos is not None else None,
@@ -259,8 +405,12 @@ class ZipProjectStore:
     def _deserialize_borehole_collection(self, data: dict):
         """Deserialize a BoreholeCollection from dict."""
         from dfn_cave_studio.models.borehole import (
-            BoreholeCollection, Borehole, Collar, BoreholeSurvey,
-            SurveyStation, FractureObservation,
+            BoreholeCollection,
+            Borehole,
+            Collar,
+            BoreholeSurvey,
+            SurveyStation,
+            FractureObservation,
         )
         from dfn_cave_studio.models.enums import FractureType
 
@@ -269,13 +419,14 @@ class ZipProjectStore:
             c = bh_dict["collar"]
             collar = Collar(
                 borehole_id=bh_dict["borehole_id"],
-                collar_x=c["x"], collar_y=c["y"], collar_z=c["z"],
-                azimuth=c.get("azimuth", 0), dip=c.get("dip", -90),
+                collar_x=c["x"],
+                collar_y=c["y"],
+                collar_z=c["z"],
+                azimuth=c.get("azimuth", 0),
+                dip=c.get("dip", -90),
                 final_depth=c.get("final_depth", 100),
             )
-            survey = BoreholeSurvey(stations=[
-                SurveyStation(**s) for s in bh_dict.get("survey_stations", [])
-            ])
+            survey = BoreholeSurvey(stations=[SurveyStation(**s) for s in bh_dict.get("survey_stations", [])])
             bh = Borehole(
                 borehole_id=bh_dict["borehole_id"],
                 name=bh_dict.get("name", ""),
@@ -313,7 +464,11 @@ class ZipProjectStore:
                 "kappa": js.orientation.kappa,
             },
             "size": {
-                "distribution_type": str(js.size.distribution_type.value) if hasattr(js.size.distribution_type, "value") else str(js.size.distribution_type),
+                "distribution_type": (
+                    str(js.size.distribution_type.value)
+                    if hasattr(js.size.distribution_type, "value")
+                    else str(js.size.distribution_type)
+                ),
                 "min_radius": js.size.min_radius,
                 "max_radius": js.size.max_radius,
                 "lognormal_mu": js.size.lognormal_mu,
@@ -328,7 +483,9 @@ class ZipProjectStore:
     def _deserialize_joint_sets(self, data: list) -> list:
         """Deserialize a list of JointSetConfigs from dicts."""
         from dfn_cave_studio.models.fracture_set import (
-            JointSetConfig, OrientationDistribution, SizeDistribution,
+            JointSetConfig,
+            OrientationDistribution,
+            SizeDistribution,
         )
         from dfn_cave_studio.models.enums import SizeDistributionType
 
@@ -369,36 +526,42 @@ class ZipProjectStore:
             fractures = []
             for f in getattr(r, "stochastic_fractures", []):
                 g = f.geometry
-                fractures.append({
-                    "fracture_id": str(f.fracture_id) if hasattr(f, "fracture_id") else "",
-                    "set_id": f.set_id,
-                    "set_name": getattr(f, "set_name", ""),
-                    "center": [float(g.center_x), float(g.center_y), float(g.center_z)],
-                    "normal": [float(g.normal_x), float(g.normal_y), float(g.normal_z)],
-                    "radius": float(f.radius if f.radius > 0 else (g.radius or 1.0)),
-                    "dip_direction": float(g.dip_direction) if g.dip_direction is not None else 0.0,
-                    "dip": float(g.dip) if g.dip is not None else 0.0,
-                })
+                fractures.append(
+                    {
+                        "fracture_id": str(f.fracture_id) if hasattr(f, "fracture_id") else "",
+                        "set_id": f.set_id,
+                        "set_name": getattr(f, "set_name", ""),
+                        "center": [float(g.center_x), float(g.center_y), float(g.center_z)],
+                        "normal": [float(g.normal_x), float(g.normal_y), float(g.normal_z)],
+                        "radius": float(f.radius if f.radius > 0 else (g.radius or 1.0)),
+                        "dip_direction": float(g.dip_direction) if g.dip_direction is not None else 0.0,
+                        "dip": float(g.dip) if g.dip is not None else 0.0,
+                    }
+                )
             gr = getattr(r, "generation_result", None)
             provenance = {}
             if gr is not None:
                 provenance = dict(getattr(gr, "parameter_provenance", {}))
-            result.append({
-                "realization_number": getattr(r, "realization_number", 0),
-                "name": getattr(r, "name", ""),
-                "total_p32": getattr(r, "total_p32", 0.0),
-                "fractures": fractures,
-                "parameter_provenance": provenance,
-            })
+            result.append(
+                {
+                    "realization_number": getattr(r, "realization_number", 0),
+                    "name": getattr(r, "name", ""),
+                    "total_p32": getattr(r, "total_p32", 0.0),
+                    "fractures": fractures,
+                    "parameter_provenance": provenance,
+                }
+            )
         return result
 
     def _deserialize_realizations(self, data: list) -> list:
         """Deserialize DFN realizations from dicts."""
         from dfn_cave_studio.models.fracture import (
-            StochasticFracture, FractureGeometry,
+            StochasticFracture,
+            FractureGeometry,
         )
         from dfn_cave_studio.models.dfn_realization import (
-            DFNRealization, DFNGenerationResult,
+            DFNRealization,
+            DFNGenerationResult,
         )
         from dfn_cave_studio.models.enums import FractureSource
 
@@ -410,8 +573,12 @@ class ZipProjectStore:
                 n = fd["normal"]
                 geo = FractureGeometry(
                     geometry_type="disk",
-                    center_x=c[0], center_y=c[1], center_z=c[2],
-                    normal_x=n[0], normal_y=n[1], normal_z=n[2],
+                    center_x=c[0],
+                    center_y=c[1],
+                    center_z=c[2],
+                    normal_x=n[0],
+                    normal_y=n[1],
+                    normal_z=n[2],
                     radius=fd["radius"],
                     dip_direction=fd.get("dip_direction", 0.0),
                     dip=fd.get("dip", 0.0),
@@ -454,8 +621,11 @@ class ZipProjectStore:
                 if isinstance(v, (int, float, str, bool, list, type(None))):
                     result[k] = v
                 elif isinstance(v, dict):
-                    result[k] = {str(k2): v2 for k2, v2 in v.items()
-                                 if isinstance(v2, (int, float, str, bool, list, dict, type(None)))}
+                    result[k] = {
+                        str(k2): v2
+                        for k2, v2 in v.items()
+                        if isinstance(v2, (int, float, str, bool, list, dict, type(None)))
+                    }
                 elif isinstance(v, (np.integer,)):
                     result[k] = int(v)
                 elif isinstance(v, (np.floating,)):
@@ -466,11 +636,22 @@ class ZipProjectStore:
                     result[k] = str(v)
             return result
         if isinstance(conn, (list, tuple)):
-            return [self._serialize_connectivity(c) if isinstance(c, dict) else
-                    int(c) if isinstance(c, (np.integer,)) else
-                    float(c) if isinstance(c, (np.floating,)) else
-                    c.tolist() if isinstance(c, np.ndarray) else c
-                    for c in conn]
+            return [
+                (
+                    self._serialize_connectivity(c)
+                    if isinstance(c, dict)
+                    else (
+                        int(c)
+                        if isinstance(c, (np.integer,))
+                        else (
+                            float(c)
+                            if isinstance(c, (np.floating,))
+                            else c.tolist() if isinstance(c, np.ndarray) else c
+                        )
+                    )
+                )
+                for c in conn
+            ]
         return {"raw": str(conn)}
 
     @staticmethod
@@ -504,7 +685,9 @@ class ZipProjectStore:
                 continue  # Skip empty voxels
 
             entry = {
-                "i": int(ix), "j": int(iy), "k": int(iz),
+                "i": int(ix),
+                "j": int(iy),
+                "k": int(iz),
                 "x": float(grid.x_min + ix * grid.cell_size_x + grid.cell_size_x / 2),
                 "y": float(grid.y_min + iy * grid.cell_size_y + grid.cell_size_y / 2),
                 "z": float(grid.z_min + iz * grid.cell_size_z + grid.cell_size_z / 2),
@@ -519,39 +702,53 @@ class ZipProjectStore:
             results.append(entry)
 
         # Add grid-level metadata as first entry
-        csx = float(getattr(grid, 'cell_size_x', 1.0))
-        csy = float(getattr(grid, 'cell_size_y', 1.0))
-        csz = float(getattr(grid, 'cell_size_z', 1.0))
-        gx_min = float(getattr(grid, 'x_min', 0.0))
-        gy_min = float(getattr(grid, 'y_min', 0.0))
-        gz_min = float(getattr(grid, 'z_min', 0.0))
-        nx = int(getattr(grid, 'nx', 0))
-        ny = int(getattr(grid, 'ny', 0))
-        nz = int(getattr(grid, 'nz', 0))
+        csx = float(getattr(grid, "cell_size_x", 1.0))
+        csy = float(getattr(grid, "cell_size_y", 1.0))
+        csz = float(getattr(grid, "cell_size_z", 1.0))
+        gx_min = float(getattr(grid, "x_min", 0.0))
+        gy_min = float(getattr(grid, "y_min", 0.0))
+        gz_min = float(getattr(grid, "z_min", 0.0))
+        nx = int(getattr(grid, "nx", 0))
+        ny = int(getattr(grid, "ny", 0))
+        nz = int(getattr(grid, "nz", 0))
         gx_max = gx_min + nx * csx
         gy_max = gy_min + ny * csy
         gz_max = gz_min + nz * csz
-        results.insert(0, {
-            "i": -1, "j": -1, "k": -1,
-            "x": -1, "y": -1, "z": -1,
-            "local_p32": -1.0,
-            "fracture_area": -1.0,
-            "fracture_count": -1,
-            "connectivity_cluster": -1,
-            "dx": csx, "dy": csy, "dz": csz,
-            "x_min": gx_min, "x_max": gx_max,
-            "y_min": gy_min, "y_max": gy_max,
-            "z_min": gz_min, "z_max": gz_max,
-            "nx": nx, "ny": ny, "nz": nz,
-            "_meta": "grid_metadata",
-        })
+        results.insert(
+            0,
+            {
+                "i": -1,
+                "j": -1,
+                "k": -1,
+                "x": -1,
+                "y": -1,
+                "z": -1,
+                "local_p32": -1.0,
+                "fracture_area": -1.0,
+                "fracture_count": -1,
+                "connectivity_cluster": -1,
+                "dx": csx,
+                "dy": csy,
+                "dz": csz,
+                "x_min": gx_min,
+                "x_max": gx_max,
+                "y_min": gy_min,
+                "y_max": gy_max,
+                "z_min": gz_min,
+                "z_max": gz_max,
+                "nx": nx,
+                "ny": ny,
+                "nz": nz,
+                "_meta": "grid_metadata",
+            },
+        )
         return results
 
     def _build_summary(self, project) -> dict:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.6.4",
+            "version": "0.7.0",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,
@@ -559,8 +756,7 @@ class ZipProjectStore:
             "has_voxel_p32": False,
             "has_connectivity": False,
         }
-        if (hasattr(project, "borehole_collection")
-                and project.borehole_collection is not None):
+        if hasattr(project, "borehole_collection") and project.borehole_collection is not None:
             summary["borehole_count"] = len(project.borehole_collection)
             for bh in project.borehole_collection:
                 summary["observation_count"] += len(bh.fracture_observations)

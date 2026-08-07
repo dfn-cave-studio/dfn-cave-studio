@@ -3,26 +3,22 @@ Main window for DFN Cave Studio.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from dfn_cave_studio.ui.qt_adapter import (
     Qt,
     QMainWindow,
     QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
     QSplitter,
     QLabel,
     QStatusBar,
-    QMenuBar,
     QMenu,
     QAction,
     QKeySequence,
+    QDialog,
     QMessageBox,
     QDockWidget,
     QTextEdit,
     QToolBar,
-    QIcon,
     QTreeWidget,
     QTreeWidgetItem,
     QTabWidget,
@@ -34,9 +30,8 @@ from dfn_cave_studio.ui.qt_adapter import (
     HAS_PYVISTAQT,
 )
 
-from dfn_cave_studio.core import get_config, AppVersion
+from dfn_cave_studio.core import get_config
 from dfn_cave_studio.persistence.project_store import ProjectStore, RecentProjectsManager
-from dfn_cave_studio.models.dfn_realization import DFNRealization
 
 
 class MainWindow(QMainWindow):
@@ -59,6 +54,11 @@ class MainWindow(QMainWindow):
         self._recent_manager = RecentProjectsManager()
         self._project_store.set_on_dirty_changed(self._on_project_dirty_changed)
         self._dfn_renderer = None  # Lazy-loaded (imports pyvista)
+
+        # M7 workflow controller
+        from dfn_cave_studio.services.workflow_controller import WorkflowController
+
+        self._workflow = WorkflowController()
 
         # Auto-save timer
         self._auto_save_timer = QTimer(self)
@@ -100,133 +100,85 @@ class MainWindow(QMainWindow):
         # === File Menu ===
         self._file_menu = menu_bar.addMenu("&File")
         self._add_menu_action(
-            self._file_menu, "&New Project", "Ctrl+N",
-            self._on_new_project, "Create a new DFN Cave Studio project"
+            self._file_menu, "&New Project", "Ctrl+N", self._on_new_project, "Create a new DFN Cave Studio project"
         )
         self._add_menu_action(
-            self._file_menu, "&Open Project...", "Ctrl+O",
-            self._on_open_project, "Open an existing project"
+            self._file_menu, "&Open Project...", "Ctrl+O", self._on_open_project, "Open an existing project"
         )
         self._file_menu.addSeparator()
+        self._add_menu_action(self._file_menu, "&Save Project", "Ctrl+S", self._on_save_project, "Save current project")
         self._add_menu_action(
-            self._file_menu, "&Save Project", "Ctrl+S",
-            self._on_save_project, "Save current project"
-        )
-        self._add_menu_action(
-            self._file_menu, "Save Project &As...", "Ctrl+Shift+S",
-            self._on_save_project_as, "Save project to a new location"
+            self._file_menu,
+            "Save Project &As...",
+            "Ctrl+Shift+S",
+            self._on_save_project_as,
+            "Save project to a new location",
         )
         self._file_menu.addSeparator()
-        self._add_menu_action(
-            self._file_menu, "&Import", None,
-            None, "Import data"
-        )
-        self._add_menu_action(
-            self._file_menu, "&Export", None,
-            None, "Export data"
-        )
+        self._add_menu_action(self._file_menu, "&Import", None, None, "Import data")
+        self._add_menu_action(self._file_menu, "&Export", None, None, "Export data")
         self._file_menu.addSeparator()
         self._recent_menu = self._file_menu.addMenu("&Recent Projects")
         self._file_menu.addSeparator()
-        self._add_menu_action(
-            self._file_menu, "E&xit", "Alt+F4",
-            self.close, "Exit DFN Cave Studio"
-        )
+        self._add_menu_action(self._file_menu, "E&xit", "Alt+F4", self.close, "Exit DFN Cave Studio")
 
         # === Data Menu ===
         self._data_menu = menu_bar.addMenu("&Data")
         self._add_menu_action(
-            self._data_menu, "&Borehole Manager...", None,
-            self._on_borehole_manager, "Import and manage borehole data"
+            self._data_menu, "&Borehole Manager...", None, self._on_borehole_manager, "Import and manage borehole data"
         )
 
         # === Voxel Menu ===
         self._voxel_menu = menu_bar.addMenu("&Voxel")
         self._add_menu_action(
-            self._voxel_menu, "Voxel &Settings...", None,
-            self._on_voxel_settings, "Configure voxel grid"
+            self._voxel_menu, "Voxel &Settings...", None, self._on_voxel_settings, "Configure voxel grid"
         )
 
         # === DFN Menu ===
         self._dfn_menu = menu_bar.addMenu("D&FN")
         self._add_menu_action(
-            self._dfn_menu, "&Joint Set Manager...", None,
-            self._on_joint_set_manager, "Manage fracture sets"
+            self._dfn_menu, "&Joint Set Manager...", None, self._on_joint_set_manager, "Manage fracture sets"
         )
         self._add_menu_action(
-            self._dfn_menu, "&Generate DFN...", None,
-            self._on_generate_dfn, "Generate stochastic DFN"
+            self._dfn_menu, "&Generate DFN...", None, self._on_generate_dfn, "Generate stochastic DFN"
         )
 
         # === Domains Menu ===
         self._domains_menu = menu_bar.addMenu("D&omains")
         self._add_menu_action(
-            self._domains_menu, "&Domain Manager...", None,
-            self._on_domain_manager, "Manage structural domains"
+            self._domains_menu, "&Domain Manager...", None, self._on_domain_manager, "Manage structural domains"
         )
 
         # === Analysis Menu ===
         self._analysis_menu = menu_bar.addMenu("&Analysis")
         self._add_menu_action(
-            self._analysis_menu, "&Connectivity...", None,
-            self._on_connectivity, "Analyze fracture connectivity"
+            self._analysis_menu, "&Connectivity...", None, self._on_connectivity, "Analyze fracture connectivity"
         )
         self._add_menu_action(
-            self._analysis_menu, "&Fragmentation...", None,
-            self._on_fragmentation, "Analyze block fragmentation"
+            self._analysis_menu, "&Fragmentation...", None, self._on_fragmentation, "Analyze block fragmentation"
         )
 
         # === Visualization Menu ===
         self._vis_menu = menu_bar.addMenu("&Visualization")
-        self._add_menu_action(
-            self._vis_menu, "&Reset View", "R",
-            self._on_reset_view, "Reset 3D camera view"
-        )
-        self._add_menu_action(
-            self._vis_menu, "Top &View", "T",
-            self._on_top_view, "Switch to top-down view"
-        )
-        self._add_menu_action(
-            self._vis_menu, "&Front View", "F",
-            self._on_front_view, "Switch to front view"
-        )
-        self._add_menu_action(
-            self._vis_menu, "&Left View", "L",
-            self._on_left_view, "Switch to left view"
-        )
+        self._add_menu_action(self._vis_menu, "&Reset View", "R", self._on_reset_view, "Reset 3D camera view")
+        self._add_menu_action(self._vis_menu, "Top &View", "T", self._on_top_view, "Switch to top-down view")
+        self._add_menu_action(self._vis_menu, "&Front View", "F", self._on_front_view, "Switch to front view")
+        self._add_menu_action(self._vis_menu, "&Left View", "L", self._on_left_view, "Switch to left view")
 
         # === Export Menu ===
         self._export_menu = menu_bar.addMenu("E&xport")
-        self._add_menu_action(
-            self._export_menu, "Export &3DEC...", None,
-            self._on_export_3dec, "Export for 3DEC"
-        )
-        self._add_menu_action(
-            self._export_menu, "Export &FLAC3D...", None,
-            self._on_export_flac3d, "Export for FLAC3D"
-        )
-        self._add_menu_action(
-            self._export_menu, "Export &VTK...", None,
-            self._on_export_vtk, "Export to VTK format"
-        )
+        self._add_menu_action(self._export_menu, "Export &3DEC...", None, self._on_export_3dec, "Export for 3DEC")
+        self._add_menu_action(self._export_menu, "Export &FLAC3D...", None, self._on_export_flac3d, "Export for FLAC3D")
+        self._add_menu_action(self._export_menu, "Export &VTK...", None, self._on_export_vtk, "Export to VTK format")
 
         # === Tools Menu ===
         self._tools_menu = menu_bar.addMenu("&Tools")
-        self._add_menu_action(
-            self._tools_menu, "&Settings...", "Ctrl+,",
-            self._on_settings, "Application settings"
-        )
+        self._add_menu_action(self._tools_menu, "&Settings...", "Ctrl+,", self._on_settings, "Application settings")
 
         # === Help Menu ===
         self._help_menu = menu_bar.addMenu("&Help")
-        self._add_menu_action(
-            self._help_menu, "&About", None,
-            self._on_about, "About DFN Cave Studio"
-        )
-        self._add_menu_action(
-            self._help_menu, "&Documentation", "F1",
-            self._on_documentation, "Open documentation"
-        )
+        self._add_menu_action(self._help_menu, "&About", None, self._on_about, "About DFN Cave Studio")
+        self._add_menu_action(self._help_menu, "&Documentation", "F1", self._on_documentation, "Open documentation")
 
     def _init_tool_bar(self) -> None:
         """Create the main toolbar."""
@@ -284,7 +236,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.6.4-M6</p>"
+                "<p>Version 0.7.0-M7</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -296,9 +248,7 @@ class MainWindow(QMainWindow):
         """Create dock widgets."""
         # Left dock: Project tree
         self._project_dock = QDockWidget("Project Explorer", self)
-        self._project_dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
-        )
+        self._project_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self._project_tree = QTreeWidget()
         self._project_tree.setHeaderLabel("Project")
         self._project_dock.setWidget(self._project_tree)
@@ -317,14 +267,20 @@ class MainWindow(QMainWindow):
 
         # Bottom dock: Log output
         self._log_dock = QDockWidget("Log", self)
-        self._log_dock.setAllowedAreas(
-            Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.TopDockWidgetArea
-        )
+        self._log_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.TopDockWidgetArea)
         self._log_widget = QTextEdit()
         self._log_widget.setReadOnly(True)
         self._log_widget.document().setMaximumBlockCount(1000)
         self._log_dock.setWidget(self._log_widget)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._log_dock)
+
+        # M7 workflow panel (left dock, below project explorer)
+        from dfn_cave_studio.ui.panels.m7_workflow_panel import M7WorkflowPanel
+
+        self._workflow_panel = M7WorkflowPanel(self._workflow, main_window=self, parent=self)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._workflow_panel)
+        self.tabifyDockWidget(self._project_dock, self._workflow_panel)
+        self._project_dock.raise_()
 
     def _init_project_tree(self) -> None:
         """Initialize the project tree with default structure."""
@@ -375,8 +331,10 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.6.4-M6 started")
-        self.log_message(f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}")
+        self.log_message("DFN Cave Studio v0.7.0-M7 started")
+        self.log_message(
+            f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}"
+        )
         if HAS_PYVISTAQT:
             self.log_message("3D Visualization: Available (PyVistaQt)")
         else:
@@ -445,21 +403,51 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_new_project(self) -> None:
-        """Create a new project."""
+        """Create a new project — clears all previous state."""
         self.log_message("Creating new project...")
+        self._clear_renderer_state()
+        # Clear project tree
+        self._init_project_tree()
+        # Reset workflow
+        from dfn_cave_studio.services.workflow_controller import WorkflowController
+
+        self._workflow = WorkflowController()
+        self._workflow_panel._controller = self._workflow
+        self._workflow.add_change_listener(self._workflow_panel._refresh)
+        self._workflow_panel._refresh()
         try:
             project = self._project_store.new_project("New Project")
+            # Bind workflow to project immediately
+            from dfn_cave_studio.services.m7_state import set_workflow
+
+            set_workflow(project, self._workflow)
             self.setWindowTitle("DFN Cave Studio — New Project [unsaved]")
-            self.set_status(f"New project created")
+            self.set_status("New project created")
             self._update_project_tree_from_project(project)
             self.log_message(f"New project '{project.metadata.name}' created")
-        except Exception as e:
+        except (RuntimeError, TypeError, ValueError) as e:
             self.log_error(f"Failed to create project: {e}")
+
+    def _clear_renderer_state(self) -> None:
+        """Clear renderer bookkeeping and every actor in the active plotter."""
+        if self._plotter is None:
+            return
+        if self._dfn_renderer is not None:
+            try:
+                self._dfn_renderer.clear(self._plotter)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                self.log_warning("Failed to clear 3D renderer during new project")
+        try:
+            self._plotter.clear()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            self.log_warning("Failed to clear plotter actors")
 
     def _on_open_project(self) -> None:
         """Open an existing project (.dfnproj or legacy .dfncs)."""
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Project", "",
+            self,
+            "Open Project",
+            "",
             "DFN Cave Studio Projects (*.dfnproj *.dfncs);;"
             "ZIP Projects (*.dfnproj);;"
             "Legacy JSON Projects (*.dfncs);;"
@@ -489,7 +477,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            path = self._project_store.save()
+            path = self._save_project_to(self._project_store.current_path)
             self._recent_manager.add(path, self._project_store.current_project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
             self.set_status(f"Saved: {path.name}")
@@ -504,10 +492,10 @@ class MainWindow(QMainWindow):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project As", "untitled.dfnproj",
-            "DFN Cave Studio ZIP Projects (*.dfnproj);;"
-            "Legacy JSON Projects (*.dfncs);;"
-            "All Files (*)",
+            self,
+            "Save Project As",
+            "untitled.dfnproj",
+            "DFN Cave Studio ZIP Projects (*.dfnproj);;" "Legacy JSON Projects (*.dfncs);;" "All Files (*)",
         )
         if not path:
             return
@@ -526,13 +514,14 @@ class MainWindow(QMainWindow):
     def _on_borehole_manager(self) -> None:
         """Open borehole data import dialog."""
         from dfn_cave_studio.ui.dialogs.import_dialog import DataImportDialog
+
         dlg = DataImportDialog(self)
         if dlg.exec() == DataImportDialog.DialogCode.Accepted:
             collection = dlg.get_collection()
             if collection and self._project_store.has_project:
                 project = self._project_store.current_project
                 project.borehole_collection = collection
-                self._project_store._mark_dirty()
+                self._project_store.mark_dirty()
                 n_bh = len(collection)
                 n_obs = sum(bh.observed_fracture_count for bh in collection)
                 self.log_message(f"Imported {n_bh} boreholes, {n_obs} fracture observations")
@@ -546,6 +535,7 @@ class MainWindow(QMainWindow):
             return
         try:
             import pyvista as pv
+
             for bh in collection:
                 points, _ = bh.compute_trajectory(step_length=2.0)
                 if len(points) >= 2:
@@ -559,6 +549,7 @@ class MainWindow(QMainWindow):
     def _on_voxel_settings(self) -> None:
         """Open model bounds and voxel settings dialog."""
         from dfn_cave_studio.ui.dialogs.bounds_dialog import ModelBoundsDialog
+
         project = self._project_store.current_project if self._project_store.has_project else None
         dlg = ModelBoundsDialog(
             bounds=project.model_bounds if project else None,
@@ -572,12 +563,14 @@ class MainWindow(QMainWindow):
                 project.model_bounds = dlg.get_bounds()
                 project.voxel_config = dlg.get_voxel_config()
                 project.config.master_seed = dlg.get_seed()
-                self._project_store._mark_dirty()
+                self._project_store.mark_dirty()
                 vc = dlg.get_voxel_config()
                 b = dlg.get_bounds()
-                self.log_message(f"Bounds: {b.width:.0f}×{b.depth:.0f}×{b.height:.0f}m, "
-                               f"Voxels: {vc.cell_size_x}×{vc.cell_size_y}×{vc.cell_size_z}m, "
-                               f"Seed: {dlg.get_seed()}")
+                self.log_message(
+                    f"Bounds: {b.width:.0f}×{b.depth:.0f}×{b.height:.0f}m, "
+                    f"Voxels: {vc.cell_size_x}×{vc.cell_size_y}×{vc.cell_size_z}m, "
+                    f"Seed: {dlg.get_seed()}"
+                )
                 self._update_project_tree_from_project(project)
 
     def _on_joint_set_manager(self) -> None:
@@ -587,6 +580,7 @@ class MainWindow(QMainWindow):
             return
         project = self._project_store.current_project
         from dfn_cave_studio.ui.dialogs.joint_set_dialog import JointSetManagerDialog
+
         dlg = JointSetManagerDialog(
             joint_sets=project.joint_sets,
             model_volume=project.model_bounds.volume,
@@ -595,7 +589,7 @@ class MainWindow(QMainWindow):
         )
         if dlg.exec() == JointSetManagerDialog.DialogCode.Accepted:
             project.joint_sets = dlg.get_joint_sets()
-            self._project_store._mark_dirty()
+            self._project_store.mark_dirty()
             self.log_message(f"Updated {len(project.joint_sets)} joint sets")
             self._update_project_tree_from_project(project)
 
@@ -628,7 +622,7 @@ class MainWindow(QMainWindow):
             if "dfn" in results:
                 realization = results["dfn"]
                 project.dfn_realizations.append(realization)
-                self._project_store._mark_dirty()
+                self._project_store.mark_dirty()
 
                 self.log_message(
                     f"DFN: {realization.generation_result.total_fractures} fractures, "
@@ -641,10 +635,9 @@ class MainWindow(QMainWindow):
                     try:
                         if self._dfn_renderer is None:
                             from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+
                             self._dfn_renderer = DFNRenderer()
-                        self._dfn_renderer.render_to_plotter(
-                            self._plotter, realization, project.joint_sets
-                        )
+                        self._dfn_renderer.render_to_plotter(self._plotter, realization, project.joint_sets)
                         # Add model bounds box
                         self._render_bounds_box()
                         self._plotter.show_axes()
@@ -664,14 +657,13 @@ class MainWindow(QMainWindow):
                 )
                 # Percolation detail
                 b = project.model_bounds
-                percolation = conn.percolation_detail(
-                    (b.x_min, b.x_max), (b.y_min, b.y_max), (b.z_min, b.z_max)
-                )
+                percolation = conn.percolation_detail((b.x_min, b.x_max), (b.y_min, b.y_max), (b.z_min, b.z_max))
                 if percolation:
                     project.connectivity_results["percolation"] = percolation
 
             if "voxel_grid" in results and "dfn" in results:
                 from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+
                 try:
                     voxel_data = ZipProjectStore.extract_voxel_p32_results(
                         results["voxel_grid"],
@@ -687,6 +679,7 @@ class MainWindow(QMainWindow):
                     try:
                         if self._dfn_renderer is None:
                             from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+
                             self._dfn_renderer = DFNRenderer()
                         self._dfn_renderer.render_voxel_p32(
                             project.voxel_p32_results,
@@ -702,6 +695,7 @@ class MainWindow(QMainWindow):
                 try:
                     if self._dfn_renderer is None:
                         from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+
                         self._dfn_renderer = DFNRenderer()
                     self._dfn_renderer.render_boreholes(project.borehole_collection, self._plotter)
                     self._dfn_renderer.render_fracture_observations(project.borehole_collection, self._plotter)
@@ -721,12 +715,103 @@ class MainWindow(QMainWindow):
         try:
             if self._dfn_renderer is None:
                 from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+
                 self._dfn_renderer = DFNRenderer()
             b = self._project_store.current_project.model_bounds
             self._dfn_renderer.render_model_bounds(b, self._plotter)
             self._dfn_renderer.add_coordinate_axes(self._plotter)
         except Exception as e:
             self.log_error(f"Bounds rendering failed: {e}")
+
+    # ── M7 workflow handlers ──────────────────────────────────────────
+
+    def _m7_import(self) -> None:
+        """Open M7 data import wizard. Accumulates imports across calls.
+
+        The dialog writes data directly into the current project on accept.
+        Subsequent calls reuse the same project so collars are available
+        when importing fractures/surveys/rqd/domain_intervals.
+        """
+        from dfn_cave_studio.ui.dialogs.m7_import_dialog import M7ImportDialog
+
+        project = self._project_store.current_project if self._project_store.has_project else None
+        if project is None:
+            self._on_new_project()
+            project = self._project_store.current_project
+        dlg = M7ImportDialog(project, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            summary = dlg.get_import_summary()
+            if dlg.committed_changes:
+                self._project_store.mark_dirty()
+            n_collars = summary.get("collars", {}).get("imported", 0)
+            n_frac = summary.get("fractures", {}).get("imported", 0)
+            has_data = False
+            for dtype, info in summary.items():
+                if info.get("imported", 0) > 0:
+                    has_data = True
+                    self.log_message(f"  {dtype}: {info['imported']} imported, " f"{info.get('errors',0)} errors")
+            if has_data:
+                if n_collars > 0 and n_frac > 0:
+                    self._workflow.mark_issues("import")
+                    self._workflow.mark_ready("clean")
+                elif n_collars > 0:
+                    self._workflow.mark_ready("import")
+                self._update_project_tree_from_project(project)
+            else:
+                self.log_message("M7 import: no data imported")
+
+    def _m7_clean(self) -> None:
+        """Open data cleaning dialog."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Import data first.")
+            return
+        project = self._project_store.current_project
+        if project.borehole_collection is None:
+            QMessageBox.warning(self, "No Data", "No borehole data to clean. Import data first.")
+            return
+        from dfn_cave_studio.ui.dialogs.m7_cleaning_dialog import M7CleaningDialog
+
+        dlg = M7CleaningDialog(project, self._workflow, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            if dlg.committed_changes:
+                self._project_store.mark_dirty()
+            self.log_message(f"Cleaning applied: " f"{dlg.get_pending_station_count()} stations written to project")
+
+    def _m7_holdout(self) -> None:
+        """Open validation holdout dialog."""
+        from dfn_cave_studio.ui.dialogs.m7_holdout_dialog import M7HoldoutDialog
+
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Import data first.")
+            return
+        project = self._project_store.current_project
+        dlg = M7HoldoutDialog(project, self._workflow, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.committed_changes:
+            self._project_store.mark_dirty()
+
+    def _m7_domains(self) -> None:
+        """Open structural domain editor."""
+        from dfn_cave_studio.ui.dialogs.m7_domain_dialog import M7DomainDialog
+
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Load data first.")
+            return
+        project = self._project_store.current_project
+        dlg = M7DomainDialog(project, self._workflow, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.committed_changes:
+            self._project_store.mark_dirty()
+
+    def _m7_joint_sets(self) -> None:
+        """Open joint set identification dialog (wired to M7 services)."""
+        from dfn_cave_studio.ui.dialogs.m7_joint_set_dialog import M7JointSetDialog
+
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Load data and define domains first.")
+            return
+        project = self._project_store.current_project
+        dlg = M7JointSetDialog(project, self._workflow, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.committed_changes:
+            self._project_store.mark_dirty()
 
     def _on_domain_manager(self) -> None:
         """Open domain manager."""
@@ -737,6 +822,7 @@ class MainWindow(QMainWindow):
         project = self._project_store.current_project if self._project_store.has_project else None
         if project and project.dfn_realizations:
             from dfn_cave_studio.connectivity.connectivity_graph import ConnectivityGraph
+
             graph = ConnectivityGraph(project.dfn_realizations[-1])
             graph.compute_edges()
             graph.find_components()
@@ -806,7 +892,9 @@ class MainWindow(QMainWindow):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, f"Export {fmt}", f"export_{fmt.lower()}",
+            self,
+            f"Export {fmt}",
+            f"export_{fmt.lower()}",
             "All Files (*)",
         )
         if not path:
@@ -815,15 +903,17 @@ class MainWindow(QMainWindow):
         try:
             out = Path(path)
             if fmt == "VTK":
-                import pyvista as pv
+
                 out.mkdir(parents=True, exist_ok=True)
                 realization = project.dfn_realizations[-1]
                 from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+
                 meshes = []
                 for f in realization.stochastic_fractures[:1000]:
                     g = f.geometry
-                    disk = DFNRenderer.fracture_to_disk_mesh(g.center, g.normal,
-                        f.radius if f.radius > 0 else (g.radius or 1.0))
+                    disk = DFNRenderer.fracture_to_disk_mesh(
+                        g.center, g.normal, f.radius if f.radius > 0 else (g.radius or 1.0)
+                    )
                     meshes.append(disk)
                 if meshes:
                     merged = meshes[0].merge(meshes[1:]) if len(meshes) > 1 else meshes[0]
@@ -832,13 +922,15 @@ class MainWindow(QMainWindow):
             else:
                 # Generic CSV export
                 import csv
+
                 with open(out, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
                     writer.writerow(["fracture_id", "set_id", "center_x", "center_y", "center_z", "radius"])
                     for frac in project.dfn_realizations[-1].stochastic_fractures:
                         g = frac.geometry
-                        writer.writerow([str(frac.fracture_id), frac.set_id,
-                                       g.center_x, g.center_y, g.center_z, frac.radius])
+                        writer.writerow(
+                            [str(frac.fracture_id), frac.set_id, g.center_x, g.center_y, g.center_z, frac.radius]
+                        )
                 self.log_message(f"Exported to {out}")
 
             self.set_status(f"Export complete: {out}")
@@ -853,15 +945,16 @@ class MainWindow(QMainWindow):
     def _on_about(self) -> None:
         """Show about dialog."""
         import sys
+
         QMessageBox.about(
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.6.4-M6</p>"
+            "<p>Version 0.7.0-M7</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"
-            "<p>License: MIT</p>"
+            "<p>License: MIT</p>",
         )
 
     def _on_documentation(self) -> None:
@@ -881,7 +974,8 @@ class MainWindow(QMainWindow):
         # Check for unsaved changes
         if self._project_store.is_dirty:
             reply = QMessageBox.question(
-                self, "Unsaved Changes",
+                self,
+                "Unsaved Changes",
                 "The project has unsaved changes. Save before closing?",
                 QMessageBox.StandardButton.Save
                 | QMessageBox.StandardButton.Discard
@@ -920,33 +1014,62 @@ class MainWindow(QMainWindow):
 
     def _load_project(self, path: Path):
         """Load project, auto-detecting .dfnproj vs .dfncs format."""
+        from dfn_cave_studio.services.m7_state import set_workflow
+
         suffix = path.suffix.lower()
-        if suffix == '.dfnproj':
+        if suffix == ".dfnproj":
             from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+
             zps = ZipProjectStore()
-            return zps.load(path)
+            project = zps.load(path)
+            # Ensure workflow is bound to project
+            wf = self._workflow
+            m7 = getattr(project, "_m7_data", {}) or {}
+            saved_wf = m7.get("workflow")
+            if saved_wf is not None:
+                wf = saved_wf
+            set_workflow(project, wf)
+            # Update ProjectStore via public API
+            self._project_store.adopt_project(project, Path(path))
+            return project
         else:
             return self._project_store.open(path)
 
     def _save_project_to(self, path: Path) -> Path:
         """Save project, auto-detecting .dfnproj vs .dfncs format."""
+        from dfn_cave_studio.services.m7_state import set_workflow
+
         project = self._project_store.current_project
-        suffix = path.suffix.lower()
-        if suffix == '.dfnproj':
-            from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
-            zps = ZipProjectStore()
-            zps.save(project, path)
-            return path
-        else:
-            return self._project_store.save_as(path)
+        # Persist current workflow into project before saving
+        set_workflow(project, self._workflow)
+        return self._project_store.save_as(path)
 
     def _restore_project_to_ui(self, project) -> None:
-        """Restore project state to UI: 3D rendering of stored data."""
+        """Restore project state to UI: workflow, renderer, project tree."""
+        self._clear_renderer_state()
+        # Restore M7 workflow from saved state
+        m7 = getattr(project, "_m7_data", {}) or {}
+        saved_wf = m7.get("workflow")
+        if saved_wf is not None:
+            self._workflow = saved_wf
+            self._workflow_panel._controller = saved_wf
+            saved_wf.add_change_listener(self._workflow_panel._refresh)
+            self._workflow_panel._refresh()
+        # Restore holdout
+        saved_ho = m7.get("holdout")
+        if saved_ho is not None:
+            from dfn_cave_studio.services.holdout_service import HoldoutService
+
+            if not isinstance(saved_ho, HoldoutService):
+                m7["holdout"] = HoldoutService.from_dict(saved_ho.to_dict() if hasattr(saved_ho, "to_dict") else {})
+
         if not self._plotter:
+            self._update_project_tree_from_project(project)
             return
         try:
             if self._dfn_renderer is None:
                 from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
+
                 self._dfn_renderer = DFNRenderer()
 
             # Render boreholes
@@ -958,13 +1081,6 @@ class MainWindow(QMainWindow):
             if project.dfn_realizations:
                 last = project.dfn_realizations[-1]
                 self._dfn_renderer.render_to_plotter(self._plotter, last, project.joint_sets)
-                # Connectivity cluster coloring
-                if project.connectivity_clusters:
-                    labels = project.connectivity_clusters
-                    # Use cluster labels to color fractures
-                    from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
-                    # Reset and re-render with cluster colors via DFNRenderer
-                    pass
 
             # Render voxel P32
             if project.voxel_p32_results:
@@ -992,8 +1108,18 @@ class MainWindow(QMainWindow):
 
         # Model section
         model = QTreeWidgetItem(root, ["Model"])
-        QTreeWidgetItem(model, [f"Bounds: {project.model_bounds.width:.0f}x{project.model_bounds.depth:.0f}x{project.model_bounds.height:.0f} m"])
-        QTreeWidgetItem(model, [f"Voxel: {project.voxel_config.cell_size_x:.1f}x{project.voxel_config.cell_size_y:.1f}x{project.voxel_config.cell_size_z:.1f} m"])
+        QTreeWidgetItem(
+            model,
+            [
+                f"Bounds: {project.model_bounds.width:.0f}x{project.model_bounds.depth:.0f}x{project.model_bounds.height:.0f} m"
+            ],
+        )
+        QTreeWidgetItem(
+            model,
+            [
+                f"Voxel: {project.voxel_config.cell_size_x:.1f}x{project.voxel_config.cell_size_y:.1f}x{project.voxel_config.cell_size_z:.1f} m"
+            ],
+        )
         if project.surface_model:
             QTreeWidgetItem(model, [f"Surface: {project.surface_model.name}"])
 

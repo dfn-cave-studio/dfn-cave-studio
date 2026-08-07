@@ -17,22 +17,26 @@ References:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 
 import pandas as pd
 
 from dfn_cave_studio.models.borehole import (
-    BoreholeCollection, Borehole, Collar, SurveyStation,
-    BoreholeSurvey, FractureObservation, RQDInterval,
-    BoreholeValidationError,
+    BoreholeCollection,
+    Borehole,
+    Collar,
+    SurveyStation,
+    BoreholeSurvey,
+    FractureObservation,
+    RQDInterval,
 )
 from dfn_cave_studio.models.enums import FractureType
-
 
 # =============================================================================
 # Import Result
 # =============================================================================
+
 
 @dataclass
 class ImportResult:
@@ -44,6 +48,10 @@ class ImportResult:
     warnings: List[str] = field(default_factory=list)
     rows_imported: int = 0
     rows_skipped: int = 0
+    fracture_rows_raw: int = 0
+    fracture_rows_imported: int = 0
+    fracture_rows_excluded: int = 0
+    fracture_exclusions: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def total_issues(self) -> int:
@@ -96,6 +104,7 @@ STANDARD_RQD_FIELDS = {
 # Borehole Importer
 # =============================================================================
 
+
 class BoreholeImporter:
     """Import borehole data from CSV/Excel files with validation.
 
@@ -139,6 +148,10 @@ class BoreholeImporter:
         """
         self._errors = []
         self._warnings = []
+        self._rows_fractures_raw = 0
+        self._rows_fractures_imported = 0
+        self._rows_fractures_skipped = 0
+        self._fracture_exclusions: List[Dict[str, Any]] = []
 
         try:
             collar_df = self._read_file(collar_path)
@@ -165,7 +178,7 @@ class BoreholeImporter:
                 frac_df = self._read_file(fractures_path)
                 if frac_df is not None:
                     frac_df = self._map_fields(frac_df, STANDARD_FRACTURE_FIELDS, field_map)
-                    self._import_fractures(frac_df, boreholes)
+                    self._import_fractures(frac_df, boreholes, Path(fractures_path).name)
 
             # Import RQD
             if rqd_path:
@@ -186,8 +199,8 @@ class BoreholeImporter:
                     self._warnings.append(str(ve))
 
             # Count fracture observation rows
-            frac_imported = getattr(self, '_rows_fractures_imported', 0)
-            frac_skipped = getattr(self, '_rows_fractures_skipped', 0)
+            frac_imported = getattr(self, "_rows_fractures_imported", 0)
+            frac_skipped = getattr(self, "_rows_fractures_skipped", 0)
             total_rows = len(boreholes) + frac_imported
 
             return ImportResult(
@@ -197,6 +210,10 @@ class BoreholeImporter:
                 warnings=self._warnings,
                 rows_imported=total_rows,
                 rows_skipped=frac_skipped,
+                fracture_rows_raw=self._rows_fractures_raw,
+                fracture_rows_imported=frac_imported,
+                fracture_rows_excluded=frac_skipped,
+                fracture_exclusions=list(self._fracture_exclusions),
             )
 
         except Exception as e:
@@ -219,9 +236,9 @@ class BoreholeImporter:
 
         try:
             suffix = path.suffix.lower()
-            if suffix in ('.xlsx', '.xls'):
+            if suffix in (".xlsx", ".xls"):
                 return pd.read_excel(path)
-            elif suffix == '.las':
+            elif suffix == ".las":
                 return self._read_las(path)
             else:
                 return pd.read_csv(path)
@@ -244,6 +261,7 @@ class BoreholeImporter:
         # Try lasio (optional dependency)
         try:
             import lasio
+
             las = lasio.read(str(path))
             data = {}
             for curve in las.curves:
@@ -315,8 +333,9 @@ class BoreholeImporter:
                 continue
             values = stripped.split()
             if len(values) >= len(curves):
-                rows.append([float(v) if v.replace(".", "").replace("-", "").isdigit() else v
-                            for v in values[:len(curves)]])
+                rows.append(
+                    [float(v) if v.replace(".", "").replace("-", "").isdigit() else v for v in values[: len(curves)]]
+                )
 
         df = pd.DataFrame(rows, columns=curves)
 
@@ -365,22 +384,18 @@ class BoreholeImporter:
     MANDATORY_FRACTURE_FIELDS = ["borehole_id", "measured_depth", "dip_direction", "dip"]
     MANDATORY_RQD_FIELDS = ["borehole_id", "from_depth", "to_depth", "rqd"]
 
-    def _check_mandatory_fields(
-        self, row: pd.Series, mandatory: List[str], row_idx: int, context: str
-    ) -> List[str]:
+    def _check_mandatory_fields(self, row: pd.Series, mandatory: List[str], row_idx: int, context: str) -> List[str]:
         """Verify all mandatory fields are present and non-null in the row.
 
         Returns list of missing field names (empty = all present).
         """
         missing = []
-        for field in mandatory:
-            val = row.get(field)
+        for field_name in mandatory:
+            val = row.get(field_name)
             if val is None or (isinstance(val, float) and pd.isna(val)):
-                missing.append(field)
+                missing.append(field_name)
         if missing:
-            self._errors.append(
-                f"Row {row_idx} ({context}): missing mandatory field(s) — {', '.join(missing)}"
-            )
+            self._errors.append(f"Row {row_idx} ({context}): missing mandatory field(s) — {', '.join(missing)}")
         return missing
 
     def _import_collars(self, df: pd.DataFrame) -> List[Borehole]:
@@ -388,9 +403,7 @@ class BoreholeImporter:
         boreholes = []
         for idx, row in df.iterrows():
             try:
-                missing = self._check_mandatory_fields(
-                    row, self.MANDATORY_COLLAR_FIELDS, idx, "collar"
-                )
+                missing = self._check_mandatory_fields(row, self.MANDATORY_COLLAR_FIELDS, idx, "collar")
                 if missing:
                     continue  # Skip rows with missing mandatory fields
 
@@ -418,9 +431,7 @@ class BoreholeImporter:
 
         for idx, row in df.iterrows():
             try:
-                missing = self._check_mandatory_fields(
-                    row, self.MANDATORY_SURVEY_FIELDS, idx, "survey"
-                )
+                missing = self._check_mandatory_fields(row, self.MANDATORY_SURVEY_FIELDS, idx, "survey")
                 if missing:
                     continue
 
@@ -438,7 +449,12 @@ class BoreholeImporter:
             if bh_id in bh_map:
                 bh_map[bh_id].survey = BoreholeSurvey(stations=stations)
 
-    def _import_fractures(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
+    def _import_fractures(
+        self,
+        df: pd.DataFrame,
+        boreholes: List[Borehole],
+        source_file: str = "fractures.csv",
+    ) -> None:
         """Import fracture observations with mandatory field enforcement.
 
         Reads set_id from CSV, validates as integer, and attaches observations
@@ -448,12 +464,12 @@ class BoreholeImporter:
         bh_map = {bh.borehole_id: bh for bh in boreholes}
         rows_imported = 0
         rows_skipped = 0
+        exclusions: List[Dict[str, Any]] = []
+        self._rows_fractures_raw = len(df)
 
         for idx, row in df.iterrows():
             try:
-                missing = self._check_mandatory_fields(
-                    row, self.MANDATORY_FRACTURE_FIELDS, idx, "fracture"
-                )
+                missing = self._check_mandatory_fields(row, self.MANDATORY_FRACTURE_FIELDS, idx, "fracture")
                 if missing:
                     rows_skipped += 1
                     continue
@@ -467,6 +483,45 @@ class BoreholeImporter:
                     rows_skipped += 1
                     continue
 
+                measured_depth = float(row["measured_depth"])
+                if measured_depth > bh_map[bh_id].collar.final_depth:
+                    reason = (
+                        f"Fracture depth {measured_depth} exceeds borehole "
+                        f"total depth {bh_map[bh_id].collar.final_depth}"
+                    )
+                    self._errors.append(f"Row {idx}: {reason}. Observation skipped.")
+                    exclusions.append(
+                        self._fracture_exclusion_record(
+                            row,
+                            idx,
+                            source_file,
+                            bh_id,
+                            "measured_depth",
+                            row["measured_depth"],
+                            reason,
+                        )
+                    )
+                    rows_skipped += 1
+                    continue
+
+                dip = float(row["dip"])
+                if dip < 0.0 or dip > 90.0:
+                    reason = f"Dip {dip} is outside the valid range [0, 90]"
+                    self._errors.append(f"Row {idx}: {reason}. Observation skipped.")
+                    exclusions.append(
+                        self._fracture_exclusion_record(
+                            row,
+                            idx,
+                            source_file,
+                            bh_id,
+                            "dip",
+                            row["dip"],
+                            reason,
+                        )
+                    )
+                    rows_skipped += 1
+                    continue
+
                 # Parse and validate set_id
                 set_id = None
                 raw_set_id = row.get("set_id")
@@ -475,24 +530,42 @@ class BoreholeImporter:
                         set_id_float = float(raw_set_id)
                         set_id_int = int(set_id_float)
                         if abs(set_id_float - set_id_int) > 1e-6:
-                            self._errors.append(
-                                f"Row {idx}: set_id '{raw_set_id}' is not an integer"
+                            self._errors.append(f"Row {idx}: set_id '{raw_set_id}' is not an integer")
+                            exclusions.append(
+                                self._fracture_exclusion_record(
+                                    row,
+                                    idx,
+                                    source_file,
+                                    bh_id,
+                                    "set_id",
+                                    raw_set_id,
+                                    f"set_id '{raw_set_id}' is not an integer",
+                                )
                             )
                             rows_skipped += 1
                             continue
                         set_id = set_id_int
                     except (ValueError, TypeError):
-                        self._errors.append(
-                            f"Row {idx}: set_id '{raw_set_id}' is not a valid integer"
+                        self._errors.append(f"Row {idx}: set_id '{raw_set_id}' is not a valid integer")
+                        exclusions.append(
+                            self._fracture_exclusion_record(
+                                row,
+                                idx,
+                                source_file,
+                                bh_id,
+                                "set_id",
+                                raw_set_id,
+                                f"set_id '{raw_set_id}' is not a valid integer",
+                            )
                         )
                         rows_skipped += 1
                         continue
 
                 obs = FractureObservation(
                     borehole_id=bh_id,
-                    measured_depth=float(row["measured_depth"]),
+                    measured_depth=measured_depth,
                     dip_direction=float(row["dip_direction"]),
-                    dip=float(row["dip"]),
+                    dip=dip,
                     aperture=float(row["aperture"]) if pd.notna(row.get("aperture")) else None,
                     filling=str(row.get("filling", "")) if pd.notna(row.get("filling")) else None,
                     fracture_type=FractureType(str(row.get("fracture_type", "joint")).lower()),
@@ -507,6 +580,34 @@ class BoreholeImporter:
 
         self._rows_fractures_imported = rows_imported
         self._rows_fractures_skipped = rows_skipped
+        self._fracture_exclusions = exclusions
+
+    @staticmethod
+    def _fracture_exclusion_record(
+        row: pd.Series,
+        source_row: Any,
+        source_file: str,
+        hole_id: str,
+        field_name: str,
+        original_value: Any,
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Build a serializable, source-traceable fracture exclusion."""
+        row_number = int(source_row)
+        raw_record = {str(key): (None if pd.isna(value) else value) for key, value in row.to_dict().items()}
+        return {
+            "issue_id": f"{source_file}:{row_number}:fracture-import",
+            "source_file": source_file,
+            "source_row": row_number,
+            "data_row": row_number + 1,
+            "file_line": row_number + 2,
+            "hole_id": hole_id,
+            "field": field_name,
+            "original_value": original_value,
+            "reason": reason,
+            "applied_action": "excluded_during_import",
+            "raw_record": raw_record,
+        }
 
     def _import_rqd(self, df: pd.DataFrame, boreholes: List[Borehole]) -> None:
         """Import RQD intervals with mandatory field enforcement."""
@@ -514,9 +615,7 @@ class BoreholeImporter:
 
         for idx, row in df.iterrows():
             try:
-                missing = self._check_mandatory_fields(
-                    row, self.MANDATORY_RQD_FIELDS, idx, "RQD"
-                )
+                missing = self._check_mandatory_fields(row, self.MANDATORY_RQD_FIELDS, idx, "RQD")
                 if missing:
                     continue
 

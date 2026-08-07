@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.7.0-M7] — Unreleased
+
+### Added
+- M7 Workflow Panel: 12-step pipeline navigation (steps 1-5 active, 6-12 reserved)
+- Unified Import Wizard: CSV/XLSX import with field mapping and 50-row preview
+- Data Cleaning Dialog: quality checks for collars, surveys, fractures, RQD
+- Validation Holdout: manual/random/stratified borehole split (fixed seed)
+- Structural Domain Editor: domain CRUD + borehole depth-interval assignment
+- Joint Set Identification: Mode A (imported set_id) and Mode B (spherical K-Means++)
+- Axial Equivalence: n/-n treated as same fracture plane
+- .dfnproj M7 state: workflow, holdout, domain intervals, quality issues
+- Demo dataset: examples/m7_demo/ (8 boreholes, 2 domains, 3 joint sets)
+- Fracture import integrity: retains all 83 raw demo rows for audit while excluding 3 invalid rows from the 80 formal observations
+
+### Changed
+- MainWindow supports FakePlotter injection for headless CI/GUI testing
+- Workflow controller tracks step completion and invalidation
+
+---
+
 ## [0.6.1-M6] — 2026-08-05
 
 ### Fixed (v0.6.1-M6 Algorithm Corrections)

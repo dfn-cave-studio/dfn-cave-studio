@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dfn-cave-studio"
-version = "0.6.4"
+version = "0.7.0"
 description = "Discrete Fracture Network modeling for underground block cave mining research"
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,6 +32,7 @@ dependencies = [
     "numpy>=2.0",
     "scipy>=1.15",
     "pandas>=3.0",
+    "openpyxl>=3.1",
     "trimesh>=4.12",
     "networkx>=3.6",
     "matplotlib>=3.10",

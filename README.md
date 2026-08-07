@@ -4,9 +4,25 @@
 
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Milestone](https://img.shields.io/badge/Milestone-M0-orange.svg)](ROADMAP.md)
+[![Milestone](https://img.shields.io/badge/Milestone-M7-orange.svg)](ROADMAP.md)
 
-## Overview
+## Quick Start (M7)
+
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src python -m dfn_cave_studio.app
+```
+
+### M7 Data Pipeline Workflow
+
+1. **Import** — Open M7 Import Wizard, load `examples/m7_demo/` CSV files
+2. **Clean** — Open Cleaning dialog, review issues, exclude bad rows, accept auto-fixes
+3. **Holdout** — Split boreholes into calibration / validation (random, seed=42, 25%)
+4. **Domains** — Create structural domains, assign borehole depth intervals
+5. **Joint Sets** — Identify joint sets from imported set_id or auto-cluster
+6. **Save** — Save as `.dfnproj`, reopen to continue
+
+### Overview
 
 DFN Cave Studio is a desktop scientific software for:
 

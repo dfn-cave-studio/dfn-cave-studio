@@ -1,0 +1,12 @@
+hole_id,from_depth,to_depth,domain_id,domain_name
+BH-01,0,150,1,Domain 1
+BH-02,0,200,1,Domain 1
+BH-03,0,180,1,Domain 1
+BH-04,0,155,2,Domain 2
+BH-05,0,100,2,Domain 2
+BH-06,0,50,2,Domain 2
+BH-07,0,175,2,Domain 2
+BH-08,0,160,1,Domain 1
+BH-05,100,190,1,Domain 1
+BH-06,50,150,3,Domain 3
+BH-06,150,205,2,Domain 2

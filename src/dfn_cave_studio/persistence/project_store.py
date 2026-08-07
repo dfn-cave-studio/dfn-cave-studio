@@ -19,19 +19,22 @@ References:
 from __future__ import annotations
 
 import json
+import logging
 import shutil
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable, Dict
 
-from dfn_cave_studio.models.project import Project, ProjectMetadata
+from dfn_cave_studio.models.project import Project
+
+_logger = logging.getLogger(__name__)
 
 
 # =============================================================================
 # Project Store
 # =============================================================================
+
 
 class ProjectStoreError(Exception):
     """Base exception for project persistence errors."""
@@ -166,6 +169,7 @@ class ProjectStore:
         # Check version compatibility
         schema_version = data.get("schema_version", 1)
         from dfn_cave_studio.models.project import CURRENT_PROJECT_VERSION
+
         if schema_version > CURRENT_PROJECT_VERSION:
             raise ProjectVersionTooNew(
                 f"Project version {schema_version} is newer than current {CURRENT_PROJECT_VERSION}. "
@@ -210,16 +214,28 @@ class ProjectStore:
         target = target.resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
 
-        tmp_path = target.with_suffix(".dfncs.tmp")
+        if target.suffix.lower() not in {".dfncs", ".dfnproj"}:
+            raise ValueError(
+                f"Unsupported project extension '{target.suffix}'. " "Use .dfnproj (ZIP) or .dfncs (JSON)."
+            )
+
+        tmp_path = target.with_name(f"{target.name}.tmp")
         try:
-            self._current_project.save_to_file(tmp_path)
+            if target.suffix.lower() == ".dfnproj":
+                from dfn_cave_studio.persistence.zip_project_store import (
+                    ZipProjectStore,
+                )
+
+                ZipProjectStore().save(self._current_project, tmp_path)
+            else:
+                self._current_project.save_to_file(tmp_path)
             # Backup existing file if it exists
             if target.exists():
-                backup_path = target.with_suffix(self.BACKUP_EXTENSION)
+                backup_path = target.with_name(f"{target.name}.bak")
                 shutil.copy2(target, backup_path)
             # Atomic rename
             shutil.move(str(tmp_path), str(target))
-        except Exception:
+        except (OSError, ValueError, TypeError):
             if tmp_path.exists():
                 tmp_path.unlink()
             raise
@@ -246,6 +262,42 @@ class ProjectStore:
         if self._current_project is None:
             raise ValueError("No project to save")
         return self.save(path)
+
+    def adopt_project(self, project: Project, path: Path | None = None) -> None:
+        """Make an externally loaded project the current project and mark it clean.
+
+        Use this when a project was loaded by another store (e.g. ZipProjectStore)
+        and should become the active project in this ProjectStore instance.
+
+        Args:
+            project: Project instance to adopt.
+            path: Optional file path to register as current path.
+        """
+        self._current_project = project
+        if path is not None:
+            self._current_path = Path(path)
+        self._mark_clean()
+
+    def register_save_path(self, path: Path) -> None:
+        """Register a save path after external save (e.g. ZipProjectStore).
+
+        Updates current_path and marks the project clean without re-saving.
+
+        Args:
+            path: The path where the project was saved.
+        """
+        self._current_path = Path(path)
+        self._mark_clean()
+        self._last_save_time = datetime.now(timezone.utc)
+        self._last_auto_save = time.time()
+
+    def mark_dirty(self) -> None:
+        """Mark the current project as having unsaved changes.
+
+        Public accessor for _mark_dirty — used by MainWindow when external
+        operations (import, settings change) modify the project.
+        """
+        self._mark_dirty()
 
     def close(self) -> None:
         """Close the current project without saving."""
@@ -277,7 +329,8 @@ class ProjectStore:
         try:
             self.save()
             return True
-        except Exception:
+        except (OSError, ValueError, TypeError):
+            _logger.exception("Auto-save failed for %s", self._current_path)
             return False
 
     def configure_auto_save(self, enabled: bool = True, interval_seconds: int = 300) -> None:
@@ -294,6 +347,7 @@ class ProjectStore:
 # =============================================================================
 # Recent Projects Manager
 # =============================================================================
+
 
 class RecentProjectsManager:
     """Manages the list of recently opened projects.
@@ -340,14 +394,17 @@ class RecentProjectsManager:
         self._recent = [r for r in self._recent if r.get("path") != path_str]
 
         # Add to front
-        self._recent.insert(0, {
-            "path": path_str,
-            "name": name,
-            "last_opened": datetime.now(timezone.utc).isoformat(),
-        })
+        self._recent.insert(
+            0,
+            {
+                "path": path_str,
+                "name": name,
+                "last_opened": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
         # Trim
-        self._recent = self._recent[:self.MAX_RECENT]
+        self._recent = self._recent[: self.MAX_RECENT]
 
         self._save()
 
