@@ -4,23 +4,24 @@
 
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Milestone](https://img.shields.io/badge/Milestone-M7-orange.svg)](ROADMAP.md)
+[![Milestone](https://img.shields.io/badge/Milestone-M8-orange.svg)](ROADMAP.md)
 
-## Quick Start (M7)
+## Quick Start (M8)
 
 ```bash
 pip install -r requirements.txt
 PYTHONPATH=src python -m dfn_cave_studio.app
 ```
 
-### M7 Data Pipeline Workflow
+### M8 Workflow
 
-1. **Import** — Open M7 Import Wizard, load `examples/m7_demo/` CSV files
-2. **Clean** — Open Cleaning dialog, review issues, exclude bad rows, accept auto-fixes
-3. **Holdout** — Split boreholes into calibration / validation (random, seed=42, 25%)
-4. **Domains** — Create structural domains, assign borehole depth intervals
-5. **Joint Sets** — Identify joint sets from imported set_id or auto-cluster
-6. **Save** — Save as `.dfnproj`, reopen to continue
+1. **Borehole Database** — Independently preview/map/import collars, surveys, fractures, RQD, and domain intervals.
+2. **Data Quality** — Review Raw, Formal, Excluded, and Pending records and traceable reasons.
+3. **Holdout** — Split boreholes into calibration / validation.
+4. **Domains and Joint Sets** — Maintain borehole intervals and identify sets from calibration fractures.
+5. **Model Boundary** — Calculate or enter the Voxel Analysis Domain and check complete trajectories.
+6. **Voxel Preview** — Confirm anisotropic resolution, memory estimate, and buffered DFN Generation Domain.
+7. **Save** — Save as `.dfnproj`; all database states and spatial settings restore on reopen.
 
 ### Overview
 
@@ -29,7 +30,7 @@ DFN Cave Studio is a desktop scientific software for:
 - **DFN Modeling** — Stochastic and deterministic discrete fracture network generation
 - **Voxelization** — Spatial discretization with sparse/chunked storage
 - **Connectivity Analysis** — Fracture network graph construction and percolation analysis
-- **Fragmentation Analysis** — In-situ block size distribution estimation
+- **Fragmentation Analysis** — Planned for the integrated v1.0.0-M12 release
 - **Numerical Export** — Model export for 3DEC, FLAC3D, and other solvers
 
 ## Installation
@@ -61,19 +62,12 @@ app.run()
 
 | Milestone | Status | Description |
 |-----------|--------|-------------|
-| M0 | 🟡 In Progress | Repository, environment, architecture, minimal Qt window |
-| M1 | ⬜ Planned | Geometry, coordinate, fracture data models |
-| M2 | ⬜ Planned | Global constant-parameter stochastic DFN |
-| M3 | ⬜ Planned | Voxel space, surface mask, sparse storage |
-| M4 | ⬜ Planned | DFN-voxel intersection |
-| M5 | ⬜ Planned | Connectivity graph and percolation |
-| M6 | ⬜ Planned | Deterministic structures, borehole import |
-| M7 | ⬜ Planned | Virtual borehole P10/P21 validation |
-| M8 | ⬜ Planned | Block fragmentation analysis |
-| M9 | ⬜ Planned | Structural domains |
-| M10 | ⬜ Planned | Continuous DFN parameter fields |
-| M11 | ⬜ Planned | Mechanical properties and export |
-| M12 | ⬜ Planned | Complete project management, packaging |
+| M0–M7 | ✅ Published | Existing historical milestones through `v0.7.0-M7` |
+| M8 | 🚧 In development | Borehole database, spatial boundaries, and voxel-grid definition |
+| M9 | ⬜ Planned | Local DFN parameter fields and first voxelization |
+| M10 | ⬜ Planned | Conditional explicit DFN and second voxelization |
+| M11 | ⬜ Planned | Independent validation, external simulation, and ML export |
+| M12 | ⬜ Planned | Fragmentation, integration, performance, and Windows release |
 
 ## Documentation
 

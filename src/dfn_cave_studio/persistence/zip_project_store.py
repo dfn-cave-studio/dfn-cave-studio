@@ -54,7 +54,7 @@ class ZipProjectStore:
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.7.0")
+            zf.writestr("metadata/version.txt", "0.8.0")
             zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
@@ -66,6 +66,18 @@ class ZipProjectStore:
             if hasattr(project, "borehole_collection") and project.borehole_collection is not None:
                 bh_data = self._serialize_borehole_collection(project.borehole_collection)
                 zf.writestr("inputs/boreholes.json", json.dumps(bh_data, indent=2, default=str))
+            borehole_database = getattr(project, "borehole_database", None)
+            if borehole_database is not None:
+                zf.writestr(
+                    "inputs/borehole_database.json",
+                    borehole_database.model_dump_json(indent=2),
+                )
+            spatial_grid_config = getattr(project, "spatial_grid_config", None)
+            if spatial_grid_config is not None:
+                zf.writestr(
+                    "parameters/spatial_grid_config.json",
+                    spatial_grid_config.model_dump_json(indent=2),
+                )
 
             # --- parameters ---
             joint_sets = getattr(project, "joint_sets", [])
@@ -203,6 +215,12 @@ class ZipProjectStore:
             if "inputs/boreholes.json" in zf.namelist():
                 bh_data = json.loads(zf.read("inputs/boreholes.json").decode("utf-8"))
                 project.borehole_collection = self._deserialize_borehole_collection(bh_data)
+            if "inputs/borehole_database.json" in zf.namelist():
+                from dfn_cave_studio.models.borehole_database import BoreholeDatabase
+
+                project.borehole_database = BoreholeDatabase.model_validate_json(
+                    zf.read("inputs/borehole_database.json").decode("utf-8")
+                )
 
             # --- parameters ---
             if "parameters/joint_sets.json" in zf.namelist():
@@ -214,6 +232,12 @@ class ZipProjectStore:
 
                 vc_dict = json.loads(zf.read("parameters/voxel_config.json").decode("utf-8"))
                 project.voxel_config = VoxelConfig(**vc_dict)
+            if "parameters/spatial_grid_config.json" in zf.namelist():
+                from dfn_cave_studio.models.spatial_grid import SpatialGridConfig
+
+                project.spatial_grid_config = SpatialGridConfig.model_validate_json(
+                    zf.read("parameters/spatial_grid_config.json").decode("utf-8")
+                )
 
             # --- results ---
             if "results/dfn_realizations.json" in zf.namelist():
@@ -300,6 +324,13 @@ class ZipProjectStore:
             if m7_data:
                 project._m7_data = m7_data
 
+        from dfn_cave_studio.services.borehole_repository import BoreholeRepository
+
+        repository = BoreholeRepository(project)
+        if not repository.database.records:
+            repository.migrate_m7()
+        else:
+            repository.rebuild_formal_collection()
         return project
 
     # ── Serialization Helpers ─────────────────────────────────────────────
@@ -748,7 +779,7 @@ class ZipProjectStore:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.7.0",
+            "version": "0.8.0",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,

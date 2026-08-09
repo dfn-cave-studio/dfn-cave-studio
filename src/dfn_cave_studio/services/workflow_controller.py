@@ -1,4 +1,4 @@
-"""M7 workflow state controller — tracks step completion and invalidation.
+"""M8 workflow state controller — tracks step completion and invalidation.
 
 Pure logic layer (no Qt dependency).  The workflow panel in the UI
 reads state from this controller and renders accordingly.
@@ -10,34 +10,34 @@ STALE so the UI can warn the user that results must be regenerated.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from datetime import UTC, datetime
 from enum import Enum
-from typing import List, Set, Callable, Dict, Any, Optional
-from datetime import datetime, timezone
+from typing import Any, ClassVar
 
 _logger = logging.getLogger(__name__)
 
 
 class StepStatus(str, Enum):
     NOT_STARTED = "not_started"
-    HAS_ISSUES = "has_issues"      # data present but validation problems exist
-    READY = "ready"                 # can be executed
+    HAS_ISSUES = "has_issues"  # data present but validation problems exist
+    READY = "ready"  # can be executed
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
-    STALE = "stale"                 # upstream changed — results invalid
+    STALE = "stale"  # upstream changed — results invalid
 
 
 class WorkflowStep:
-    """One step in the M7 pipeline."""
+    """One step in the M8 pipeline."""
 
-    def __init__(self, step_id: str, name: str, description: str = "",
-                 depends_on: Optional[List[str]] = None):
+    def __init__(self, step_id: str, name: str, description: str = "", depends_on: list[str] | None = None):
         self.step_id = step_id
         self.name = name
         self.description = description
-        self.depends_on: List[str] = depends_on or []
+        self.depends_on: list[str] = depends_on or []
         self._status = StepStatus.NOT_STARTED
-        self._completed_at: Optional[datetime] = None
-        self._metadata: Dict[str, Any] = {}
+        self._completed_at: datetime | None = None
+        self._metadata: dict[str, Any] = {}
 
     @property
     def status(self) -> StepStatus:
@@ -46,7 +46,7 @@ class WorkflowStep:
     def set_status(self, status: StepStatus) -> None:
         self._status = status
         if status == StepStatus.COMPLETED:
-            self._completed_at = datetime.now(timezone.utc)
+            self._completed_at = datetime.now(UTC)
 
     def invalidate(self) -> None:
         if self._status == StepStatus.COMPLETED:
@@ -58,9 +58,10 @@ class WorkflowStep:
     def get_metadata(self, key: str, default: Any = None) -> Any:
         return self._metadata.get(key, default)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
-            "step_id": self.step_id, "name": self.name,
+            "step_id": self.step_id,
+            "name": self.name,
             "description": self.description,
             "status": self._status.value,
             "depends_on": self.depends_on,
@@ -83,44 +84,50 @@ class WorkflowController:
         wf.invalidate_from("import")  # → clean, holdout, domains, joint_sets all STALE
     """
 
-    DEFAULT_STEPS = [
-        ("import",      "1. 导入数据",     "Import borehole data from CSV/XLSX files"),
-        ("clean",       "2. 数据清洗",     "Check data quality and fix issues"),
-        ("holdout",     "3. 划分验证钻孔",  "Split boreholes into calibration/validation"),
-        ("domains",     "4. 构造结构域",    "Define structural domains and intervals"),
-        ("joint_sets",  "5. 识别节理组",    "Identify joint sets from fracture observations"),
-        ("density",     "6. 裂隙密度",      "[后续] P10/P32 spatial estimation"),
-        ("size_dist",   "7. 尺寸分布",      "[后续] Fracture size distribution"),
-        ("voxel_1",     "8. 第一次体素化",  "[后续] Parameter field voxelization"),
-        ("dfn_gen",     "9. 生成DFN",       "[后续] Stochastic DFN generation"),
-        ("voxel_2",     "10. 第二次体素化", "[后续] Result field voxelization"),
-        ("validation",  "11. 验证",         "[后续] Model validation"),
-        ("export",      "12. 导出",         "[后续] Export to 3DEC/PFC/ML"),
+    # M8 exposes seven dependency-aware steps. The legacy identifier ``import``
+    # is retained so v0.7.0 workflow state can be restored without renumbering.
+    DEFAULT_STEPS: ClassVar[list[tuple[str, str, str]]] = [
+        ("import", "1. 钻孔数据库", "Maintain independently imported borehole tables"),
+        ("clean", "2. 数据质量", "Review formal, excluded, and pending records"),
+        ("holdout", "3. Validation Holdout", "Lock calibration and validation boreholes"),
+        ("domains", "4. 钻孔结构域", "Define borehole structural-domain intervals"),
+        ("joint_sets", "5. 节理组", "Identify joint sets using calibration fractures only"),
+        ("bounds", "6. 模型边界", "Define and validate the voxel analysis domain"),
+        ("voxel_grid", "7. 体素网格预览与确认", "Preview and confirm voxel and DFN generation domains"),
     ]
+    DEPENDENCIES: ClassVar[dict[str, list[str]]] = {
+        "import": [],
+        "clean": ["import"],
+        "holdout": ["clean"],
+        "domains": ["clean"],
+        "joint_sets": ["clean", "holdout"],
+        "bounds": ["import"],
+        "voxel_grid": ["bounds"],
+    }
 
     def __init__(self):
-        self._steps: Dict[str, WorkflowStep] = {}
-        self._enabled_steps: Set[str] = set()
-        # Enable first 5 by default
-        self._enabled_steps.update(["import", "clean", "holdout", "domains", "joint_sets"])
+        self._steps: dict[str, WorkflowStep] = {}
+        self._enabled_steps: set[str] = set()
+        self._enabled_steps.update(step_id for step_id, _, _ in self.DEFAULT_STEPS)
         self._init_default_steps()
-        self._change_listeners: List[Callable] = []
+        self._change_listeners: list[Callable] = []
 
     def _init_default_steps(self) -> None:
-        deps: List[str] = []
         for step_id, name, desc in self.DEFAULT_STEPS:
             self._steps[step_id] = WorkflowStep(
-                step_id=step_id, name=name, description=desc,
-                depends_on=list(deps),
+                step_id=step_id,
+                name=name,
+                description=desc,
+                depends_on=list(self.DEPENDENCIES[step_id]),
             )
-            deps.append(step_id)
 
     # ── Step management ─────────────────────────────────────────────────
 
-    def add_step(self, step_id: str, name: str, description: str = "",
-                 depends_on: Optional[List[str]] = None) -> None:
+    def add_step(self, step_id: str, name: str, description: str = "", depends_on: list[str] | None = None) -> None:
         self._steps[step_id] = WorkflowStep(
-            step_id=step_id, name=name, description=description,
+            step_id=step_id,
+            name=name,
+            description=description,
             depends_on=depends_on or [],
         )
 
@@ -128,15 +135,15 @@ class WorkflowController:
         self._enabled_steps.add(step_id)
 
     def is_enabled(self, step_id: str) -> bool:
-        return step_id in self._enabled_steps or step_id in ("import", "clean", "holdout", "domains", "joint_sets")
+        return step_id in self._enabled_steps
 
-    def get_step(self, step_id: str) -> Optional[WorkflowStep]:
+    def get_step(self, step_id: str) -> WorkflowStep | None:
         return self._steps.get(step_id)
 
-    def get_steps(self) -> List[WorkflowStep]:
+    def get_steps(self) -> list[WorkflowStep]:
         return [self._steps[k] for k, _, _ in self.DEFAULT_STEPS if k in self._steps]
 
-    def get_enabled_steps(self) -> List[WorkflowStep]:
+    def get_enabled_steps(self) -> list[WorkflowStep]:
         return [s for s in self.get_steps() if self.is_enabled(s.step_id)]
 
     # ── Status transitions ──────────────────────────────────────────────
@@ -171,7 +178,7 @@ class WorkflowController:
         changed = True
         while changed:
             changed = False
-            for sid, s in self._steps.items():
+            for s in self._steps.values():
                 if s.status == StepStatus.COMPLETED:
                     for dep in s.depends_on:
                         dep_step = self._steps.get(dep)
@@ -193,6 +200,28 @@ class WorkflowController:
                     step.invalidate()
         self._notify_listeners()
 
+    def invalidate_dependents(self, step_id: str) -> None:
+        """Invalidate completed transitive dependents without staling the source."""
+        affected = {step_id}
+        changed = True
+        while changed:
+            changed = False
+            for candidate_id, candidate in self._steps.items():
+                if candidate_id not in affected and any(dependency in affected for dependency in candidate.depends_on):
+                    affected.add(candidate_id)
+                    changed = True
+        for candidate_id in affected - {step_id}:
+            self._steps[candidate_id].invalidate()
+        self._notify_listeners()
+
+    def invalidate_steps(self, step_ids: list[str]) -> None:
+        """Invalidate only the explicitly supplied completed result steps."""
+        for step_id in step_ids:
+            step = self._steps.get(step_id)
+            if step is not None:
+                step.invalidate()
+        self._notify_listeners()
+
     # ── Query ───────────────────────────────────────────────────────────
 
     def is_step_done(self, step_id: str) -> bool:
@@ -202,7 +231,7 @@ class WorkflowController:
     def has_stale_results(self) -> bool:
         return any(s.status == StepStatus.STALE for s in self._steps.values())
 
-    def get_active_issues(self) -> List[WorkflowStep]:
+    def get_active_issues(self) -> list[WorkflowStep]:
         return [s for s in self._steps.values() if s.status == StepStatus.HAS_ISSUES]
 
     # ── Listeners ───────────────────────────────────────────────────────
@@ -215,18 +244,17 @@ class WorkflowController:
             try:
                 cb()
             except Exception:
-                _logger.warning("Workflow change listener raised an exception",
-                                exc_info=True)
+                _logger.warning("Workflow change listener raised an exception", exc_info=True)
 
     # ── Serialisation ───────────────────────────────────────────────────
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "steps": {sid: s.to_dict() for sid, s in self._steps.items()},
-            "enabled_steps": list(self._enabled_steps),
+            "enabled_steps": sorted(self._enabled_steps),
         }
 
-    def from_dict(self, data: Dict) -> None:
+    def from_dict(self, data: dict) -> None:
         for sid, sdata in data.get("steps", {}).items():
             step = self._steps.get(sid)
             if step:
@@ -235,3 +263,4 @@ class WorkflowController:
                     step._completed_at = datetime.fromisoformat(sdata["completed_at"])
                 step._metadata = sdata.get("metadata", {})
         self._enabled_steps = set(data.get("enabled_steps", []))
+        self._enabled_steps.update(step_id for step_id, _, _ in self.DEFAULT_STEPS)

@@ -40,6 +40,8 @@ from dfn_cave_studio.models.structural_domain import StructuralDomainCollection
 from dfn_cave_studio.models.rock_mask import RockMask, ExcavationMask, SurfaceModel, SpatialAttributeConfig
 from dfn_cave_studio.models.mechanical_properties import MechanicalPropertyLibrary
 from dfn_cave_studio.models.enums import ProjectStatus
+from dfn_cave_studio.models.borehole_database import BoreholeDatabase
+from dfn_cave_studio.models.spatial_grid import SpatialGridConfig
 
 
 # =============================================================================
@@ -54,7 +56,7 @@ class ProjectMetadata(BaseModel):
     author: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     modified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    software_version: str = "0.1.0"
+    software_version: str = "0.8.0"
     project_version: int = 1  # Schema version for migration
 
     tags: List[str] = Field(default_factory=list)
@@ -89,7 +91,7 @@ class ProjectConfig(BaseModel):
 # Project (Root Model)
 # =============================================================================
 
-CURRENT_PROJECT_VERSION = 1
+CURRENT_PROJECT_VERSION = 2
 
 
 class Project(BaseModel):
@@ -122,6 +124,8 @@ class Project(BaseModel):
 
     # ── Geological Data ───────────────────────────────────────────────────
     borehole_collection: BoreholeCollection = Field(default_factory=BoreholeCollection)
+    borehole_database: BoreholeDatabase = Field(default_factory=BoreholeDatabase)
+    spatial_grid_config: Optional[SpatialGridConfig] = None
     structural_domains: StructuralDomainCollection = Field(
         default_factory=StructuralDomainCollection
     )
@@ -245,7 +249,7 @@ class Project(BaseModel):
         """
         path = Path(path)
         self.metadata.modified_at = datetime.now(timezone.utc)
-        self.metadata.software_version = "0.1.0"
+        self.metadata.software_version = "0.8.0"
 
         # Try to get git commit SHA
         self.vcs_commit_sha = self._get_git_sha()
@@ -288,6 +292,10 @@ class Project(BaseModel):
         if from_version < 1:
             # Future: v0 → v1 migration
             pass
+
+        if from_version < 2:
+            migrated.setdefault("borehole_database", {"schema_version": 1, "records": []})
+            migrated.setdefault("spatial_grid_config", None)
 
         # Future versions:
         # if from_version < 2:

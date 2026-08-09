@@ -123,6 +123,15 @@ class BoreholeSurvey(BaseModel):
                 azimuth=collar.azimuth,
                 dip=collar.dip,
             ))
+        if sorted_stations[-1].measured_depth < collar.final_depth - 1e-6:
+            last = sorted_stations[-1]
+            sorted_stations.append(
+                SurveyStation(
+                    measured_depth=collar.final_depth,
+                    azimuth=last.azimuth,
+                    dip=last.dip,
+                )
+            )
 
         points = [collar.position]
         mds = [0.0]

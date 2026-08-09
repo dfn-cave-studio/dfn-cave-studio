@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         self._recent_manager = RecentProjectsManager()
         self._project_store.set_on_dirty_changed(self._on_project_dirty_changed)
         self._dfn_renderer = None  # Lazy-loaded (imports pyvista)
+        self._database_panel = None
 
         # M7 workflow controller
         from dfn_cave_studio.services.workflow_controller import WorkflowController
@@ -125,7 +126,11 @@ class MainWindow(QMainWindow):
         # === Data Menu ===
         self._data_menu = menu_bar.addMenu("&Data")
         self._add_menu_action(
-            self._data_menu, "&Borehole Manager...", None, self._on_borehole_manager, "Import and manage borehole data"
+            self._data_menu,
+            "&Borehole Database...",
+            None,
+            self._on_borehole_manager,
+            "View, import, and maintain the project borehole database",
         )
 
         # === Voxel Menu ===
@@ -236,7 +241,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.7.0-M7</p>"
+                "<p>Version 0.8.0-M8</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -331,7 +336,7 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.7.0-M7 started")
+        self.log_message("DFN Cave Studio v0.8.0-M8 started")
         self.log_message(
             f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}"
         )
@@ -424,6 +429,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle("DFN Cave Studio — New Project [unsaved]")
             self.set_status("New project created")
             self._update_project_tree_from_project(project)
+            self._ensure_database_panel(project)
             self.log_message(f"New project '{project.metadata.name}' created")
         except (RuntimeError, TypeError, ValueError) as e:
             self.log_error(f"Failed to create project: {e}")
@@ -465,6 +471,7 @@ class MainWindow(QMainWindow):
             self._update_project_tree_from_project(project)
             self._update_recent_menu()
             self._restore_project_to_ui(project)
+            self._ensure_database_panel(project)
             self.log_message(f"Project '{project.metadata.name}' loaded ({project.model_volume:.0f} m³)")
         except Exception as e:
             self.log_error(f"Failed to open project: {e}")
@@ -475,6 +482,9 @@ class MainWindow(QMainWindow):
         if not self._project_store.has_project:
             self._on_save_project_as()
             return
+        if self._project_store.current_path is None:
+            self._on_save_project_as()
+            return
 
         try:
             path = self._save_project_to(self._project_store.current_path)
@@ -482,6 +492,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
             self.set_status(f"Saved: {path.name}")
             self.log_message(f"Project saved to {path}")
+            self._update_recent_menu()
         except Exception as e:
             self.log_error(f"Failed to save project: {e}")
             QMessageBox.critical(self, "Save Error", str(e))
@@ -512,22 +523,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Save Error", str(e))
 
     def _on_borehole_manager(self) -> None:
-        """Open borehole data import dialog."""
-        from dfn_cave_studio.ui.dialogs.import_dialog import DataImportDialog
-
-        dlg = DataImportDialog(self)
-        if dlg.exec() == DataImportDialog.DialogCode.Accepted:
-            collection = dlg.get_collection()
-            if collection and self._project_store.has_project:
-                project = self._project_store.current_project
-                project.borehole_collection = collection
-                self._project_store.mark_dirty()
-                n_bh = len(collection)
-                n_obs = sum(bh.observed_fracture_count for bh in collection)
-                self.log_message(f"Imported {n_bh} boreholes, {n_obs} fracture observations")
-                self.set_status(f"{n_bh} boreholes imported")
-                self._update_project_tree_from_project(project)
-                self._render_boreholes(collection)
+        """Show the canonical M8 borehole database."""
+        if not self._project_store.has_project:
+            self._on_new_project()
+        self._ensure_database_panel(self._project_store.current_project)
+        self._database_panel.show()
+        self._database_panel.raise_()
 
     def _render_boreholes(self, collection) -> None:
         """Render borehole trajectories in 3D view."""
@@ -547,31 +548,32 @@ class MainWindow(QMainWindow):
             self.log_warning(f"Borehole rendering: {e}")
 
     def _on_voxel_settings(self) -> None:
-        """Open model bounds and voxel settings dialog."""
-        from dfn_cave_studio.ui.dialogs.bounds_dialog import ModelBoundsDialog
+        """Open the M8 voxel-grid preview and confirmation step."""
+        self._open_spatial_settings("voxel")
 
-        project = self._project_store.current_project if self._project_store.has_project else None
-        dlg = ModelBoundsDialog(
-            bounds=project.model_bounds if project else None,
-            voxel=project.voxel_config if project else None,
-            seed=project.config.master_seed if project else 42,
-            parent=self,
-        )
-        if dlg.exec() == ModelBoundsDialog.DialogCode.Accepted:
-            if self._project_store.has_project:
-                project = self._project_store.current_project
-                project.model_bounds = dlg.get_bounds()
-                project.voxel_config = dlg.get_voxel_config()
-                project.config.master_seed = dlg.get_seed()
-                self._project_store.mark_dirty()
-                vc = dlg.get_voxel_config()
-                b = dlg.get_bounds()
-                self.log_message(
-                    f"Bounds: {b.width:.0f}×{b.depth:.0f}×{b.height:.0f}m, "
-                    f"Voxels: {vc.cell_size_x}×{vc.cell_size_y}×{vc.cell_size_z}m, "
-                    f"Seed: {dlg.get_seed()}"
-                )
-                self._update_project_tree_from_project(project)
+    def _open_spatial_settings(self, mode: str) -> None:
+        """Open one explicit M8 spatial-workflow mode."""
+        if not self._project_store.has_project:
+            self._on_new_project()
+        from dfn_cave_studio.ui.dialogs.m8_spatial_grid_dialog import M8SpatialGridDialog
+
+        project = self._project_store.current_project
+        m8_dialog = M8SpatialGridDialog(project, plotter=self._plotter, mode=mode, parent=self)
+        if m8_dialog.exec() == QDialog.DialogCode.Accepted:
+            config = m8_dialog.get_config()
+            project.spatial_grid_config = config
+            project.model_bounds = config.analysis_domain
+            if mode == "bounds":
+                self._workflow.complete_step("bounds")
+                self._workflow.mark_ready("voxel_grid")
+                message = "M8 voxel analysis boundary confirmed"
+            else:
+                project.voxel_config = m8_dialog.get_voxel_config()
+                self._workflow.complete_step("voxel_grid")
+                message = "M8 voxel grid and DFN generation domain confirmed"
+            self._project_store.mark_dirty()
+            self._update_project_tree_from_project(project)
+            self.log_message(message)
 
     def _on_joint_set_manager(self) -> None:
         """Open joint set manager dialog."""
@@ -726,56 +728,31 @@ class MainWindow(QMainWindow):
     # ── M7 workflow handlers ──────────────────────────────────────────
 
     def _m7_import(self) -> None:
-        """Open M7 data import wizard. Accumulates imports across calls.
-
-        The dialog writes data directly into the current project on accept.
-        Subsequent calls reuse the same project so collars are available
-        when importing fractures/surveys/rqd/domain_intervals.
-        """
-        from dfn_cave_studio.ui.dialogs.m7_import_dialog import M7ImportDialog
-
-        project = self._project_store.current_project if self._project_store.has_project else None
-        if project is None:
-            self._on_new_project()
-            project = self._project_store.current_project
-        dlg = M7ImportDialog(project, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            summary = dlg.get_import_summary()
-            if dlg.committed_changes:
-                self._project_store.mark_dirty()
-            n_collars = summary.get("collars", {}).get("imported", 0)
-            n_frac = summary.get("fractures", {}).get("imported", 0)
-            has_data = False
-            for dtype, info in summary.items():
-                if info.get("imported", 0) > 0:
-                    has_data = True
-                    self.log_message(f"  {dtype}: {info['imported']} imported, " f"{info.get('errors',0)} errors")
-            if has_data:
-                if n_collars > 0 and n_frac > 0:
-                    self._workflow.mark_issues("import")
-                    self._workflow.mark_ready("clean")
-                elif n_collars > 0:
-                    self._workflow.mark_ready("import")
-                self._update_project_tree_from_project(project)
-            else:
-                self.log_message("M7 import: no data imported")
+        """Show the M8 database, where independent imports are started."""
+        self._on_borehole_manager()
 
     def _m7_clean(self) -> None:
-        """Open data cleaning dialog."""
+        """Open the transactional M8 data-quality production interface."""
         if not self._project_store.has_project:
-            QMessageBox.warning(self, "No Project", "Import data first.")
-            return
-        project = self._project_store.current_project
-        if project.borehole_collection is None:
-            QMessageBox.warning(self, "No Data", "No borehole data to clean. Import data first.")
-            return
-        from dfn_cave_studio.ui.dialogs.m7_cleaning_dialog import M7CleaningDialog
+            self._on_new_project()
+        from dfn_cave_studio.ui.dialogs.m8_quality_dialog import M8QualityDialog
 
-        dlg = M7CleaningDialog(project, self._workflow, self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            if dlg.committed_changes:
-                self._project_store.mark_dirty()
-            self.log_message(f"Cleaning applied: " f"{dlg.get_pending_station_count()} stations written to project")
+        project = self._project_store.current_project
+        dialog = M8QualityDialog(project, self._workflow, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            self._project_store.mark_dirty()
+            self._workflow_panel._refresh()
+            if self._database_panel is not None:
+                self._database_panel.refresh()
+            self._update_project_tree_from_project(project)
+
+    def _m7_bounds(self) -> None:
+        """Open M8 model-boundary configuration."""
+        self._open_spatial_settings("bounds")
+
+    def _m7_voxel_grid(self) -> None:
+        """Open M8 voxel-grid preview and confirmation."""
+        self._on_voxel_settings()
 
     def _m7_holdout(self) -> None:
         """Open validation holdout dialog."""
@@ -843,7 +820,7 @@ class MainWindow(QMainWindow):
 
     def _on_fragmentation(self) -> None:
         """Run fragmentation analysis."""
-        self.log_message("Fragmentation Analysis: not yet implemented (planned for M8)")
+        self.log_message("Fragmentation Analysis: not yet implemented (fixed roadmap: M12)")
 
     def _on_reset_view(self) -> None:
         """Reset the 3D view."""
@@ -950,7 +927,7 @@ class MainWindow(QMainWindow):
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.7.0-M7</p>"
+            "<p>Version 0.8.0-M8</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"
@@ -1114,6 +1091,12 @@ class MainWindow(QMainWindow):
                 f"Bounds: {project.model_bounds.width:.0f}x{project.model_bounds.depth:.0f}x{project.model_bounds.height:.0f} m"
             ],
         )
+        if project.spatial_grid_config is not None:
+            generation = project.spatial_grid_config.generation_domain
+            QTreeWidgetItem(
+                model,
+                [f"DFN generation: {generation.width:.0f}x" f"{generation.depth:.0f}x{generation.height:.0f} m"],
+            )
         QTreeWidgetItem(
             model,
             [
@@ -1127,6 +1110,14 @@ class MainWindow(QMainWindow):
         data = QTreeWidgetItem(root, ["Data"])
         n_boreholes = len(project.borehole_collection)
         QTreeWidgetItem(data, [f"Boreholes ({n_boreholes})"])
+        database_counts = project.borehole_database.counts()
+        QTreeWidgetItem(
+            data,
+            [
+                f"Database: raw {database_counts['raw']}, formal {database_counts['formal']}, "
+                f"excluded {database_counts['excluded']}, pending {database_counts['pending']}"
+            ],
+        )
         QTreeWidgetItem(data, [f"Deterministic Fractures ({len(project.deterministic_fractures)})"])
 
         # DFN section
@@ -1147,6 +1138,42 @@ class MainWindow(QMainWindow):
 
         for i in range(root.childCount()):
             root.child(i).setExpanded(True)
+
+    def _ensure_database_panel(self, project) -> None:
+        """Create or rebind the M8 database dock."""
+        from dfn_cave_studio.ui.panels.borehole_database_panel import BoreholeDatabasePanel
+
+        if self._database_panel is None:
+            self._database_panel = BoreholeDatabasePanel(project, on_changed=self._on_database_changed, parent=self)
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._database_panel)
+        else:
+            self._database_panel.set_project(project)
+
+    def _on_database_changed(self) -> None:
+        """Apply project lifecycle effects after an accepted database change."""
+        if not self._project_store.has_project:
+            return
+        project = self._project_store.current_project
+        counts = project.borehole_database.counts()
+        from dfn_cave_studio.services.workflow_controller import StepStatus
+
+        import_step = self._workflow.get_step("import")
+        clean_step = self._workflow.get_step("clean")
+        if counts["raw"]:
+            self._workflow.complete_step("import")
+            if import_step is not None:
+                import_step.set_metadata("excluded_count", counts["excluded"])
+                import_step.set_metadata("pending_count", counts["pending"])
+        if counts["pending"] or project.borehole_database.unresolved_error_count:
+            self._workflow.mark_issues("clean")
+        elif project.borehole_database.quality_confirmed_at is not None:
+            self._workflow.complete_step("clean")
+            if project.borehole_database.query("collars", "formal"):
+                self._workflow.mark_ready("holdout")
+        elif clean_step is None or clean_step.status != StepStatus.STALE:
+            self._workflow.mark_ready("clean")
+        self._project_store.mark_dirty()
+        self._update_project_tree_from_project(project)
 
     def _update_recent_menu(self) -> None:
         """Update the recent projects submenu."""
@@ -1172,11 +1199,14 @@ class MainWindow(QMainWindow):
             path = action.data()
             if Path(path).exists():
                 try:
-                    project = self._project_store.open(Path(path))
+                    project = self._load_project(Path(path))
                     self._recent_manager.add(Path(path), project.metadata.name)
                     self.setWindowTitle(f"DFN Cave Studio — {project.metadata.name}")
                     self.set_status(f"Loaded: {Path(path).name}")
                     self._update_project_tree_from_project(project)
+                    self._update_recent_menu()
+                    self._restore_project_to_ui(project)
+                    self._ensure_database_panel(project)
                     self.log_message(f"Loaded recent project: {path}")
                 except Exception as e:
                     self.log_error(f"Failed to open {path}: {e}")
