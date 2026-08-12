@@ -16,6 +16,7 @@ Format detection is automatic based on file extension.
 from __future__ import annotations
 
 import json
+import io
 import logging
 import zipfile
 from datetime import datetime, timezone
@@ -51,10 +52,13 @@ class ZipProjectStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        project.metadata.software_version = "0.9.0"
+        project.metadata.modified_at = datetime.now(timezone.utc)
+        project.schema_version = 3
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.8.0")
+            zf.writestr("metadata/version.txt", "0.9.0")
             zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
@@ -78,6 +82,13 @@ class ZipProjectStore:
                     "parameters/spatial_grid_config.json",
                     spatial_grid_config.model_dump_json(indent=2),
                 )
+            m9_state = getattr(project, "m9_state", None)
+            if m9_state is not None:
+                zf.writestr("parameters/m9_state.json", m9_state.model_dump_json(indent=2))
+                if m9_state.parameter_field_arrays:
+                    buffer = io.BytesIO()
+                    np.savez_compressed(buffer, **m9_state.parameter_field_arrays)
+                    zf.writestr("results/voxel_parameter_field.npz", buffer.getvalue())
 
             # --- parameters ---
             joint_sets = getattr(project, "joint_sets", [])
@@ -238,6 +249,13 @@ class ZipProjectStore:
                 project.spatial_grid_config = SpatialGridConfig.model_validate_json(
                     zf.read("parameters/spatial_grid_config.json").decode("utf-8")
                 )
+            if "parameters/m9_state.json" in zf.namelist():
+                from dfn_cave_studio.models.m9 import M9State
+
+                project.m9_state = M9State.model_validate_json(zf.read("parameters/m9_state.json").decode("utf-8"))
+                if "results/voxel_parameter_field.npz" in zf.namelist():
+                    with np.load(io.BytesIO(zf.read("results/voxel_parameter_field.npz")), allow_pickle=False) as archive:
+                        project.m9_state.parameter_field_arrays = {name: archive[name].copy() for name in archive.files}
 
             # --- results ---
             if "results/dfn_realizations.json" in zf.namelist():
@@ -779,7 +797,7 @@ class ZipProjectStore:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.8.0",
+            "version": "0.9.0",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,

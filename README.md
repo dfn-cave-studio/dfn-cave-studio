@@ -4,16 +4,16 @@
 
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Milestone](https://img.shields.io/badge/Milestone-M8-orange.svg)](ROADMAP.md)
+[![Milestone](https://img.shields.io/badge/Milestone-M9-orange.svg)](ROADMAP.md)
 
-## Quick Start (M8)
+## Quick Start (M9)
 
 ```bash
 pip install -r requirements.txt
 PYTHONPATH=src python -m dfn_cave_studio.app
 ```
 
-### M8 Workflow
+### M9 Workflow
 
 1. **Borehole Database** — Independently preview/map/import collars, surveys, fractures, RQD, and domain intervals.
 2. **Data Quality** — Review Raw, Formal, Excluded, and Pending records and traceable reasons.
@@ -22,6 +22,13 @@ PYTHONPATH=src python -m dfn_cave_studio.app
 5. **Model Boundary** — Calculate or enter the Voxel Analysis Domain and check complete trajectories.
 6. **Voxel Preview** — Confirm anisotropic resolution, memory estimate, and buffered DFN Generation Domain.
 7. **Save** — Save as `.dfnproj`; all database states and spatial settings restore on reopen.
+
+8. **Fracture Density Model** — Compute fixed/domain P10 intervals and direction-corrected Poisson-MLE P32 from Calibration holes.
+9. **Fracture Size Distribution** — Fit real size observations or enter a clearly labelled assumed/user model.
+10. **First Voxel Parameter Field** — Build a domain-aware GLOBAL_CONSTANT or IDW input field in a cancelable worker.
+11. **Validation** — Compare field predictions against held-out Validation-hole P10 without refitting.
+
+Current status: M8 is the published baseline; M9 is in development and pending external review.
 
 ### Overview
 
@@ -63,8 +70,8 @@ app.run()
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | M0–M7 | ✅ Published | Existing historical milestones through `v0.7.0-M7` |
-| M8 | 🚧 In development | Borehole database, spatial boundaries, and voxel-grid definition |
-| M9 | ⬜ Planned | Local DFN parameter fields and first voxelization |
+| M8 | ✅ Published baseline | Borehole database, spatial boundaries, and voxel-grid definition |
+| M9 | 🚧 In development / review pending | Local DFN parameter fields and first voxelization |
 | M10 | ⬜ Planned | Conditional explicit DFN and second voxelization |
 | M11 | ⬜ Planned | Independent validation, external simulation, and ML export |
 | M12 | ⬜ Planned | Fragmentation, integration, performance, and Windows release |

@@ -31,8 +31,31 @@ def pytest_configure(config):
 
 def _inject_fake_plotter_factory():
     import sys
+    from types import SimpleNamespace
     from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
     from PySide6.QtCore import Qt as _Qt
+
+    class _FakeProperty:
+        def __init__(self, opacity=1.0):
+            self.opacity = float(opacity)
+
+        def SetOpacity(self, opacity):
+            self.opacity = float(opacity)
+
+    class _FakeActor:
+        def __init__(self, name, opacity=1.0):
+            self.name = name
+            self.visible = True
+            self._property = _FakeProperty(opacity)
+
+        def SetVisibility(self, visible):
+            self.visible = bool(visible)
+
+        def GetVisibility(self):
+            return self.visible
+
+        def GetProperty(self):
+            return self._property
 
     class _FakePlotter(QWidget):
         """Minimal fake 3D plotter — no VTK/OpenGL."""
@@ -45,10 +68,31 @@ def _inject_fake_plotter_factory():
             label.setAlignment(_Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(label)
             self._actors = []
+            self._actors_by_name = {}
+            self.renderer = SimpleNamespace(actors=self._actors_by_name)
             self._camera_actions = []
 
         def add_mesh(self, *args, **kwargs):
-            self._actors.append((args, kwargs))
+            name = kwargs.get("name") or f"anonymous:{len(self._actors)}"
+            old = self._actors_by_name.get(name)
+            if old is not None:
+                self.remove_actor(old, render=False)
+            actor = _FakeActor(name, kwargs.get("opacity", 1.0))
+            self._actors.append(actor)
+            self._actors_by_name[name] = actor
+            return actor
+
+        def remove_actor(self, actor_or_name, render=True):
+            actor = self._actors_by_name.get(actor_or_name) if isinstance(actor_or_name, str) else actor_or_name
+            if actor is None:
+                return False
+            if actor in self._actors:
+                self._actors.remove(actor)
+            if self._actors_by_name.get(actor.name) is actor:
+                self._actors_by_name.pop(actor.name, None)
+            if render:
+                self.render()
+            return True
 
         def reset_camera(self):
             self._camera_actions.append("reset_camera")
@@ -70,6 +114,7 @@ def _inject_fake_plotter_factory():
 
         def clear(self):
             self._actors.clear()
+            self._actors_by_name.clear()
 
         def close(self):
             super().close()

@@ -1,4 +1,4 @@
-"""M8 workflow state controller — tracks step completion and invalidation.
+"""M9 workflow state controller — tracks M8/M9 completion and invalidation.
 
 Pure logic layer (no Qt dependency).  The workflow panel in the UI
 reads state from this controller and renders accordingly.
@@ -28,7 +28,7 @@ class StepStatus(str, Enum):
 
 
 class WorkflowStep:
-    """One step in the M8 pipeline."""
+    """One dependency-aware step in the M8/M9 pipeline."""
 
     def __init__(self, step_id: str, name: str, description: str = "", depends_on: list[str] | None = None):
         self.step_id = step_id
@@ -84,7 +84,7 @@ class WorkflowController:
         wf.invalidate_from("import")  # → clean, holdout, domains, joint_sets all STALE
     """
 
-    # M8 exposes seven dependency-aware steps. The legacy identifier ``import``
+    # M9 extends the seven M8 steps. The legacy identifier ``import``
     # is retained so v0.7.0 workflow state can be restored without renumbering.
     DEFAULT_STEPS: ClassVar[list[tuple[str, str, str]]] = [
         ("import", "1. 钻孔数据库", "Maintain independently imported borehole tables"),
@@ -94,6 +94,10 @@ class WorkflowController:
         ("joint_sets", "5. 节理组", "Identify joint sets using calibration fractures only"),
         ("bounds", "6. 模型边界", "Define and validate the voxel analysis domain"),
         ("voxel_grid", "7. 体素网格预览与确认", "Preview and confirm voxel and DFN generation domains"),
+        ("density", "8. Fracture Density Model", "Compute calibration P10/P32 and select a spatial density model"),
+        ("size", "9. Fracture Size Distribution", "Fit measured sizes or define explicit prior assumptions"),
+        ("parameter_field", "10. First Voxel Parameter Field", "Build the traceable input parameter voxel field"),
+        ("validation", "11. Validation", "Evaluate predictions using held-out boreholes only"),
     ]
     DEPENDENCIES: ClassVar[dict[str, list[str]]] = {
         "import": [],
@@ -103,6 +107,10 @@ class WorkflowController:
         "joint_sets": ["clean", "holdout"],
         "bounds": ["import"],
         "voxel_grid": ["bounds"],
+        "density": ["clean", "holdout", "domains", "joint_sets"],
+        "size": ["density"],
+        "parameter_field": ["density", "size", "voxel_grid"],
+        "validation": ["parameter_field"],
     }
 
     def __init__(self):

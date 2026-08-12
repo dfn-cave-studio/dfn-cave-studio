@@ -294,6 +294,25 @@ class DFNGenerator:
             ln_radii = rng.normal(sd.lognormal_mu, sd.lognormal_sigma, n)
             radii = np.exp(ln_radii)
 
+        elif dist_type == SizeDistributionType.TRUNCATED_LOGNORMAL:
+            from scipy.stats import truncnorm
+
+            a = (math.log(sd.min_radius) - sd.lognormal_mu) / sd.lognormal_sigma
+            b = (math.log(sd.max_radius) - sd.lognormal_mu) / sd.lognormal_sigma
+            radii = np.exp(
+                truncnorm.rvs(
+                    a,
+                    b,
+                    loc=sd.lognormal_mu,
+                    scale=sd.lognormal_sigma,
+                    size=n,
+                    random_state=rng,
+                )
+            )
+
+        elif dist_type == SizeDistributionType.UNIFORM:
+            radii = rng.uniform(sd.min_radius, sd.max_radius, n)
+
         elif dist_type == SizeDistributionType.POWER_LAW:
             # Truncated power-law using inverse CDF sampling.
             # Uses the conditional distribution P(R | r_min ≤ R ≤ r_max),
@@ -312,7 +331,7 @@ class DFNGenerator:
             u = rng.random(n)
             radii = (-u * c + r_max ** (-D)) ** (-1.0 / D)
 
-        elif dist_type == SizeDistributionType.EXPONENTIAL:
+        elif dist_type in (SizeDistributionType.EXPONENTIAL, SizeDistributionType.TRUNCATED_EXPONENTIAL):
             # Truncated exponential using inverse CDF.
             # F(r) = (1 - exp(-λr)) / (exp(-λ·r_min) - exp(-λ·r_max))
             # where λ = 2/(r_min + r_max).

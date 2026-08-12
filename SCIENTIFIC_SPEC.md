@@ -1,8 +1,22 @@
 # DFN Cave Studio — Scientific Specification
 
-**Document Version:** 1.0.0
+**Document Version:** 1.1.0 (M9 review draft)
 **Status:** Authoritative Reference
 **Scope:** All scientific methods, algorithms, formulae, and validation approaches
+
+## M9 Local DFN parameter field (v0.9.0)
+
+M9 samples each Formal borehole trace in fixed-length or structural-domain intervals. Adjacent intervals are half-open and the final interval is end-inclusive. For valid length `L`, `P10=N/L`; `N=0` with valid support is TRUE_ZERO, while absent support is NO_DATA.
+
+For joint-set normal `n` and local trajectory direction `u`, `P10 = P32 E(|n·u|)`. Curved holes use actual trajectory segments. Calibration data are fitted by `P32_hat = N / sum_j(L_j E(|n·u_j|))`. Fisher expectations use an explicit seed. Exposure below the threshold yields LOW_OBSERVABILITY and no unstable P32. Validation holes are evaluated only after fitting.
+
+GLOBAL_CONSTANT applies the fitted domain/set value. IDW uses anisotropically scaled 3D distance, exact observation recovery, neighbor/radius limits, and no cross-domain interpolation. Unsupported cells remain NO_DATA unless an explicit provenance-labelled fallback is enabled.
+
+Size fitting accepts only radius, diameter, trace length, or mapped length. Without measurements, source is ASSUMED or USER_DEFINED; aperture, RQD, and set ID are never size. Supported distributions are fixed, uniform, truncated lognormal, truncated power law, and truncated exponential, with consistent `E[R]`, `E[R²]`, and seeded sampling.
+
+Automatic truncated-distribution fitting in v0.9.0-M9 is **EXPERIMENTAL**. Truncation bounds use the sample minimum and maximum, and the truncated-lognormal candidate uses moment-based initialization rather than a full truncated-likelihood optimization. Candidate records persist sample count, convergence state, optimizer message, and an AIC/BIC parameter count that includes both truncation bounds. Failed optimizations retain an explicit failed status without publishing fitted parameters. The demonstration fixed radius of 2 m remains explicitly **ASSUMED**.
+
+The first voxelization is an input parameter field, not an explicit DFN. Cell state distinguishes OUTSIDE_MODEL, NO_DATA, TRUE_ZERO, and MODELED_VALUE; `P32_total` equals the sum of valid set-level P32 values.
 **Last Updated:** 2026-08-04
 
 ---

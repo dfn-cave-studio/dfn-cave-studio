@@ -1,6 +1,17 @@
-# DFN Cave Studio v0.8.0-M8 使用说明书
+# DFN Cave Studio v0.9.0-M9 使用说明书
 
-> 适用版本：v0.8.0-M8（M8 开发验收版）
+## M9 新增操作（步骤 8–11）
+
+M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、Validation Holdout 已锁定、Formal 裂隙/结构域/节理组可用，且 Voxel Analysis Domain 与 dx/dy/dz 已确认。Validation 孔只用于最后评价。
+
+1. `Fracture Density Model`：选择固定长度或结构域区间、GLOBAL_CONSTANT/IDW 和随机种子，点击 `Calculate P10 / P32`。半开区间避免边界重复计数；低可观测性不输出不稳定 P32。
+2. `Fracture Size Distribution`：只有真实 radius/diameter/trace_length/mapped_length 才允许自动拟合；否则设置 FIXED、UNIFORM 或三种截断分布并保留 ASSUMED/USER_DEFINED 来源。当前自动截断分布拟合必须视为 EXPERIMENTAL：截断边界使用样本极值，截断对数正态尚非完整截断似然优化。界面和项目文件保存收敛状态、优化器消息和样本量。演示固定半径 2 m 始终标记为 ASSUMED。不会从 aperture、RQD 或 set_id 推导尺寸。
+3. `First Voxel Parameter Field`：后台按块生成，可显示进度并取消。NO_DATA、TRUE_ZERO、OUTSIDE_MODEL 和 MODELED_VALUE 独立保存；本步骤不生成显式裂隙面。
+4. `Validation`：从参数场提取预测 P32，按留出孔真实局部轨迹换算预测 P10，报告 MAE、RMSE、Bias、可用时的 R²/相关系数；样本不足显示 INSUFFICIENT_VALIDATION。
+
+`.dfnproj` 保存 M9 设置、P10/P32、尺寸模型、压缩参数场数组、Validation 结果及工作流。可导出 P10/P32 CSV、密度/尺寸 JSON、参数场 NPZ/VTI 和 Validation CSV/JSON。本版本不含 M10 显式 DFN。
+
+> 适用版本：v0.9.0-M9（开发完成、等待外部审查）
 > 文档语言：简体中文
 > 适用平台：当前以 Windows 源代码运行环境为主
 
@@ -8,7 +19,7 @@
 
 DFN Cave Studio 是面向地下矿山与岩体裂隙研究的离散裂隙网络（DFN）建模软件。
 
-当前 v0.8.0-M8 的主要用途是：
+当前 v0.9.0-M9 包含完整 M8 基础，并增加局部 DFN 参数场和第一次体素化：
 
 1. 建立可持续维护的项目级钻孔数据库；
 2. 对钻孔数据进行质量检查、修正、排除和审计；
@@ -18,10 +29,14 @@ DFN Cave Studio 是面向地下矿山与岩体裂隙研究的离散裂隙网络�
 6. 检查完整钻孔轨迹和观测点是否越界；
 7. 设置体素尺寸、查看网格数量与内存估算，并进行轻量三维预览；
 8. 将数据库、质量问题、工作流和空间设置保存到 `.dfnproj` 项目文件。
+9. 计算 Calibration 钻孔的区间 P10 和方向修正 P32；
+10. 拟合真实裂隙尺寸或维护明确标注的先验尺寸模型；
+11. 生成 GLOBAL_CONSTANT 或 IDW 的第一次体素化输入参数场；
+12. 使用留出的 Validation 钻孔进行独立误差评价并导出 M9 结果。
 
-M8 **不包含**以下 M9 及后续功能：P10/P32 空间插值、裂隙尺寸反演、局部 DFN 参数体素场、条件显式 DFN、独立验证结果、外部模拟正式导出和块度分析。RQD 在当前版本中不会被直接换算为 P32。
+M9 **不包含**以下 M10 及后续功能：条件显式 DFN、第二次体素化、正式 3DEC/PFC 输出、机器学习训练和块度分析。RQD 不会被直接换算为 P10 或 P32。
 
-主菜单中可能仍显示部分历史功能或后续功能入口。这些入口不代表相应的 M9—M12 科学流程已经完成；M8 用户应以左侧七步工作流为主。
+主菜单中可能仍显示部分历史功能或后续功能入口。这些入口不代表 M10—M12 科学流程已经完成；用户应以左侧 11 步工作流为主。
 
 ## 2. 坐标和单位约定
 
@@ -52,7 +67,7 @@ M8 **不包含**以下 M9 及后续功能：P10/P32 空间插值、裂隙尺寸�
 
 启动后主要界面包括：
 
-- 左侧 `M7 Workflow`：M8 七步工作流导航；
+- 左侧 `M9 Workflow`：M8 基础七步和 M9 四步工作流导航；
 - `Project Explorer`：当前项目、钻孔、边界和体素摘要；
 - `Borehole Database / 钻孔数据库`：数据库查看和维护面板；
 - 中央三维视图：钻孔、边界和网格预览；

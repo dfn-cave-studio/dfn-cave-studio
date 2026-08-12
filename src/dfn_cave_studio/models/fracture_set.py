@@ -100,6 +100,19 @@ class SizeDistribution(BaseModel):
         if self.distribution_type == SizeDistributionType.LOGNORMAL:
             return math.exp(self.lognormal_mu + self.lognormal_sigma ** 2 / 2)
 
+        elif self.distribution_type == SizeDistributionType.UNIFORM:
+            return (r_min + r_max) / 2.0
+
+        elif self.distribution_type == SizeDistributionType.TRUNCATED_LOGNORMAL:
+            from scipy.stats import norm
+
+            mu, sigma = self.lognormal_mu, self.lognormal_sigma
+            denominator = norm.cdf((math.log(r_max) - mu) / sigma) - norm.cdf((math.log(r_min) - mu) / sigma)
+            numerator = norm.cdf((math.log(r_max) - mu - sigma**2) / sigma) - norm.cdf(
+                (math.log(r_min) - mu - sigma**2) / sigma
+            )
+            return math.exp(mu + sigma**2 / 2) * numerator / denominator
+
         elif self.distribution_type == SizeDistributionType.FIXED:
             # Generator samples (min+max)/2 — must match.
             return (r_min + r_max) / 2.0
@@ -151,7 +164,7 @@ class SizeDistribution(BaseModel):
                     return r_min
                 return (D / (D - 1.0)) * num / den
 
-        elif self.distribution_type == SizeDistributionType.EXPONENTIAL:
+        elif self.distribution_type in (SizeDistributionType.EXPONENTIAL, SizeDistributionType.TRUNCATED_EXPONENTIAL):
             # Truncated exponential. λ = 2/(min+max).
             # E[R] = ∫ r·λ·e^{-λr} / (e^{-λr_min} - e^{-λr_max}) dr
             # = [B(r_min) - B(r_max)] / [e^{-λr_min} - e^{-λr_max}]
@@ -189,6 +202,19 @@ class SizeDistribution(BaseModel):
         if dist_type == SizeDistributionType.LOGNORMAL:
             # ln(R) ~ N(μ, σ) → E[R²] = exp(2μ + 2σ²)
             return math.exp(2.0 * self.lognormal_mu + 2.0 * self.lognormal_sigma ** 2)
+
+        elif dist_type == SizeDistributionType.UNIFORM:
+            return (r_min**2 + r_min * r_max + r_max**2) / 3.0
+
+        elif dist_type == SizeDistributionType.TRUNCATED_LOGNORMAL:
+            from scipy.stats import norm
+
+            mu, sigma = self.lognormal_mu, self.lognormal_sigma
+            denominator = norm.cdf((math.log(r_max) - mu) / sigma) - norm.cdf((math.log(r_min) - mu) / sigma)
+            numerator = norm.cdf((math.log(r_max) - mu - 2 * sigma**2) / sigma) - norm.cdf(
+                (math.log(r_min) - mu - 2 * sigma**2) / sigma
+            )
+            return math.exp(2 * mu + 2 * sigma**2) * numerator / denominator
 
         elif dist_type == SizeDistributionType.FIXED:
             # Generator samples (min+max)/2 — must match.
@@ -235,7 +261,7 @@ class SizeDistribution(BaseModel):
                 return r_min ** 2
             return (D / (D - 2.0)) * num / den
 
-        elif dist_type == SizeDistributionType.EXPONENTIAL:
+        elif dist_type in (SizeDistributionType.EXPONENTIAL, SizeDistributionType.TRUNCATED_EXPONENTIAL):
             # Truncated exponential. λ = 2/(min+max).
             # E[R²] = ∫ r²·λ·e^{-λr} / (e^{-λr_min} - e^{-λr_max}) dr from r_min to r_max
             # Closed form:

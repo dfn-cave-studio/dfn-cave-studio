@@ -121,16 +121,20 @@ class M7JointSetDialog(QDialog):
         mode = self._mode_combo.currentData()
         seed = self._seed_spin.value()
 
-        if mode == "imported":
-            result = self._service.identify_from_imported(collection, cal_holes, val_holes)
-        else:
-            result = self._service.identify_auto(
-                collection,
-                cal_holes,
-                val_holes,
-                n_clusters=self._n_clusters_spin.value(),
-                random_seed=seed,
-            )
+        try:
+            if mode == "imported":
+                result = self._service.identify_from_imported(collection, cal_holes, val_holes)
+            else:
+                result = self._service.identify_auto(
+                    collection,
+                    cal_holes,
+                    val_holes,
+                    n_clusters=self._n_clusters_spin.value(),
+                    random_seed=seed,
+                )
+        except ValueError as error:
+            QMessageBox.warning(self, "Joint Set Identification", str(error))
+            return
 
         self._populate_results(result)
 

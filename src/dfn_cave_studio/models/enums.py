@@ -31,6 +31,9 @@ class SizeDistributionType(str, Enum):
     TRUNCATED_POWER_LAW = "truncated_power_law"
     FIXED = "fixed"
     EXPONENTIAL = "exponential"
+    UNIFORM = "uniform"
+    TRUNCATED_LOGNORMAL = "truncated_lognormal"
+    TRUNCATED_EXPONENTIAL = "truncated_exponential"
 
 
 class SpatialDistributionType(str, Enum):

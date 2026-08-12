@@ -85,4 +85,4 @@ to end.
 
 **Exit condition:** installable, usable, validated, and exportable v1.0.0.
 
-M9 work must not begin until M8 external review is accepted.
+M9 implementation is now in development against the accepted `v0.8.0-M8` baseline. It remains review-pending and does not enter M10.

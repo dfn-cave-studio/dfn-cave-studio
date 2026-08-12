@@ -42,6 +42,7 @@ from dfn_cave_studio.models.mechanical_properties import MechanicalPropertyLibra
 from dfn_cave_studio.models.enums import ProjectStatus
 from dfn_cave_studio.models.borehole_database import BoreholeDatabase
 from dfn_cave_studio.models.spatial_grid import SpatialGridConfig
+from dfn_cave_studio.models.m9 import M9State
 
 
 # =============================================================================
@@ -56,7 +57,7 @@ class ProjectMetadata(BaseModel):
     author: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     modified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    software_version: str = "0.8.0"
+    software_version: str = "0.9.0"
     project_version: int = 1  # Schema version for migration
 
     tags: List[str] = Field(default_factory=list)
@@ -91,7 +92,7 @@ class ProjectConfig(BaseModel):
 # Project (Root Model)
 # =============================================================================
 
-CURRENT_PROJECT_VERSION = 2
+CURRENT_PROJECT_VERSION = 3
 
 
 class Project(BaseModel):
@@ -126,6 +127,7 @@ class Project(BaseModel):
     borehole_collection: BoreholeCollection = Field(default_factory=BoreholeCollection)
     borehole_database: BoreholeDatabase = Field(default_factory=BoreholeDatabase)
     spatial_grid_config: Optional[SpatialGridConfig] = None
+    m9_state: M9State = Field(default_factory=M9State)
     structural_domains: StructuralDomainCollection = Field(
         default_factory=StructuralDomainCollection
     )
@@ -249,7 +251,7 @@ class Project(BaseModel):
         """
         path = Path(path)
         self.metadata.modified_at = datetime.now(timezone.utc)
-        self.metadata.software_version = "0.8.0"
+        self.metadata.software_version = "0.9.0"
 
         # Try to get git commit SHA
         self.vcs_commit_sha = self._get_git_sha()
@@ -296,6 +298,9 @@ class Project(BaseModel):
         if from_version < 2:
             migrated.setdefault("borehole_database", {"schema_version": 1, "records": []})
             migrated.setdefault("spatial_grid_config", None)
+
+        if from_version < 3:
+            migrated.setdefault("m9_state", {})
 
         # Future versions:
         # if from_version < 2:

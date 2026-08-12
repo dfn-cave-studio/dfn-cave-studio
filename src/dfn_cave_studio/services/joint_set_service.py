@@ -34,6 +34,11 @@ from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal, normal_to
 SET_COLORS = ["#1976d2", "#388e3c", "#f57c00", "#d32f2f", "#7b1fa2",
               "#0288d1", "#689f38", "#fbc02d", "#e64a19", "#5c6bc0"]
 
+INSUFFICIENT_ORIENTATIONS_MESSAGE = (
+    "Cannot identify K non-empty joint sets:\n"
+    "insufficient valid or distinct orientation observations."
+)
+
 
 class JointSetIdentificationResult:
     """Result of joint set identification for one structural domain."""
@@ -175,53 +180,64 @@ class JointSetService:
         cal_normals = np.array(cal_normals)
         n_cal = len(cal_normals)
 
-        if n_cal < n_clusters:
-            # Not enough data — fall back to imported or single set
-            return self.identify_from_imported(collection, calibration_holes, validation_holes, domain_id)
+        distinct_indices = self._distinct_axial_indices(cal_normals)
+        if n_cal < n_clusters or len(distinct_indices) < n_clusters:
+            # A smaller result would violate the user's explicit K request.
+            raise ValueError(INSUFFICIENT_ORIENTATIONS_MESSAGE)
 
         # ── Spherical K-Means++ ────────────────────────────────────────────
         # K-Means++ initialization on sphere
         centroids = np.zeros((n_clusters, 3))
+        chosen_indices = []
         # First centroid: random
-        centroids[0] = cal_normals[rng.integers(0, n_cal)]
+        first_index = int(rng.integers(0, n_cal))
+        chosen_indices.append(first_index)
+        centroids[0] = cal_normals[first_index]
         for k in range(1, n_clusters):
             # Compute distances to nearest existing centroid
             dists = np.min([1.0 - np.abs(cal_normals @ centroids[j])
                            for j in range(k)], axis=0)
             dists = np.maximum(dists, 1e-10)
             probs = dists / dists.sum()
-            centroids[k] = cal_normals[rng.choice(n_cal, p=probs)]
+            chosen_index = int(rng.choice(n_cal, p=probs))
+            if any(
+                np.isclose(abs(float(np.dot(cal_normals[chosen_index], cal_normals[index]))), 1.0, atol=1e-12)
+                for index in chosen_indices
+            ):
+                for index in chosen_indices:
+                    same_axis = np.isclose(np.abs(cal_normals @ cal_normals[index]), 1.0, atol=1e-12)
+                    probs[same_axis] = 0.0
+                if float(probs.sum()) <= 0.0:
+                    raise ValueError(INSUFFICIENT_ORIENTATIONS_MESSAGE)
+                probs /= probs.sum()
+                chosen_index = int(rng.choice(n_cal, p=probs))
+            chosen_indices.append(chosen_index)
+            centroids[k] = cal_normals[chosen_index]
 
         # Iterative refinement
         max_iters = 30
         for _ in range(max_iters):
             # Assign to nearest centroid (cosine similarity)
-            similarities = np.abs(cal_normals @ centroids.T)  # (n, K)
-            labels = np.argmax(similarities, axis=1)
+            labels = self._assign_nonempty(cal_normals, centroids)
 
             # Recompute centroids
             new_centroids = np.zeros_like(centroids)
             for k in range(n_clusters):
                 mask = labels == k
-                if mask.sum() > 0:
-                    mean_vec = cal_normals[mask].mean(axis=0)
-                    new_centroids[k] = mean_vec / (np.linalg.norm(mean_vec) or 1.0)
-                else:
-                    new_centroids[k] = centroids[k]  # keep old
+                mean_vec = cal_normals[mask].mean(axis=0)
+                new_centroids[k] = mean_vec / np.linalg.norm(mean_vec)
 
-            if np.allclose(centroids, new_centroids, atol=1e-6):
-                break
+            converged = bool(np.all(1.0 - np.abs(np.sum(centroids * new_centroids, axis=1)) <= 1e-6))
             centroids = new_centroids
+            if converged:
+                break
 
         # Final labels
-        similarities = np.abs(cal_normals @ centroids.T)
-        final_labels = np.argmax(similarities, axis=1)
+        final_labels = self._assign_nonempty(cal_normals, centroids)
 
         # ── Build joint set configs ────────────────────────────────────────
         for k in range(n_clusters):
             mask = final_labels == k
-            if mask.sum() < 3:
-                continue
             cluster_normals = cal_normals[mask]
             dd, dip, kappa = self._fisher_from_normals(cluster_normals)
             set_id = k + 1
@@ -230,7 +246,7 @@ class JointSetService:
                 name=f"Auto Set {set_id}",
                 color=SET_COLORS[k % len(SET_COLORS)],
                 orientation=OrientationDistribution(
-                    mean_dip_direction=round(dd, 1),
+                    mean_dip_direction=round(dd % 360.0, 1) % 360.0,
                     mean_dip=round(dip, 1),
                     kappa=round(kappa, 1),
                 ),
@@ -256,6 +272,45 @@ class JointSetService:
 
         self._results[domain_id] = result
         return result
+
+    @staticmethod
+    def _distinct_axial_indices(normals: np.ndarray) -> List[int]:
+        """Return first occurrences of distinct plane-normal axes."""
+        distinct: List[int] = []
+        for index, normal in enumerate(normals):
+            is_new_axis = all(
+                not np.isclose(abs(float(np.dot(normal, normals[other]))), 1.0, atol=1e-12)
+                for other in distinct
+            )
+            if is_new_axis:
+                distinct.append(index)
+        return distinct
+
+    @staticmethod
+    def _assign_nonempty(normals: np.ndarray, centroids: np.ndarray) -> np.ndarray:
+        """Assign every observation while deterministically repairing empty clusters."""
+        similarities = np.abs(normals @ centroids.T)
+        labels = np.argmax(similarities, axis=1)
+        counts = np.bincount(labels, minlength=len(centroids))
+        errors = 1.0 - similarities[np.arange(len(normals)), labels]
+        claimed: Set[int] = set()
+
+        for empty_cluster in np.flatnonzero(counts == 0):
+            candidates = [
+                index
+                for index, label in enumerate(labels)
+                if counts[label] > 1 and index not in claimed
+            ]
+            if not candidates:
+                raise ValueError(INSUFFICIENT_ORIENTATIONS_MESSAGE)
+            selected = min(candidates, key=lambda index: (-float(errors[index]), index))
+            donor = int(labels[selected])
+            labels[selected] = empty_cluster
+            counts[donor] -= 1
+            counts[empty_cluster] += 1
+            claimed.add(selected)
+
+        return labels
 
     def _stabilize_set_ids(self, result: JointSetIdentificationResult) -> None:
         """Reassign set_ids deterministically by sorting on mean dip_direction.
@@ -316,13 +371,26 @@ class JointSetService:
         Returns (dip_direction, dip, kappa).
         """
         n = len(normals)
-        R_vec = np.sum(normals, axis=0)
+        values = normals.copy()
+        if n <= 2:
+            values[values @ values[0] < 0.0] *= -1.0
+        R_vec = np.sum(values, axis=0)
         R = float(np.linalg.norm(R_vec))
         if R < 1e-12:
             return 0.0, 0.0, 1.0
         mean_normal = R_vec / R
         dd, dip = normal_to_dip_dir_dip(mean_normal)
-        if n >= 16:
+        if n == 1:
+            kappa = 999.0
+        elif n == 2:
+            r_bar = min(R / n, 1.0 - 1e-12)
+            if r_bar < 0.53:
+                kappa = 2 * r_bar + r_bar**3 + 5 * r_bar**5 / 6
+            elif r_bar < 0.85:
+                kappa = -0.4 + 1.39 * r_bar + 0.43 / (1 - r_bar)
+            else:
+                kappa = 1 / max(r_bar**3 - 4 * r_bar**2 + 3 * r_bar, 1e-10)
+        elif n >= 16:
             kappa = (n - 1) / max(n - R, 1e-10)
         else:
             kappa = (n - 2) / max(n - R, 1e-10) * (n / (n - 1))

@@ -3,8 +3,11 @@ Application entry point for DFN Cave Studio.
 """
 
 import sys
-import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QApplication
 
 
 def setup_environment() -> None:
@@ -24,7 +27,7 @@ def main() -> None:
 
     # Application metadata
     QCoreApplication.setApplicationName("DFN Cave Studio")
-    QCoreApplication.setApplicationVersion("0.8.0")
+    QCoreApplication.setApplicationVersion("0.9.0")
     QCoreApplication.setOrganizationName("DFNCaveStudio")
 
     # High DPI support

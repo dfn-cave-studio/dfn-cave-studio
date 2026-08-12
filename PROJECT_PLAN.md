@@ -96,4 +96,14 @@ caveability indicators, large-model performance, background progress/cancel,
 documentation, Windows packaging, and complete regression/scientific
 validation.
 
-No M9 development begins before external M8 review is accepted.
+## M9 implementation work packages
+
+1. Generate half-open fixed-length or domain-bound P10 intervals from Formal records, retaining independent Validation intervals.
+2. Estimate domain/set P32 by `N / sum(Lj * E(|n·uj|))`, using seeded Fisher integration and an explicit low-observability state.
+3. Provide replaceable GLOBAL_CONSTANT and three-dimensional IDW density models with anisotropy, domain isolation, diagnostics, fallback provenance, and distinct zero/no-data states.
+4. Fit only real radius/diameter/trace/mapped-size fields by MLE with likelihood/AIC/BIC, or store explicitly assumed/user-defined priors.
+5. Build the first parameter voxel field in chunks with progress/cancel and persist arrays once in compressed NPZ form.
+6. Evaluate held-out boreholes only after fitting, reporting interval errors and aggregate metrics or `INSUFFICIENT_VALIDATION`.
+7. Export P10/P32 tables, density/size JSON, validation outputs, NPZ and VTI; do not generate explicit DFN geometry.
+
+M9 is implemented as a review-pending development milestone. M10 remains blocked until external M9 acceptance.

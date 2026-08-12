@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0-M9] — Unreleased (review pending)
+
+### Added
+- Direction-aware borehole P10/P32 modelling with calibration-only Poisson MLE and low-observability safeguards.
+- Domain-isolated GLOBAL_CONSTANT and anisotropic 3D IDW density estimators with explicit NO_DATA and TRUE_ZERO states.
+- Five M9 size distributions, real-size MLE comparison, and explicit assumed/user provenance.
+- Chunked, cancelable first voxel parameter-field builder, compressed NPZ persistence, VTI/CSV/JSON exports, and held-out validation metrics.
+- Workflow steps 8–11 and operational density, size, parameter-field, and validation dialogs.
+
+### Scientific constraints
+- Validation holes never participate in density, size, or interpolation fitting.
+- RQD is not converted directly to P10 or P32.
+- M9 creates no explicit fracture geometry and includes no M10 functionality.
+
 All notable changes to DFN Cave Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

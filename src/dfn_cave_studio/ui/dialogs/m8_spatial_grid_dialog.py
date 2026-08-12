@@ -148,6 +148,16 @@ class M8SpatialGridDialog(QDialog):
             self._opacity.setValue(config.preview_opacity)
             self._slice_axis.setCurrentText(config.preview_slice_axis or "z")
             self._slice_percent.setValue(round(config.preview_slice_fraction * 100))
+        self._loaded_preview_values = (
+            self._opacity.value(),
+            self._slice_axis.currentText(),
+            self._slice_percent.value() / 100.0,
+        )
+        self._loaded_preview_persisted = (
+            config.preview_opacity if config is not None else 0.35,
+            config.preview_slice_axis if config is not None else None,
+            config.preview_slice_fraction if config is not None else 0.5,
+        )
         self._mode_changed()
 
     def _mode_changed(self, *_args) -> None:
@@ -257,9 +267,18 @@ class M8SpatialGridDialog(QDialog):
                 self._radius.value(),
                 clipping_acknowledged=self._clip.isChecked(),
             )
-            self._accepted_config.preview_opacity = self._opacity.value()
-            self._accepted_config.preview_slice_axis = self._slice_axis.currentText()
-            self._accepted_config.preview_slice_fraction = self._slice_percent.value() / 100.0
+            preview_values = (
+                self._opacity.value(),
+                self._slice_axis.currentText(),
+                self._slice_percent.value() / 100.0,
+            )
+            if preview_values == self._loaded_preview_values:
+                opacity, axis, fraction = self._loaded_preview_persisted
+            else:
+                opacity, axis, fraction = preview_values
+            self._accepted_config.preview_opacity = opacity
+            self._accepted_config.preview_slice_axis = axis
+            self._accepted_config.preview_slice_fraction = fraction
         except ValueError as error:
             QMessageBox.warning(self, "Invalid spatial settings", str(error))
             return
