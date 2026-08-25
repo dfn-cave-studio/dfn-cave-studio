@@ -66,6 +66,12 @@ class BoreholeDatabasePanel(QDockWidget):
             self._state.addItem(state.value.title(), state.value)
         self._state.currentIndexChanged.connect(self.refresh)
         filters.addWidget(self._state)
+        self._orientation = QComboBox()
+        self._orientation.addItem("All orientation records", None)
+        self._orientation.addItem("Full orientation", "full_orientation")
+        self._orientation.addItem("Dip only", "dip_only")
+        self._orientation.currentIndexChanged.connect(self.refresh)
+        filters.addWidget(self._orientation)
         layout.addLayout(filters)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -125,6 +131,14 @@ class BoreholeDatabasePanel(QDockWidget):
         state = None if state_value == "raw" else state_value
         hole_id = self._holes.currentItem().data(Qt.ItemDataRole.UserRole) if self._holes.currentItem() else None
         records = self._repository.query(data_type=data_type, state=state, hole_id=hole_id, raw=state_value == "raw")
+        orientation = self._orientation.currentData()
+        if orientation is not None:
+            records = [
+                record
+                for record in records
+                if record.data_type == BoreholeDataType.FRACTURES
+                and record.values.get("orientation_completeness") == orientation
+            ]
         search = self._search.text().strip().lower()
         if search:
             records = [
@@ -170,7 +184,8 @@ class BoreholeDatabasePanel(QDockWidget):
                 }
                 for column, name in enumerate(columns):
                     value = metadata.get(name, record.values.get(name, ""))
-                    item = QTableWidgetItem(str(value))
+                    display = "—" if value is None and name == "dip_direction" else ("" if value is None else str(value))
+                    item = QTableWidgetItem(display)
                     item.setData(Qt.ItemDataRole.UserRole, record.record_id)
                     self._table.setItem(row, column, item)
         finally:
@@ -195,6 +210,12 @@ class BoreholeDatabasePanel(QDockWidget):
             f"Raw {counts['raw']} | Formal {counts['formal']} | "
             f"Excluded {counts['excluded']} | Pending {counts['pending']} | Visible {len(records)}{missing_text}"
         )
+        if data_type in (None, BoreholeDataType.FRACTURES):
+            orientation_counts = self._repository.database.orientation_counts()
+            self._counts.setText(
+                f"{self._counts.text()} | Full orientation {orientation_counts['full_orientation']} | "
+                f"Dip only {orientation_counts['dip_only']}"
+            )
 
     def _selected_record_id(self) -> str | None:
         items = self._table.selectedItems()

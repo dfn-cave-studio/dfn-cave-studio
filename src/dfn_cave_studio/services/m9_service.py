@@ -83,6 +83,7 @@ class M9Service:
         """Fit Fisher orientation per domain/set from Calibration observations."""
         domain_rows = get_domain_intervals(self.project)
         groups: dict[tuple[int | None, int], list[np.ndarray]] = {}
+        dip_only_counts: dict[tuple[int | None, int], int] = {}
         for hole in self.project.borehole_collection.boreholes:
             if roles.get(hole.borehole_id) != "calibration":
                 continue
@@ -90,13 +91,19 @@ class M9Service:
                 if observation.set_id is None:
                     continue
                 domain_id = domain_at_depth(hole.borehole_id, observation.measured_depth, domain_rows)
-                groups.setdefault((domain_id, observation.set_id), []).append(
+                key = (domain_id, observation.set_id)
+                if not observation.has_full_orientation:
+                    dip_only_counts[key] = dip_only_counts.get(key, 0) + 1
+                    continue
+                groups.setdefault(key, []).append(
                     dip_dir_dip_to_normal(observation.dip_direction, observation.dip)
                 )
         models: list[DomainOrientationModel] = []
         configs: dict[tuple[int | None, int], JointSetConfig] = {}
         base_sets = {item.set_id: item for item in self.project.joint_sets}
         for (domain_id, set_id), normals in sorted(groups.items(), key=str):
+            if len(normals) < 3:
+                continue
             array = np.asarray(normals)
             resultant = array.sum(axis=0)
             length = float(np.linalg.norm(resultant))
@@ -120,6 +127,9 @@ class M9Service:
                     mean_dip=dip,
                     kappa=kappa,
                     observation_count=count,
+                    full_orientation_count=count,
+                    dip_only_count=dip_only_counts.get((domain_id, set_id), 0),
+                    orientation_fit_eligible=True,
                 )
             )
             base = base_sets.get(set_id, JointSetConfig(set_id=set_id))
@@ -239,7 +249,6 @@ class M9Service:
         state = self.project.m9_state
         if state.parameter_field_metadata is None:
             raise RuntimeError("Build the parameter field before validation")
-        sets = {item.set_id: item for item in self.project.joint_sets}
         domain_orientations = {
             (item.domain_id, item.set_id): JointSetConfig(
                 set_id=item.set_id,
@@ -258,7 +267,7 @@ class M9Service:
                 raise InterruptedError("validation cancelled")
             predicted_p32 = self._field_value(row, row.set_id or 0)
             exposure = 0.0
-            selected_set = domain_orientations.get((row.domain_id, row.set_id), sets.get(row.set_id))
+            selected_set = domain_orientations.get((row.domain_id, row.set_id))
             if predicted_p32 is not None and selected_set is not None and row.sample_length > 0:
                 exposure = sum(
                     length

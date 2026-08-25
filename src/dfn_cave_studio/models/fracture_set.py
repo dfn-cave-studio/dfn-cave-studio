@@ -15,7 +15,7 @@ References:
 
 from __future__ import annotations
 
-from typing import Optional, Dict
+from typing import Any, Optional, Dict
 from enum import Enum
 
 from pydantic import BaseModel, Field, model_validator
@@ -326,7 +326,7 @@ class JointSetConfig(BaseModel):
 
     # Provenance: records whether each parameter came from borehole observations
     # or user input. Keys: "orientation", "size", "p32". Values: "borehole" or "user".
-    provenance: Dict[str, str] = Field(default_factory=dict, description="Parameter provenance: 'borehole' or 'user'")
+    provenance: Dict[str, Any] = Field(default_factory=dict, description="Parameter provenance and audit metadata")
 
     # Mechanical property template
     mechanical_template_id: Optional[str] = None

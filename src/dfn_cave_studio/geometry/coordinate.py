@@ -33,7 +33,7 @@ from dfn_cave_studio.geometry.vector import normalize
 # Dip Direction / Dip ↔ Normal Vector
 # =============================================================================
 
-def dip_dir_dip_to_normal(dip_direction_deg: float, dip_deg: float) -> NDArray[np.float64]:
+def dip_dir_dip_to_normal(dip_direction_deg: float | None, dip_deg: float) -> NDArray[np.float64]:
     """Convert dip direction and dip to a unit normal vector.
 
     The normal vector points into the fracture (away from intact rock).
@@ -52,6 +52,8 @@ def dip_dir_dip_to_normal(dip_direction_deg: float, dip_deg: float) -> NDArray[n
         >>> dip_dir_dip_to_normal(90, 0)    # Vertical plane, dip dir east
         array([-1., 0., 0.])
     """
+    if dip_direction_deg is None:
+        raise ValueError("A dip-only fracture has no 3D normal: dip_direction is missing")
     alpha = math.radians(dip_direction_deg)
     beta = math.radians(dip_deg)
 

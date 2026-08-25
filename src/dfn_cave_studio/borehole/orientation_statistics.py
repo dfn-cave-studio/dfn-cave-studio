@@ -13,14 +13,30 @@ References:
 
 from __future__ import annotations
 
-import math
-from typing import List, Dict, Optional
+from dataclasses import dataclass
+from typing import Dict, List
 
 import numpy as np
 from numpy.typing import NDArray
 
 from dfn_cave_studio.models.borehole import BoreholeCollection, FractureObservation
 from dfn_cave_studio.models.fracture_set import OrientationDistribution
+
+
+@dataclass(frozen=True)
+class OrientationSetStatistics:
+    """Full-orientation Fisher eligibility plus dip-only-safe summary statistics."""
+
+    set_id: int
+    full_orientation_count: int
+    dip_only_count: int
+    total_count: int
+    mean_dip: float
+    median_dip: float
+    dip_standard_deviation: float
+    orientation_fit_eligible: bool
+    exclusion_reason: str | None
+    fisher_orientation: OrientationDistribution | None
 
 
 class OrientationStatisticsCalculator:
@@ -65,8 +81,9 @@ class OrientationStatisticsCalculator:
 
         result: Dict[int, OrientationDistribution] = {}
         for set_id, observations in by_set.items():
-            if len(observations) >= self.MIN_OBSERVATIONS:
-                orient = self.compute_fisher_stats(observations)
+            eligible = [observation for observation in observations if observation.has_full_orientation]
+            if len(eligible) >= self.MIN_OBSERVATIONS:
+                orient = self.compute_fisher_stats(eligible)
                 result[set_id] = orient
 
         return result
@@ -96,6 +113,8 @@ class OrientationStatisticsCalculator:
             raise ValueError(
                 f"Need at least {self.MIN_OBSERVATIONS} observations, got {n}"
             )
+        if any(not observation.has_full_orientation for observation in observations):
+            raise ValueError("Fisher statistics require FULL_ORIENTATION records; dip-only records are not eligible")
 
         # Convert dip_direction/dip to unit normal vectors using the
         # canonical coordinate module (ensures upper-hemisphere convention).
@@ -142,6 +161,32 @@ class OrientationStatisticsCalculator:
             mean_dip=round(mean_dip, 1),
             kappa=round(kappa, 1),
         )
+
+    def compute_detailed_by_set(self, collection: BoreholeCollection) -> Dict[int, OrientationSetStatistics]:
+        """Return per-set dip summaries and explicit Fisher eligibility."""
+        grouped: Dict[int, List[FractureObservation]] = {}
+        for borehole in collection:
+            for observation in borehole.fracture_observations:
+                if observation.set_id is not None:
+                    grouped.setdefault(observation.set_id, []).append(observation)
+        output: Dict[int, OrientationSetStatistics] = {}
+        for set_id, observations in grouped.items():
+            full = [observation for observation in observations if observation.has_full_orientation]
+            dips = np.asarray([observation.dip for observation in observations], dtype=float)
+            eligible = len(full) >= self.MIN_OBSERVATIONS
+            output[set_id] = OrientationSetStatistics(
+                set_id=set_id,
+                full_orientation_count=len(full),
+                dip_only_count=len(observations) - len(full),
+                total_count=len(observations),
+                mean_dip=float(np.mean(dips)),
+                median_dip=float(np.median(dips)),
+                dip_standard_deviation=float(np.std(dips)),
+                orientation_fit_eligible=eligible,
+                exclusion_reason=None if eligible else "INSUFFICIENT_ORIENTATION_DATA",
+                fisher_orientation=self.compute_fisher_stats(full) if eligible else None,
+            )
+        return output
 
     def locate_all_observations_3d(
         self, collection: BoreholeCollection

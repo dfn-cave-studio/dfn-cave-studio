@@ -52,13 +52,13 @@ class ZipProjectStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        project.metadata.software_version = "0.9.0"
+        project.metadata.software_version = "0.9.1"
         project.metadata.modified_at = datetime.now(timezone.utc)
         project.schema_version = 3
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.9.0")
+            zf.writestr("metadata/version.txt", "0.9.1")
             zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
@@ -348,6 +348,7 @@ class ZipProjectStore:
         if not repository.database.records:
             repository.migrate_m7()
         else:
+            repository.migrate_orientation_completeness()
             repository.rebuild_formal_collection()
         return project
 
@@ -439,6 +440,7 @@ class ZipProjectStore:
                     "measured_depth": obs.measured_depth,
                     "dip_direction": obs.dip_direction,
                     "dip": obs.dip,
+                    "orientation_completeness": obs.orientation_completeness.value,
                     "aperture": obs.aperture,
                     "fracture_type": (
                         str(obs.fracture_type.value) if hasattr(obs.fracture_type, "value") else str(obs.fracture_type)
@@ -492,6 +494,7 @@ class ZipProjectStore:
                     measured_depth=obs_dict["measured_depth"],
                     dip_direction=obs_dict.get("dip_direction", 0),
                     dip=obs_dict.get("dip", 0),
+                    orientation_completeness=obs_dict.get("orientation_completeness", "full_orientation"),
                     aperture=obs_dict.get("aperture"),
                     fracture_type=ft,
                     confidence=obs_dict.get("confidence", 1.0),
@@ -797,7 +800,7 @@ class ZipProjectStore:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.9.0",
+            "version": "0.9.1",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,

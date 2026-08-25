@@ -1,0 +1,3 @@
+borehole_id,collar_x,collar_y,collar_z,final_depth
+CAL-01,0,0,100,100
+VAL-01,20,0,100,100

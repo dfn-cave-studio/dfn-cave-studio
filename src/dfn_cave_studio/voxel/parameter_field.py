@@ -208,6 +208,7 @@ class ParameterFieldBuilder:
         sets = {item.set_id: item for item in joint_sets}
         set_ids = sorted(sets)
         sizes = {(item.domain_id, item.set_id): item for item in size_models}
+        explicit_orientation_models = orientation_models is not None
         orientations = {(item.domain_id, item.set_id): item for item in (orientation_models or [])}
         estimates = {(item.domain_id, item.set_id): item for item in p32_estimates if item.p32 is not None}
         p10_intervals = list(p10_intervals)
@@ -227,9 +228,12 @@ class ParameterFieldBuilder:
         }
         for set_id in set_ids:
             arrays[f"set_{set_id}_p32"] = np.full(shape, np.nan, dtype=np.float32)
-            arrays[f"set_{set_id}_dip_direction"] = np.full(shape, sets[set_id].orientation.mean_dip_direction, dtype=np.float32)
-            arrays[f"set_{set_id}_dip"] = np.full(shape, sets[set_id].orientation.mean_dip, dtype=np.float32)
-            arrays[f"set_{set_id}_kappa"] = np.full(shape, sets[set_id].orientation.kappa, dtype=np.float32)
+            default_direction = np.nan if explicit_orientation_models else sets[set_id].orientation.mean_dip_direction
+            default_dip = np.nan if explicit_orientation_models else sets[set_id].orientation.mean_dip
+            default_kappa = np.nan if explicit_orientation_models else sets[set_id].orientation.kappa
+            arrays[f"set_{set_id}_dip_direction"] = np.full(shape, default_direction, dtype=np.float32)
+            arrays[f"set_{set_id}_dip"] = np.full(shape, default_dip, dtype=np.float32)
+            arrays[f"set_{set_id}_kappa"] = np.full(shape, default_kappa, dtype=np.float32)
             arrays[f"set_{set_id}_mean_radius"] = np.full(shape, np.nan, dtype=np.float32)
             arrays[f"set_{set_id}_mean_squared_radius"] = np.full(shape, np.nan, dtype=np.float32)
             arrays[f"set_{set_id}_probability"] = np.full(shape, np.nan, dtype=np.float32)

@@ -57,7 +57,7 @@ class ProjectMetadata(BaseModel):
     author: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     modified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    software_version: str = "0.9.0"
+    software_version: str = "0.9.1"
     project_version: int = 1  # Schema version for migration
 
     tags: List[str] = Field(default_factory=list)
@@ -251,7 +251,7 @@ class Project(BaseModel):
         """
         path = Path(path)
         self.metadata.modified_at = datetime.now(timezone.utc)
-        self.metadata.software_version = "0.9.0"
+        self.metadata.software_version = "0.9.1"
 
         # Try to get git commit SHA
         self.vcs_commit_sha = self._get_git_sha()

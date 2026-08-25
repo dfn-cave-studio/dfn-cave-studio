@@ -132,8 +132,19 @@ def build_p10_intervals(
             physical_length = sum(item[3] for item in segment_directions)
             center = _point_at_depth(hole, (start + end) / 2.0)
             for set_id in set_ids:
-                count = sum(
-                    obs.set_id == set_id
+                selected = [
+                    obs
+                    for obs in hole.fracture_observations
+                    if obs.set_id == set_id
+                    and obs.measured_depth >= start
+                    and (obs.measured_depth <= end if final else obs.measured_depth < end)
+                ]
+                count = len(selected)
+                full_count = sum(obs.has_full_orientation for obs in selected)
+                dip_only_count = count - full_count
+                unassigned_dip_only = sum(
+                    obs.set_id is None
+                    and not obs.has_full_orientation
                     and obs.measured_depth >= start
                     and (obs.measured_depth <= end if final else obs.measured_depth < end)
                     for obs in hole.fracture_observations
@@ -154,7 +165,14 @@ def build_p10_intervals(
                         center_y=float(center[1]),
                         center_z=float(center[2]),
                         segment_directions=segment_directions,
-                        provenance=provenance,
+                        provenance={
+                            **provenance,
+                            "dip_only_set_specific_counted": dip_only_count,
+                            "unassigned_dip_only_not_in_set_specific_p10": unassigned_dip_only,
+                        },
+                        full_orientation_count=full_count,
+                        dip_only_count=dip_only_count,
+                        unassigned_dip_only_count=unassigned_dip_only,
                     )
                 )
     return output
@@ -203,11 +221,39 @@ def estimate_p32(
     for group_index, ((domain_id, set_id), rows) in enumerate(ordered_groups):
         if cancelled and cancelled():
             raise InterruptedError("density estimation cancelled")
-        selected_set = (joint_sets_by_domain or {}).get((domain_id, set_id), sets.get(set_id))
-        if selected_set is None:
-            continue
         raw_length = sum(row.sample_length for row in rows)
         count = sum(row.observation_count for row in rows)
+        full_count = sum(row.full_orientation_count for row in rows)
+        dip_only_count = sum(row.dip_only_count for row in rows)
+        selected_set = (
+            joint_sets_by_domain.get((domain_id, set_id))
+            if joint_sets_by_domain is not None
+            else sets.get(set_id)
+        )
+        if selected_set is None:
+            estimates.append(
+                P32Estimate(
+                    domain_id=domain_id,
+                    set_id=set_id,
+                    fracture_count=count,
+                    full_orientation_count=full_count,
+                    dip_only_count=dip_only_count,
+                    raw_sample_length=raw_length,
+                    effective_sample_length=0.0,
+                    mean_exposure=0.0,
+                    p32=None,
+                    observability=ObservabilityState.INSUFFICIENT_ORIENTATION_DATA,
+                    random_seed=random_seed,
+                    calibration_holes=sorted({row.hole_id for row in rows}),
+                    orientation_model_source=None,
+                    eligibility_status="INSUFFICIENT_ORIENTATION_DATA",
+                    provenance={
+                        "individual_orientation": "missing" if dip_only_count else "available",
+                        "orientation_correction_source": None,
+                    },
+                )
+            )
+            continue
         effective = 0.0
         for row_index, row in enumerate(rows):
             for dx, dy, dz, length in row.segment_directions:
@@ -239,6 +285,14 @@ def estimate_p32(
                 observability=ObservabilityState.ADEQUATE if observable else ObservabilityState.LOW_OBSERVABILITY,
                 random_seed=random_seed,
                 calibration_holes=sorted({row.hole_id for row in rows}),
+                full_orientation_count=full_count,
+                dip_only_count=dip_only_count,
+                orientation_model_source="domain_set_model",
+                eligibility_status="adequate" if observable else "LOW_OBSERVABILITY",
+                provenance={
+                    "individual_orientation": "missing" if dip_only_count else "available",
+                    "orientation_correction_source": "domain_set_model",
+                },
             )
         )
         if progress:

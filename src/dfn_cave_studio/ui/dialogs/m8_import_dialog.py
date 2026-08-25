@@ -10,6 +10,7 @@ import pandas as pd
 from dfn_cave_studio.models.borehole_database import BoreholeDataType
 from dfn_cave_studio.services.borehole_repository import BoreholeRepository
 from dfn_cave_studio.services.import_service import read_input_table
+from dfn_cave_studio.borehole.borehole_importer import STANDARD_FRACTURE_FIELDS
 from dfn_cave_studio.ui.qt_adapter import (
     QComboBox,
     QDialog,
@@ -72,8 +73,8 @@ class M8ImportDialog(QDialog):
         self._preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self._preview_table)
         layout.addWidget(QLabel("Field mapping: edit the Standard Field column before staging."))
-        self._mapping_table = QTableWidget(0, 2)
-        self._mapping_table.setHorizontalHeaderLabels(["Source Column", "Standard Field"])
+        self._mapping_table = QTableWidget(0, 3)
+        self._mapping_table.setHorizontalHeaderLabels(["Source Column", "Standard Field", "Required"])
         self._mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._mapping_table)
 
@@ -113,11 +114,30 @@ class M8ImportDialog(QDialog):
         self._preview_table.setHorizontalHeaderLabels([str(column) for column in dataframe.columns])
         for row in range(len(dataframe)):
             for column, name in enumerate(dataframe.columns):
-                self._preview_table.setItem(row, column, QTableWidgetItem(str(dataframe.iloc[row][name])))
+                value = dataframe.iloc[row][name]
+                self._preview_table.setItem(row, column, QTableWidgetItem("" if pd.isna(value) else str(value)))
         self._mapping_table.setRowCount(len(dataframe.columns))
+        data_type = self._type_combo.currentData()
+        required = {
+            BoreholeDataType.COLLARS: {"borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"},
+            BoreholeDataType.SURVEYS: {"hole_id", "measured_depth", "azimuth", "dip"},
+            BoreholeDataType.FRACTURES: {"hole_id", "depth", "dip"},
+            BoreholeDataType.RQD: {"hole_id", "from_depth", "to_depth", "rqd"},
+            BoreholeDataType.DOMAIN_INTERVALS: {"hole_id", "from_depth", "to_depth", "domain_id"},
+        }.get(data_type, set())
+        fracture_aliases = {
+            alias.lower(): standard
+            for standard, aliases in STANDARD_FRACTURE_FIELDS.items()
+            for alias in aliases
+        }
+        fracture_targets = {"borehole_id": "hole_id", "measured_depth": "depth"}
         for row, column in enumerate(dataframe.columns):
             self._mapping_table.setItem(row, 0, QTableWidgetItem(str(column)))
-            self._mapping_table.setItem(row, 1, QTableWidgetItem(str(column)))
+            standard = str(column)
+            if data_type == BoreholeDataType.FRACTURES:
+                standard = fracture_targets.get(fracture_aliases.get(standard.lower(), standard), fracture_aliases.get(standard.lower(), standard))
+            self._mapping_table.setItem(row, 1, QTableWidgetItem(standard))
+            self._mapping_table.setItem(row, 2, QTableWidgetItem("Yes" if standard in required else ""))
         self._status.setText(f"Preview: {len(dataframe)} rows × {len(dataframe.columns)} fields")
 
     def _stage_import(self) -> None:
@@ -137,6 +157,17 @@ class M8ImportDialog(QDialog):
         except (OSError, ValueError, ImportError, KeyError) as error:
             QMessageBox.critical(self, "Import failed", str(error))
             return
+        required = {
+            BoreholeDataType.COLLARS: {"borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"},
+            BoreholeDataType.SURVEYS: {"hole_id", "measured_depth", "azimuth", "dip"},
+            BoreholeDataType.FRACTURES: {"hole_id", "depth", "dip"},
+            BoreholeDataType.RQD: {"hole_id", "from_depth", "to_depth", "rqd"},
+            BoreholeDataType.DOMAIN_INTERVALS: {"hole_id", "from_depth", "to_depth", "domain_id"},
+        }.get(self._type_combo.currentData(), set())
+        missing = sorted(required - set(dataframe.columns))
+        if missing:
+            QMessageBox.critical(self, "Import failed", f"Missing required fields: {', '.join(missing)}")
+            return
         result = self._repository.import_dataframe(
             self._type_combo.currentData(),
             dataframe,
@@ -146,9 +177,16 @@ class M8ImportDialog(QDialog):
         )
         self._results.append(dict(result))
         self._staged_changes = self._staged_changes or result.changed
+        orientation = (
+            f", total fracture rows={result.get('total_fracture_rows', 0)}, "
+            f"full orientation={result.get('full_orientation', 0)}, dip only={result.get('dip_only', 0)}, "
+            f"excluded/error={result.get('excluded_error', 0)}"
+            if result.get("data_type") == BoreholeDataType.FRACTURES
+            else ""
+        )
         self._status.setText(
             f"Staged raw={result['raw']}, formal={result['formal']}, excluded={result['excluded']}, "
-            f"pending={result['pending']}, duplicates={result['duplicates']}"
+            f"pending={result['pending']}, duplicates={result['duplicates']}{orientation}"
         )
 
     def _accept(self) -> None:

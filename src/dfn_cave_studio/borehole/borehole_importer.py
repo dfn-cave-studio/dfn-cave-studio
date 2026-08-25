@@ -381,7 +381,7 @@ class BoreholeImporter:
     # Mandatory fields that must be present (no default values allowed).
     MANDATORY_COLLAR_FIELDS = ["borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"]
     MANDATORY_SURVEY_FIELDS = ["borehole_id", "measured_depth"]
-    MANDATORY_FRACTURE_FIELDS = ["borehole_id", "measured_depth", "dip_direction", "dip"]
+    MANDATORY_FRACTURE_FIELDS = ["borehole_id", "measured_depth", "dip"]
     MANDATORY_RQD_FIELDS = ["borehole_id", "from_depth", "to_depth", "rqd"]
 
     def _check_mandatory_fields(self, row: pd.Series, mandatory: List[str], row_idx: int, context: str) -> List[str]:
@@ -564,7 +564,12 @@ class BoreholeImporter:
                 obs = FractureObservation(
                     borehole_id=bh_id,
                     measured_depth=measured_depth,
-                    dip_direction=float(row["dip_direction"]),
+                    dip_direction=(
+                        None
+                        if pd.isna(row.get("dip_direction"))
+                        or str(row.get("dip_direction", "")).strip().lower() in {"", "na", "n/a", "null", "none"}
+                        else float(row["dip_direction"])
+                    ),
                     dip=dip,
                     aperture=float(row["aperture"]) if pd.notna(row.get("aperture")) else None,
                     filling=str(row.get("filling", "")) if pd.notna(row.get("filling")) else None,

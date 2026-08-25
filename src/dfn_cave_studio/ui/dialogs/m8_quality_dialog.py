@@ -193,10 +193,12 @@ class M8QualityDialog(QDialog):
         finally:
             self._table.setUpdatesEnabled(True)
         counts = self._project.borehole_database.counts()
+        orientation_counts = self._project.borehole_database.orientation_counts()
         confirmed = self._project.borehole_database.quality_confirmed_at
         self._summary.setText(
             f"Raw {counts['raw']} | Formal {counts['formal']} | Excluded {counts['excluded']} | "
             f"Pending {counts['pending']} | Unresolved ERROR {self._service.unresolved_error_count} | "
+            f"Full orientation {orientation_counts['full_orientation']} | Dip only {orientation_counts['dip_only']} | "
             f"Quality confirmed: {confirmed.isoformat() if confirmed else 'no'}"
         )
 

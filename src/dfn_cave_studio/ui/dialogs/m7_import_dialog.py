@@ -61,7 +61,7 @@ from dfn_cave_studio.models.borehole import BoreholeCollection
 REQUIRED_FIELDS = {
     "collars": {"borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"},
     "surveys": {"hole_id", "measured_depth", "azimuth", "dip"},
-    "fractures": {"hole_id", "depth", "dip_direction", "dip"},
+    "fractures": {"hole_id", "depth", "dip"},
     "rqd": {"hole_id", "from_depth", "to_depth", "rqd"},
     "domain_intervals": {"hole_id", "from_depth", "to_depth", "domain_id"},
 }
@@ -426,7 +426,7 @@ class M7ImportDialog(QDialog):
             (
                 bh.borehole_id,
                 float(obs.measured_depth),
-                float(obs.dip_direction),
+                obs.dip_direction,
                 float(obs.dip),
                 obs.set_id,
                 None if obs.aperture is None else float(obs.aperture),
@@ -443,7 +443,8 @@ class M7ImportDialog(QDialog):
                         first_errors.append(f"Row {idx}: unknown borehole '{bh_id}'")
                     continue
                 depth = float(row.get("depth", row.get("measured_depth", 0)))
-                dd = float(row.get("dip_direction", 0))
+                raw_direction = row.get("dip_direction")
+                dd = None if pd.isna(raw_direction) or str(raw_direction).strip().lower() in {"", "na", "n/a", "null", "none"} else float(raw_direction)
                 dip = float(row.get("dip", 0))
                 if depth > bh_map[bh_id].collar.final_depth:
                     reason = (

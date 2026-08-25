@@ -1,0 +1,5 @@
+hole_id,measured_depth,azimuth,dip
+CAL-01,0,0,-90
+CAL-01,100,0,-90
+VAL-01,0,0,-90
+VAL-01,100,0,-90

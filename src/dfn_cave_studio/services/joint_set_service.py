@@ -27,7 +27,6 @@ import numpy as np
 
 from dfn_cave_studio.models.fracture_set import JointSetConfig, OrientationDistribution
 from dfn_cave_studio.models.borehole import BoreholeCollection, FractureObservation
-from dfn_cave_studio.models.enums import SizeDistributionType
 from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal, normal_to_dip_dir_dip
 
 
@@ -52,6 +51,11 @@ class JointSetIdentificationResult:
         self.validation_count: int = 0
         self.random_seed: Optional[int] = None
         self.n_clusters: int = 0
+        self.full_orientation_count: int = 0
+        self.dip_only_count: int = 0
+        self.validation_full_orientation_count: int = 0
+        self.validation_dip_only_count: int = 0
+        self.set_counts: Dict[int, Dict[str, int]] = {}
         self.created_at: datetime = datetime.now(timezone.utc)
 
 
@@ -89,22 +93,35 @@ class JointSetService:
         # Collect statistics per set_id, split by calibration/validation
         cal_normals: Dict[int, List[np.ndarray]] = defaultdict(list)
         val_normals: Dict[int, List[np.ndarray]] = defaultdict(list)
+        cal_dip_only: Dict[int, List[FractureObservation]] = defaultdict(list)
+        val_dip_only: Dict[int, List[FractureObservation]] = defaultdict(list)
 
         for bh in collection:
             hole_role = "calibration" if bh.borehole_id in calibration_holes else \
                         "validation" if bh.borehole_id in validation_holes else "calibration"
-            for obs in bh.fracture_observations:
+            for obs_index, obs in enumerate(bh.fracture_observations):
                 if obs.set_id is None:
                     continue
-                n = dip_dir_dip_to_normal(obs.dip_direction, obs.dip)
                 if hole_role == "calibration":
-                    cal_normals[obs.set_id].append(n)
+                    result.assignments[f"{bh.borehole_id}:{obs_index}"] = obs.set_id
+                    if obs.has_full_orientation:
+                        cal_normals[obs.set_id].append(dip_dir_dip_to_normal(obs.dip_direction, obs.dip))
+                    else:
+                        cal_dip_only[obs.set_id].append(obs)
                 else:
-                    val_normals[obs.set_id].append(n)
+                    if obs.has_full_orientation:
+                        val_normals[obs.set_id].append(dip_dir_dip_to_normal(obs.dip_direction, obs.dip))
+                    else:
+                        val_dip_only[obs.set_id].append(obs)
 
         # Build joint set configs from calibration data
-        for set_id in sorted(cal_normals.keys()):
+        for set_id in sorted(set(cal_normals) | set(cal_dip_only)):
             normals = np.array(cal_normals[set_id])
+            result.set_counts[set_id] = {
+                "total": len(cal_normals[set_id]) + len(cal_dip_only[set_id]),
+                "full_orientation": len(cal_normals[set_id]),
+                "dip_only": len(cal_dip_only[set_id]),
+            }
             if len(normals) < 3:
                 continue
             dd, dip, kappa = self._fisher_from_normals(normals)
@@ -117,12 +134,23 @@ class JointSetService:
                     mean_dip=round(dip, 1),
                     kappa=round(kappa, 1),
                 ),
-                provenance={"orientation": "imported", "size": "user", "p32": "user"},
+                provenance={
+                    "orientation": "imported",
+                    "orientation_fit_eligible": True,
+                    "full_orientation_count": len(normals),
+                    "dip_only_count": len(cal_dip_only[set_id]),
+                    "size": "user",
+                    "p32": "user",
+                },
             )
             result.sets[set_id] = js
 
-        result.calibration_count = sum(len(v) for v in cal_normals.values())
-        result.validation_count = sum(len(v) for v in val_normals.values())
+        result.full_orientation_count = sum(len(v) for v in cal_normals.values())
+        result.dip_only_count = sum(len(v) for v in cal_dip_only.values())
+        result.validation_full_orientation_count = sum(len(v) for v in val_normals.values())
+        result.validation_dip_only_count = sum(len(v) for v in val_dip_only.values())
+        result.calibration_count = result.full_orientation_count + result.dip_only_count
+        result.validation_count = result.validation_full_orientation_count + result.validation_dip_only_count
         self._results[domain_id] = result
         return result
 
@@ -174,6 +202,9 @@ class JointSetService:
             if bh.borehole_id not in calibration_holes:
                 continue
             for i, obs in enumerate(bh.fracture_observations):
+                if not obs.has_full_orientation:
+                    result.dip_only_count += 1
+                    continue
                 n = dip_dir_dip_to_normal(obs.dip_direction, obs.dip)
                 cal_normals.append(n)
                 cal_obs_refs.append((bh.borehole_id, i))
@@ -261,10 +292,13 @@ class JointSetService:
                 result.assignments[record_id] = set_id
 
         result.calibration_count = n_cal
+        result.full_orientation_count = n_cal
         # Count validation observations
         for bh in collection:
             if bh.borehole_id in validation_holes:
                 result.validation_count += len(bh.fracture_observations)
+                result.validation_full_orientation_count += sum(obs.has_full_orientation for obs in bh.fracture_observations)
+                result.validation_dip_only_count += sum(not obs.has_full_orientation for obs in bh.fracture_observations)
 
         # ── Deterministic reordering ─────────────────────────────────────
         # Assign stable set_ids by sorting clusters by mean dip_direction

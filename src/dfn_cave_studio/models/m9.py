@@ -23,6 +23,7 @@ class ObservabilityState(StrEnum):
     ADEQUATE = "adequate"
     LOW_OBSERVABILITY = "low_observability"
     NO_DATA = "no_data"
+    INSUFFICIENT_ORIENTATION_DATA = "insufficient_orientation_data"
 
 
 class SizeModelSource(StrEnum):
@@ -87,6 +88,9 @@ class P10Interval(BaseModel):
     segment_directions: list[tuple[float, float, float, float]] = Field(default_factory=list)
     source: str = "formal_fracture_observations"
     provenance: dict[str, Any] = Field(default_factory=dict)
+    full_orientation_count: int = Field(default=0, ge=0)
+    dip_only_count: int = Field(default=0, ge=0)
+    unassigned_dip_only_count: int = Field(default=0, ge=0)
 
 
 class P32Estimate(BaseModel):
@@ -106,6 +110,11 @@ class P32Estimate(BaseModel):
     random_seed: int
     calibration_holes: list[str] = Field(default_factory=list)
     method: str = "poisson_direction_corrected_mle"
+    full_orientation_count: int = Field(default=0, ge=0)
+    dip_only_count: int = Field(default=0, ge=0)
+    orientation_model_source: str | None = None
+    eligibility_status: str = "no_data"
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class DomainOrientationModel(BaseModel):
@@ -118,6 +127,9 @@ class DomainOrientationModel(BaseModel):
     kappa: float = Field(gt=0.0)
     observation_count: int = Field(ge=1)
     source: str = "calibration_formal_fractures"
+    full_orientation_count: int = Field(default=0, ge=0)
+    dip_only_count: int = Field(default=0, ge=0)
+    orientation_fit_eligible: bool = True
 
 
 class SizeFitCandidate(BaseModel):

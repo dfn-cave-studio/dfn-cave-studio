@@ -19,6 +19,7 @@ from dfn_cave_studio.models.borehole import (
     BoreholeCollection,
     Collar,
     FractureObservation,
+    OrientationCompleteness,
     RQDInterval,
     SurveyStation,
 )
@@ -207,6 +208,19 @@ class BoreholeRepository:
             "cancelled": False,
             "data_type": dtype,
         }
+        if dtype == BoreholeDataType.FRACTURES:
+            counts["total_fracture_rows"] = len(dataframe)
+            counts["full_orientation"] = sum(
+                record.values.get("orientation_completeness") == OrientationCompleteness.FULL_ORIENTATION.value
+                and record.state != RecordState.EXCLUDED
+                for record in pending_records
+            )
+            counts["dip_only"] = sum(
+                record.values.get("orientation_completeness") == OrientationCompleteness.DIP_ONLY.value
+                and record.state != RecordState.EXCLUDED
+                for record in pending_records
+            )
+            counts["excluded_error"] = counts["excluded"]
         return ImportBatchResult(counts)
 
     def edit_record(
@@ -499,7 +513,7 @@ class BoreholeRepository:
                 observation = FractureObservation(
                     borehole_id=record.hole_id,
                     measured_depth=float(values["depth"]),
-                    dip_direction=float(values["dip_direction"]),
+                    dip_direction=self._optional_float(values.get("dip_direction")),
                     dip=float(values["dip"]),
                     aperture=self._optional_float(values.get("aperture")),
                     set_id=self._optional_int(values.get("set_id")),
@@ -679,6 +693,37 @@ class BoreholeRepository:
         self.rebuild_formal_collection()
         return self.database
 
+    def migrate_orientation_completeness(self) -> int:
+        """Migrate pre-v0.9.1 fracture records without changing a real legacy zero."""
+        changed = 0
+        for record in self.query(BoreholeDataType.FRACTURES, raw=True):
+            if "orientation_completeness" in record.values:
+                continue
+            before = deepcopy(record.values)
+            direction = record.values.get("dip_direction")
+            if direction is None or (
+                isinstance(direction, str) and direction.strip().lower() in {"", "na", "n/a", "null", "none"}
+            ):
+                record.values["dip_direction"] = None
+                record.values["orientation_completeness"] = OrientationCompleteness.DIP_ONLY.value
+                action = "migrate_dip_only_orientation"
+            else:
+                record.values["orientation_completeness"] = OrientationCompleteness.FULL_ORIENTATION.value
+                action = "migrate_full_orientation"
+                if self._is_number(direction) and float(direction) == 0.0:
+                    action = "ambiguous_legacy_orientation_preserved_zero"
+            record.modification_history.append(
+                ModificationEvent(
+                    source="v0.9.1_migration",
+                    action=action,
+                    before=before,
+                    after=deepcopy(record.values),
+                )
+            )
+            changed += 1
+        self.database.schema_version = 2
+        return changed
+
     def _classify(self, data_type: str, values: Mapping[str, Any]) -> tuple[RecordState, str | None]:
         if data_type not in {member.value for member in BoreholeDataType}:
             return RecordState.FORMAL, None
@@ -714,15 +759,21 @@ class BoreholeRepository:
             ):
                 return RecordState.EXCLUDED, f"Duplicate survey station at measured depth {depth}"
         elif data_type == BoreholeDataType.FRACTURES:
-            required = ("depth", "dip_direction", "dip")
+            required = ("depth", "dip")
             if any(not self._is_number(values.get(field)) for field in required):
-                return RecordState.EXCLUDED, "Fracture depth/orientation must be numeric"
+                return RecordState.EXCLUDED, "Fracture depth/dip must be numeric"
             depth = float(values["depth"])
             dip = float(values["dip"])
             if depth < 0 or depth > total_depth:
                 return RecordState.EXCLUDED, f"Fracture depth {depth} exceeds borehole total depth {total_depth}"
             if dip < 0 or dip > 90:
                 return RecordState.EXCLUDED, f"Dip {dip} is outside [0, 90]"
+            dip_direction = values.get("dip_direction")
+            if dip_direction is not None:
+                if not self._is_number(dip_direction):
+                    return RecordState.EXCLUDED, "dip_direction must be numeric when provided"
+                if not 0 <= float(dip_direction) <= 360:
+                    return RecordState.EXCLUDED, f"Dip direction {dip_direction} is outside [0, 360]"
             set_id = values.get("set_id")
             if set_id is not None and set_id != "" and self._optional_int(set_id) is None:
                 return RecordState.EXCLUDED, f"set_id '{set_id}' is not an integer"
@@ -757,6 +808,18 @@ class BoreholeRepository:
         for source, target in _ALIASES.get(data_type, {}).items():
             if target not in result and source in result:
                 result[target] = result[source]
+        if data_type == BoreholeDataType.FRACTURES:
+            direction = result.get("dip_direction")
+            if isinstance(direction, str) and direction.strip().lower() in {"", "na", "n/a", "null", "none"}:
+                direction = None
+            if direction is not None and BoreholeRepository._is_number(direction):
+                direction = float(direction)
+            result["dip_direction"] = direction
+            result["orientation_completeness"] = (
+                OrientationCompleteness.FULL_ORIENTATION.value
+                if direction is not None
+                else OrientationCompleteness.DIP_ONLY.value
+            )
         return result
 
     @staticmethod

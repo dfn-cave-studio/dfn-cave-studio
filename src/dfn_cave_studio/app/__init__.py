@@ -27,7 +27,7 @@ def main() -> None:
 
     # Application metadata
     QCoreApplication.setApplicationName("DFN Cave Studio")
-    QCoreApplication.setApplicationVersion("0.9.0")
+    QCoreApplication.setApplicationVersion("0.9.1")
     QCoreApplication.setOrganizationName("DFNCaveStudio")
 
     # High DPI support

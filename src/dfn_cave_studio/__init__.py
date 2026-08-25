@@ -1,7 +1,7 @@
 # DFN Cave Studio
 # Core package
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 __author__ = "DFN Cave Studio Development Team"
 __license__ = "MIT"
 

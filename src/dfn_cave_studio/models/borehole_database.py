@@ -102,12 +102,13 @@ class BoreholeQualityIssue(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     resolved_at: datetime | None = None
     resolution_note: str = ""
+    orientation_completeness: str | None = None
 
 
 class BoreholeDatabase(BaseModel):
     """Canonical data store for all borehole-related tables."""
 
-    schema_version: int = 1
+    schema_version: int = 2
     records: list[BoreholeRecord] = Field(default_factory=list)
     quality_issues: list[BoreholeQualityIssue] = Field(default_factory=list)
     quality_confirmed_at: datetime | None = None
@@ -139,6 +140,16 @@ class BoreholeDatabase(BaseModel):
             "formal": sum(record.state == RecordState.FORMAL for record in records),
             "excluded": sum(record.state == RecordState.EXCLUDED for record in records),
             "pending": sum(record.state == RecordState.PENDING for record in records),
+        }
+
+    def orientation_counts(self, state: RecordState | str | None = RecordState.FORMAL) -> dict[str, int]:
+        """Count fracture records by scientifically meaningful orientation completeness."""
+        records = self.query(BoreholeDataType.FRACTURES, state=state, raw=state is None)
+        return {
+            "full_orientation": sum(
+                record.values.get("orientation_completeness") == "full_orientation" for record in records
+            ),
+            "dip_only": sum(record.values.get("orientation_completeness") == "dip_only" for record in records),
         }
 
     @property

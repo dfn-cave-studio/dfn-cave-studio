@@ -17,14 +17,12 @@ References:
 from __future__ import annotations
 
 import math
-from typing import Optional, List, Tuple, Dict, Any, Callable
-from datetime import datetime
-from uuid import UUID, uuid4
+from typing import Optional, List, Tuple, Dict, Any
 from enum import Enum
 
 import numpy as np
 from numpy.typing import NDArray
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from dfn_cave_studio.models.enums import FractureType
 
@@ -287,6 +285,13 @@ class BoreholeSurvey(BaseModel):
 # Fracture Observation
 # =============================================================================
 
+class OrientationCompleteness(str, Enum):
+    """Scientific completeness of an observed fracture orientation."""
+
+    FULL_ORIENTATION = "full_orientation"
+    DIP_ONLY = "dip_only"
+
+
 class FractureObservation(BaseModel):
     """A fracture observed in a borehole at a specific depth.
 
@@ -295,21 +300,42 @@ class FractureObservation(BaseModel):
 
     borehole_id: str = ""
     measured_depth: float = Field(..., ge=0.0, description="Measured depth of observation (m)")
-    dip_direction: float = Field(default=0.0, ge=0.0, lt=360.0, description="Dip direction (°)")
-    dip: float = Field(default=0.0, ge=0.0, le=90.0, description="Dip angle (°)")
+    dip_direction: Optional[float] = Field(default=None, ge=0.0, le=360.0, description="Dip direction (°)")
+    dip: float = Field(..., ge=0.0, le=90.0, description="Dip angle (°)")
+    orientation_completeness: OrientationCompleteness = OrientationCompleteness.DIP_ONLY
     aperture: Optional[float] = Field(default=None, ge=0.0, description="Fracture aperture (mm)")
     filling: Optional[str] = Field(default=None, description="Filling material description")
     fracture_type: FractureType = FractureType.JOINT
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Observation confidence (0-1)")
     set_id: Optional[int] = Field(default=None, description="Assigned fracture set ID for DFN parameter inference")
 
+    @field_validator("dip_direction", mode="before")
+    @classmethod
+    def parse_optional_dip_direction(cls, value: Any) -> Any:
+        """Parse missing markers while preserving numeric zero as a real direction."""
+        if value is None:
+            return None
+        if isinstance(value, str) and value.strip().lower() in {"", "na", "n/a", "null", "none"}:
+            return None
+        return value
+
     @model_validator(mode="after")
     def validate_angles(self) -> "FractureObservation":
-        if self.dip_direction < 0 or self.dip_direction >= 360:
-            raise ValueError(f"dip_direction must be in [0, 360), got {self.dip_direction}")
+        if self.dip_direction is not None and (self.dip_direction < 0 or self.dip_direction > 360):
+            raise ValueError(f"dip_direction must be in [0, 360], got {self.dip_direction}")
         if self.dip < 0 or self.dip > 90:
             raise ValueError(f"dip must be in [0, 90], got {self.dip}")
+        self.orientation_completeness = (
+            OrientationCompleteness.FULL_ORIENTATION
+            if self.dip_direction is not None
+            else OrientationCompleteness.DIP_ONLY
+        )
         return self
+
+    @property
+    def has_full_orientation(self) -> bool:
+        """Return whether the record is eligible for 3D orientation analysis."""
+        return self.orientation_completeness == OrientationCompleteness.FULL_ORIENTATION
 
 
 # =============================================================================
@@ -502,7 +528,7 @@ class BoreholeCollection(BaseModel):
                     f"Dip {c.dip}° outside [-90, 90]", "error"
                 ))
             for i, obs in enumerate(bh.fracture_observations):
-                if obs.dip_direction < 0 or obs.dip_direction >= 360:
+                if obs.dip_direction is not None and (obs.dip_direction < 0 or obs.dip_direction > 360):
                     errors.append(BoreholeValidationError(
                         bh.borehole_id, f"fracture[{i}].dip_direction",
                         f"Dip direction {obs.dip_direction}° outside [0, 360)", "error"
@@ -626,10 +652,17 @@ class BoreholeCollection(BaseModel):
             frac_df = pd.read_csv(fractures_path)
             for _, row in frac_df.iterrows():
                 bh_id = str(row.get("borehole_id", ""))
+                raw_direction = row.get("dip_direction")
                 obs = FractureObservation(
                     borehole_id=bh_id,
                     measured_depth=float(row.get("measured_depth", 0)),
-                    dip_direction=float(row.get("dip_direction", 0)),
+                    dip_direction=(
+                        None
+                        if raw_direction is None
+                        or pd.isna(raw_direction)
+                        or str(raw_direction).strip().lower() in {"", "na", "n/a", "null", "none"}
+                        else float(raw_direction)
+                    ),
                     dip=float(row.get("dip", 0)),
                     aperture=float(row["aperture"]) if pd.notna(row.get("aperture")) else None,
                     filling=str(row.get("filling", "")) if pd.notna(row.get("filling")) else None,

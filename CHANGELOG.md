@@ -1,6 +1,14 @@
 # Changelog
 
-## [0.9.0-M9] — Unreleased (review pending)
+## [0.9.1-M9] — Unreleased (review pending)
+
+### Added
+
+- Formal support for dip-only fracture observations with missing `dip_direction`.
+- Orientation-completeness filtering, quality reporting, joint-set counts, and audited 360° normalization.
+- Explicit insufficient-orientation status for P32 and No Data orientation fields when no reliable 3D model exists.
+
+## [0.9.0-M9]
 
 ### Added
 - Direction-aware borehole P10/P32 modelling with calibration-only Poisson MLE and low-observability safeguards.

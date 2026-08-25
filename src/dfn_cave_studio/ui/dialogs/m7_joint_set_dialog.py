@@ -62,9 +62,19 @@ class M7JointSetDialog(QDialog):
         layout.addWidget(self._identify_btn)
 
         # Results table
-        self._result_table = QTableWidget(0, 7)
+        self._result_table = QTableWidget(0, 9)
         self._result_table.setHorizontalHeaderLabels(
-            ["Set ID", "Name", "Dip Dir (°)", "Dip (°)", "Kappa", "Count", "Source"]
+            [
+                "Set ID",
+                "Name",
+                "Dip Dir (°)",
+                "Dip (°)",
+                "Kappa",
+                "Total Count",
+                "Full Orientation Count",
+                "Dip-only Count",
+                "Source",
+            ]
         )
         self._result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self._result_table)
@@ -139,21 +149,35 @@ class M7JointSetDialog(QDialog):
         self._populate_results(result)
 
     def _populate_results(self, result):
-        self._result_table.setRowCount(len(result.sets))
+        visible_set_ids = sorted(set(result.sets) | set(result.set_counts))
+        self._result_table.setRowCount(len(visible_set_ids))
         total_cal = 0
-        for i, (set_id, js) in enumerate(sorted(result.sets.items())):
-            n_assigned = len([a for a in result.assignments.values() if a == set_id])
+        for i, set_id in enumerate(visible_set_ids):
+            js = result.sets.get(set_id)
+            counts = result.set_counts.get(set_id, {})
+            n_assigned = counts.get("total", len([a for a in result.assignments.values() if a == set_id]))
+            full_count = counts.get("full_orientation", n_assigned)
+            dip_only_count = counts.get("dip_only", 0)
             total_cal += n_assigned
             self._result_table.setItem(i, 0, QTableWidgetItem(str(set_id)))
-            self._result_table.setItem(i, 1, QTableWidgetItem(js.name))
-            self._result_table.setItem(i, 2, QTableWidgetItem(f"{js.orientation.mean_dip_direction:.1f}"))
-            self._result_table.setItem(i, 3, QTableWidgetItem(f"{js.orientation.mean_dip:.1f}"))
-            self._result_table.setItem(i, 4, QTableWidgetItem(f"{js.orientation.kappa:.1f}"))
+            self._result_table.setItem(i, 1, QTableWidgetItem(js.name if js is not None else f"Joint Set {set_id}"))
+            self._result_table.setItem(
+                i,
+                2,
+                QTableWidgetItem(f"{js.orientation.mean_dip_direction:.1f}" if js is not None else "—"),
+            )
+            self._result_table.setItem(i, 3, QTableWidgetItem(f"{js.orientation.mean_dip:.1f}" if js is not None else "—"))
+            self._result_table.setItem(i, 4, QTableWidgetItem(f"{js.orientation.kappa:.1f}" if js is not None else "—"))
             self._result_table.setItem(i, 5, QTableWidgetItem(str(n_assigned)))
-            self._result_table.setItem(i, 6, QTableWidgetItem(js.provenance.get("orientation", result.mode)))
+            self._result_table.setItem(i, 6, QTableWidgetItem(str(full_count)))
+            self._result_table.setItem(i, 7, QTableWidgetItem(str(dip_only_count)))
+            source = js.provenance.get("orientation", result.mode) if js is not None else "INSUFFICIENT_ORIENTATION_DATA"
+            self._result_table.setItem(i, 8, QTableWidgetItem(source))
         self._stats_label.setText(
             f"Mode: {result.mode}  |  "
             f"Calibration fractures used: {result.calibration_count}  |  "
+            f"Full-orientation records used: {result.full_orientation_count}  |  "
+            f"Dip-only records not eligible for spherical clustering: {result.dip_only_count if result.mode == 'automatic' else 0}  |  "
             f"Validation fractures excluded: {result.validation_count}  |  "
             f"Sets count sum: {total_cal}"
         )

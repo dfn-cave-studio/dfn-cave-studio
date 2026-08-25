@@ -21,7 +21,7 @@ def test_m9_state_and_arrays_round_trip(tmp_path):
     path = tmp_path / "m9.dfnproj"
     ZipProjectStore().save(project, path)
     restored = ZipProjectStore().load(path)
-    assert restored.metadata.software_version == "0.9.0"
+    assert restored.metadata.software_version == "0.9.1"
     assert restored.m9_state.p10_intervals == project.m9_state.p10_intervals
     np.testing.assert_equal(restored.m9_state.parameter_field_arrays["p32_total"], project.m9_state.parameter_field_arrays["p32_total"])
 

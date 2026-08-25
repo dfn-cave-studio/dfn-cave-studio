@@ -223,6 +223,7 @@ class BoreholeQualityService:
         database = self.repository.database
         return {
             "counts": database.counts(),
+            "orientation_counts": database.orientation_counts(),
             "unresolved_error_count": self.unresolved_error_count,
             "quality_confirmed_at": database.quality_confirmed_at,
             "quality_confirmation_note": database.quality_confirmation_note,
@@ -267,16 +268,49 @@ class BoreholeQualityService:
 
     def _check_fracture(self, record: BoreholeRecord, detected: dict[str, BoreholeQualityIssue]) -> None:
         values = record.values
-        for field in ("depth", "dip_direction", "dip"):
+        for field in ("depth", "dip"):
             if not self.repository.is_number(values.get(field)):
                 self._add(record, detected, "fracture_non_numeric", field, f"Fracture {field} must be numeric")
                 return
-        dip_direction = float(values["dip_direction"])
         dip = float(values["dip"])
-        if not 0 <= dip_direction < 360:
+        dip_direction = values.get("dip_direction")
+        if dip_direction is None:
             self._add(
-                record, detected, "fracture_direction_range", "dip_direction", "Dip direction must be in [0, 360)"
+                record,
+                detected,
+                "fracture_dip_only",
+                "dip_direction",
+                "Orientation incomplete: dip-only fracture record. This record is retained but is not eligible for full 3D orientation analysis.",
+                severity=QualitySeverity.INFO,
             )
+        elif not self.repository.is_number(dip_direction):
+            self._add(
+                record,
+                detected,
+                "fracture_direction_non_numeric",
+                "dip_direction",
+                "Dip direction must be numeric when provided",
+            )
+        else:
+            numeric_direction = float(dip_direction)
+            if numeric_direction == 360.0:
+                self._add(
+                    record,
+                    detected,
+                    "fracture_direction_normalize",
+                    "dip_direction",
+                    "Dip direction 360 degrees is equivalent to 0 degrees",
+                    suggested=0.0,
+                    auto=True,
+                )
+            elif not 0 <= numeric_direction < 360:
+                self._add(
+                    record,
+                    detected,
+                    "fracture_direction_range",
+                    "dip_direction",
+                    "Dip direction must be in [0, 360]",
+                )
         if not 0 <= dip <= 90:
             self._add(record, detected, "fracture_dip_range", "dip", "Fracture dip must be in [0, 90]")
         set_id = values.get("set_id")
@@ -395,6 +429,7 @@ class BoreholeQualityService:
             suggested_value=suggested,
             reason=reason,
             auto_fix_available=auto,
+            orientation_completeness=record.values.get("orientation_completeness"),
         )
 
     def _merge_findings(self, detected: dict[str, BoreholeQualityIssue]) -> None:
@@ -410,6 +445,7 @@ class BoreholeQualityService:
             prior.suggested_value = finding.suggested_value
             prior.reason = finding.reason
             prior.auto_fix_available = finding.auto_fix_available
+            prior.orientation_completeness = finding.orientation_completeness
             if finding.status == QualityIssueStatus.CONFIRMED:
                 prior.status = QualityIssueStatus.CONFIRMED
                 prior.resolved_at = finding.resolved_at
@@ -454,6 +490,7 @@ class BoreholeQualityService:
             "suggested_value": "",
             "reason": "",
             "resolution_note": "",
+            "orientation_completeness": "",
         }
         if issue is None:
             return fields
@@ -474,6 +511,7 @@ class BoreholeQualityService:
                 "suggested_value": issue.suggested_value,
                 "reason": issue.reason,
                 "resolution_note": issue.resolution_note,
+                "orientation_completeness": issue.orientation_completeness or "",
             }
         )
         return fields

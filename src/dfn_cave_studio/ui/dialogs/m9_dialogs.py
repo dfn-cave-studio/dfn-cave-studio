@@ -121,8 +121,22 @@ class M9DensityDialog(_M9Dialog):
         layout.addWidget(self.progress)
         self.summary = QLabel()
         layout.addWidget(self.summary)
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(["Domain", "Set", "N", "Raw L", "Effective L", "P32", "Observability"])
+        self.table = QTableWidget(0, 11)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Domain",
+                "Set",
+                "Total N",
+                "Full orientation",
+                "Dip only",
+                "Raw L",
+                "Effective L",
+                "P32",
+                "Orientation model",
+                "Eligibility",
+                "Observability",
+            ]
+        )
         layout.addWidget(self.table)
         layout.addWidget(self._buttons())
         self._refresh()
@@ -186,7 +200,19 @@ class M9DensityDialog(_M9Dialog):
         self.summary.setText(f"P10 intervals: calibration {calibration}, validation {validation}; P32 estimates {len(state.p32_estimates)}")
         self.table.setRowCount(len(state.p32_estimates))
         for row, estimate in enumerate(state.p32_estimates):
-            values = [estimate.domain_id, estimate.set_id, estimate.fracture_count, f"{estimate.raw_sample_length:.3f}", f"{estimate.effective_sample_length:.3f}", estimate.p32, estimate.observability.value]
+            values = [
+                estimate.domain_id,
+                estimate.set_id,
+                estimate.fracture_count,
+                estimate.full_orientation_count,
+                estimate.dip_only_count,
+                f"{estimate.raw_sample_length:.3f}",
+                f"{estimate.effective_sample_length:.3f}",
+                estimate.p32,
+                estimate.orientation_model_source,
+                estimate.eligibility_status,
+                estimate.observability.value,
+            ]
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem("" if value is None else str(value)))
 
