@@ -1,0 +1,93 @@
+{
+  "project_name": "DFN Cave Studio",
+  "version": "v0.10.1-M10",
+  "tag": "v0.10.1-M10",
+  "milestone": "M10",
+  "commit_sha": "019dd451ae45ccbe6b37b06c15fa0b178657e312",
+  "created_at": "2026-08-28T06:34:06.125547+00:00",
+  "python_version": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "generator_version": "m10-multiscale-1",
+  "geometry_format": "columnar-multiscale-v1",
+  "threshold_method": "area-weighted-cdf-1",
+  "tests": {
+    "core": {
+      "total": 620,
+      "passed": 620,
+      "failed": 0,
+      "skipped": 0
+    },
+    "gui": {
+      "total": 113,
+      "passed": 113,
+      "failed": 0,
+      "skipped": 0
+    },
+    "combined": {
+      "total": 733,
+      "passed": 733,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "coverage_percent": 86.41,
+  "benchmarks": {
+    "report_json": "benchmarks/m10_multiscale_closure_2026-08-27.json",
+    "report_markdown": "benchmarks/m10_multiscale_closure_2026-08-27.md",
+    "source_project": "C:\\Users\\Administrator\\Desktop\\untitled0812.dfnproj",
+    "generated_at": "2026-08-27T18:28:20+0800",
+    "large_case_actual_fractures": 721786,
+    "large_case_elapsed_seconds": 0.7882591000525281,
+    "large_case_final_array_bytes": 87838334,
+    "large_case_estimate_error_percent": 0.04000303557669935
+  },
+  "completed_features": [
+    "M9-parameter-field driven conditional explicit DFN generation",
+    "columnar authoritative center/normal/radius geometry",
+    "SMALL/MEDIUM/LARGE target-P32 partition and P32_subgrid",
+    "p32_unresolved_orientation audit budget",
+    "seeded multi-realization generation, LOD display, persistence and generic export"
+  ],
+  "m11_not_implemented": [
+    "exact fracture-voxel intersection and second voxelization",
+    "fracture-fracture connectivity and percolation",
+    "block cutting and fragmentation",
+    "formal 3DEC/PFC and machine-learning export"
+  ],
+  "known_issues": [
+    "Historical repository Ruff F/E9 baseline contains 177 findings; it is not newly passing."
+  ],
+  "source_package_directories": {
+    "required": [
+      "src",
+      "tests",
+      "scripts",
+      "benchmarks",
+      "docs",
+      "examples",
+      ".github/workflows"
+    ],
+    "included_optional": [
+      "resources"
+    ],
+    "omitted_optional": [
+      "sample_data"
+    ]
+  },
+  "changed_files": [
+    "CHANGELOG.md",
+    "README.md",
+    "docs/USER_MANUAL.md",
+    "docs/index.html",
+    "pyproject.toml",
+    "scripts/build_review_package.py",
+    "src/dfn_cave_studio/__init__.py",
+    "src/dfn_cave_studio/app/__init__.py",
+    "src/dfn_cave_studio/models/project.py",
+    "src/dfn_cave_studio/persistence/zip_project_store.py",
+    "src/dfn_cave_studio/ui/main_window.py",
+    "tests/integration/test_m9_persistence.py",
+    "tests/unit/test_review_package.py"
+  ],
+  "source_archive": "dfn-cave-studio-v0.10.1-M10-source.zip",
+  "review_archive": "dfn-cave-studio-v0.10.1-M10-review.zip"
+}

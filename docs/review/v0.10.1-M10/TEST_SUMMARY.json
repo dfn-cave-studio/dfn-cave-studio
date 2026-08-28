@@ -1,0 +1,23 @@
+{
+  "tests": {
+    "core": {
+      "total": 620,
+      "passed": 620,
+      "failed": 0,
+      "skipped": 0
+    },
+    "gui": {
+      "total": 113,
+      "passed": 113,
+      "failed": 0,
+      "skipped": 0
+    },
+    "combined": {
+      "total": 733,
+      "passed": 733,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "coverage_percent": 86.41
+}

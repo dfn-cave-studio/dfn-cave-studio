@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.10.1-M10] — Unreleased (ready for release)
+## [0.10.1-M10] — 2026-08-28
+
+This is the formally published M10 release.
 
 ### Fixed
 
@@ -12,7 +14,14 @@
 
 - The M10 scientific generator remains `m10-multiscale-1`; no scientific algorithm or project schema changed.
 
-## [0.10.0-M10] — Released as `v0.10.0-M10` (2026-08-28)
+## [0.10.0-M10] — Code tag created 2026-08-28; Release packaging failed
+
+### Release status
+
+- The immutable `v0.10.0-M10` code tag was created and remains unchanged.
+- Its Release workflow failed because the clean checkout did not contain the optional `sample_data` directory.
+- No successful GitHub Release was published from this tag.
+- It was superseded by the formally published `v0.10.1-M10` release.
 
 ### Added
 

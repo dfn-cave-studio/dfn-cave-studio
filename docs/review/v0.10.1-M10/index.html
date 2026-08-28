@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DFN Cave Studio v0.10.1-M10 Review</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 900px; margin: 0 auto; padding: 2rem; line-height: 1.55; }
+    h1, h2 { line-height: 1.2; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; }
+    .card { border: 1px solid #8886; border-radius: 8px; padding: 1rem; }
+    .value { display: block; font-size: 1.35rem; font-weight: 700; }
+    code { overflow-wrap: anywhere; }
+    li { margin: 0.35rem 0; }
+  </style>
+</head>
+<body>
+  <p><a href="../../index.html">← Back to review dashboard</a></p>
+  <h1>DFN Cave Studio v0.10.1-M10</h1>
+  <p>Published M10 review evidence for multiscale explicit DFN generation.</p>
+
+  <div class="summary">
+    <div class="card"><span class="value">019dd45</span>Commit</div>
+    <div class="card"><span class="value">733 passed</span>620 core + 113 GUI</div>
+    <div class="card"><span class="value">86.41%</span>Coverage</div>
+    <div class="card"><span class="value">721,786</span>Large benchmark fractures</div>
+  </div>
+
+  <h2>Scientific and geometry versions</h2>
+  <ul>
+    <li>Generator: <code>m10-multiscale-1</code></li>
+    <li>Geometry: <code>columnar-multiscale-v1</code></li>
+    <li>Threshold method: <code>area-weighted-cdf-1</code></li>
+  </ul>
+
+  <h2>Benchmark</h2>
+  <p>The audited large case generated 721,786 explicit fractures in approximately 0.788 seconds, using 87,838,334 bytes of authoritative arrays.</p>
+
+  <h2>Audit files</h2>
+  <ul>
+    <li><a href="MILESTONE_REPORT.md">Milestone report</a></li>
+    <li><a href="REVIEW_MANIFEST.json">Review manifest</a></li>
+    <li><a href="TEST_SUMMARY.json">Test summary</a></li>
+    <li><a href="coverage.xml">Coverage XML</a></li>
+    <li><a href="test_results_core.json">Core test results</a></li>
+    <li><a href="test_results_gui.json">GUI test results</a></li>
+    <li><a href="junit-core.xml">Core JUnit XML</a></li>
+    <li><a href="junit-gui.xml">GUI JUnit XML</a></li>
+  </ul>
+
+  <h2>Scope boundary</h2>
+  <p>M11 is not implemented in this release. Exact second voxelization, fracture connectivity and percolation, block cutting, and formal external/ML exports remain future work.</p>
+
+  <p><a href="https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.10.1-M10">Open the v0.10.1-M10 GitHub Release</a></p>
+</body>
+</html>

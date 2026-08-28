@@ -29,7 +29,7 @@ PYTHONPATH=src python -m dfn_cave_studio.app
 11. **Validation** — Compare field predictions against held-out Validation-hole P10 without refitting.
 12. **Explicit DFN Generation** — Generate seeded conditional explicit DFNs from the M9 field, manage merged display layers, save complete geometry, and export CSV/JSON/NPZ/VTP.
 
-Current status: v0.10.0-M10 is published; v0.10.1-M10 is the release-packaging patch ready for release.
+Current status: v0.10.1-M10 is the published M10 release. The immutable v0.10.0-M10 tag was superseded after its release-package workflow failed.
 
 ### Overview
 
@@ -73,7 +73,7 @@ app.run()
 | M0–M7 | ✅ Published | Existing historical milestones through `v0.7.0-M7` |
 | M8 | ✅ Published baseline | Borehole database, spatial boundaries, and voxel-grid definition |
 | M9 | ✅ Published | Local DFN parameter fields, first voxelization, and dip-only degradation |
-| M10 | ✅ Complete — ready for release | Seeded conditional explicit DFN, multi-scale columnar geometry, subgrid P32, display, persistence, and basic export |
+| M10 | ✅ Published | Seeded conditional explicit DFN, multi-scale columnar geometry, subgrid P32, display, persistence, and basic export |
 | M11 | ⬜ Planned | Exact second voxelization, intersections/connectivity, validation, and external/ML export |
 | M12 | ⬜ Planned | Fragmentation, integration, performance, and Windows release |
 
