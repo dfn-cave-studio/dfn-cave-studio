@@ -43,6 +43,7 @@ from dfn_cave_studio.models.enums import ProjectStatus
 from dfn_cave_studio.models.borehole_database import BoreholeDatabase
 from dfn_cave_studio.models.spatial_grid import SpatialGridConfig
 from dfn_cave_studio.models.m9 import M9State
+from dfn_cave_studio.models.m10 import M10State
 
 
 # =============================================================================
@@ -57,7 +58,7 @@ class ProjectMetadata(BaseModel):
     author: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     modified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    software_version: str = "0.9.1"
+    software_version: str = "0.10.0"
     project_version: int = 1  # Schema version for migration
 
     tags: List[str] = Field(default_factory=list)
@@ -92,7 +93,7 @@ class ProjectConfig(BaseModel):
 # Project (Root Model)
 # =============================================================================
 
-CURRENT_PROJECT_VERSION = 3
+CURRENT_PROJECT_VERSION = 4
 
 
 class Project(BaseModel):
@@ -128,6 +129,7 @@ class Project(BaseModel):
     borehole_database: BoreholeDatabase = Field(default_factory=BoreholeDatabase)
     spatial_grid_config: Optional[SpatialGridConfig] = None
     m9_state: M9State = Field(default_factory=M9State)
+    m10_state: M10State = Field(default_factory=M10State)
     structural_domains: StructuralDomainCollection = Field(
         default_factory=StructuralDomainCollection
     )
@@ -251,7 +253,7 @@ class Project(BaseModel):
         """
         path = Path(path)
         self.metadata.modified_at = datetime.now(timezone.utc)
-        self.metadata.software_version = "0.9.1"
+        self.metadata.software_version = "0.10.0"
 
         # Try to get git commit SHA
         self.vcs_commit_sha = self._get_git_sha()
@@ -301,6 +303,9 @@ class Project(BaseModel):
 
         if from_version < 3:
             migrated.setdefault("m9_state", {})
+
+        if from_version < 4:
+            migrated.setdefault("m10_state", {})
 
         # Future versions:
         # if from_version < 2:

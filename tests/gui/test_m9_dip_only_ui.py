@@ -8,7 +8,7 @@ from dfn_cave_studio.services.workflow_controller import WorkflowController
 from dfn_cave_studio.ui.dialogs.m8_import_dialog import M8ImportDialog
 from dfn_cave_studio.ui.dialogs.m7_joint_set_dialog import M7JointSetDialog
 from dfn_cave_studio.services.joint_set_service import JointSetIdentificationResult
-from dfn_cave_studio.ui.qt_adapter import QDialogButtonBox, QPushButton, Qt
+from dfn_cave_studio.ui.qt_adapter import QComboBox, QDialogButtonBox, QPushButton, Qt
 
 
 def _button(dialog, text: str) -> QPushButton:
@@ -37,8 +37,9 @@ def test_import_dialog_without_direction_column_marks_dip_only_and_required_fiel
     qtbot.mouseClick(_button(dialog, "Preview"), Qt.MouseButton.LeftButton)
 
     mappings = {
-        dialog._mapping_table.item(row, 1).text(): dialog._mapping_table.item(row, 2).text()
+        dialog._mapping_table.cellWidget(row, 1).currentText(): dialog._mapping_table.item(row, 2).text()
         for row in range(dialog._mapping_table.rowCount())
+        if isinstance(dialog._mapping_table.cellWidget(row, 1), QComboBox)
     }
     assert mappings["hole_id"] == "Yes"
     assert mappings["depth"] == "Yes"

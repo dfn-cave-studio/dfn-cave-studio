@@ -32,6 +32,12 @@ from dfn_cave_studio.models.borehole_database import (
     RecordState,
 )
 from dfn_cave_studio.models.data_management import DomainInterval
+from dfn_cave_studio.services.field_mapping import (
+    COLLAR_FIELD_ALIASES,
+    detect_field_mapping,
+    normalize_header,
+    validate_field_mapping,
+)
 
 _ALIASES: dict[str, dict[str, str]] = {
     BoreholeDataType.COLLARS: {
@@ -121,6 +127,7 @@ class BoreholeRepository:
         source_file: str,
         mode: str = "append",
         modification_source: str = "import",
+        field_mapping: Mapping[str, str] | None = None,
     ) -> ImportBatchResult:
         """Import one table independently and atomically.
 
@@ -140,6 +147,19 @@ class BoreholeRepository:
         if mode == "cancel":
             return ImportBatchResult(raw=0, formal=0, excluded=0, pending=0, duplicates=0, cancelled=True)
 
+        if dtype == BoreholeDataType.COLLARS:
+            if field_mapping is None:
+                source_field_mapping = detect_field_mapping(
+                    dataframe.columns, COLLAR_FIELD_ALIASES
+                ).require_unambiguous()
+            else:
+                source_field_mapping = validate_field_mapping(
+                    dataframe.columns, field_mapping, COLLAR_FIELD_ALIASES
+                )
+        else:
+            source_field_mapping = dict(field_mapping or {})
+        normalized_headers = {str(column): normalize_header(column) for column in dataframe.columns}
+
         batch_id = str(uuid4())
         pending_records: list[BoreholeRecord] = []
         existing_signatures = {
@@ -149,7 +169,10 @@ class BoreholeRepository:
         duplicates = 0
         for row_number, (_, row) in enumerate(dataframe.iterrows()):
             original = self._json_values(row.to_dict())
-            values = self._standardize(dtype, original)
+            mapped_values = dict(original)
+            for source, standard in source_field_mapping.items():
+                mapped_values[standard] = original.get(source)
+            values = self._standardize(dtype, mapped_values)
             signature = self._signature(dtype, original)
             if signature in existing_signatures:
                 duplicates += 1
@@ -163,6 +186,8 @@ class BoreholeRepository:
                 source_row=row_number,
                 original_values=original,
                 values=values,
+                source_field_mapping=dict(source_field_mapping),
+                normalized_source_headers=dict(normalized_headers),
                 state=state,
                 exclusion_reason=reason,
                 modification_source=modification_source,

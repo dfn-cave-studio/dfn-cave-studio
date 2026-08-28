@@ -1,6 +1,28 @@
 # Changelog
 
-## [0.9.1-M9] — Unreleased (review pending)
+## [0.10.0-M10] — Unreleased (ready for release)
+
+### Added
+
+- Per-voxel/per-set Poisson explicit DFN generation from the M9 parameter field using `πE[R²]`.
+- Seeded Fisher directions, all five M9 size distributions, Calibration FULL_ORIENTATION conditioning, and audited DIP_ONLY density evidence.
+- Parameterized deterministic-structure CSV import with an explicit random-area-budget option.
+- Transactional multi-realization generation with progress, cancellation, estimates, quality reports, and stable configuration hashes.
+- Compressed `.dfnproj` geometry persistence and generic CSV, JSON, NPZ, and VTP exports.
+- Session-only merged DFN layers with stable names, visibility, opacity, colour, removal, and namespace-safe clearing.
+- `columnar-v2` generation and `columnar-multiscale-v1` persistence avoid per-fracture Python objects and expanded disk vertices.
+- Area-weighted SMALL/MEDIUM/LARGE thresholds preserve non-explicit fracture contribution in per-voxel/per-set `P32_subgrid` arrays.
+- Unsupported orientation budgets are recorded separately as `p32_unresolved_orientation` instead of being treated as explicit or subgrid fractures.
+- Audited 721,786-fracture benchmark with sub-second generation, approximately 84 MiB authoritative arrays, LOD display, and save/reopen measurements.
+
+### Scientific constraints
+
+- M10 reports local voxel P32 only as `CENTER_ASSIGNED_PRELIMINARY`; exact fracture–voxel intersection is deferred to M11.
+- M10 does not implement fracture connectivity, second voxelization, block cutting, or formal 3DEC/PFC export.
+- LOD is a display representation; exact fracture-voxel intersections and intersection-derived P32 remain M11 work.
+- Historical repository Ruff F/E9 findings remain in the baseline and are not claimed as newly resolved.
+
+## [0.9.1-M9] — Released as `v0.9.1-M9` (2026-08-25)
 
 ### Added
 
@@ -8,7 +30,7 @@
 - Orientation-completeness filtering, quality reporting, joint-set counts, and audited 360° normalization.
 - Explicit insufficient-orientation status for P32 and No Data orientation fields when no reliable 3D model exists.
 
-## [0.9.0-M9]
+## [0.9.0-M9] — Released as `v0.9.0-M9` (2026-08-12)
 
 ### Added
 - Direction-aware borehole P10/P32 modelling with calibration-only Poisson MLE and low-observability safeguards.
@@ -28,7 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.7.0-M7] — Unreleased
+## [0.7.0-M7] — Released as `v0.7.0-M7` (2026-08-07)
 
 ### Added
 - M7 Workflow Panel: 12-step pipeline navigation (steps 1-5 active, 6-12 reserved)

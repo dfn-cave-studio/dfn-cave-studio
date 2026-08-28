@@ -31,7 +31,7 @@ class M7WorkflowPanel(QDockWidget):
     """Dockable workflow navigation panel for the M7 pipeline."""
 
     def __init__(self, controller: WorkflowController, main_window=None, parent=None):
-        super().__init__("M9 Workflow", parent)
+        super().__init__("M10 Workflow", parent)
         self._controller = controller
         self._main_window = main_window
         self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)

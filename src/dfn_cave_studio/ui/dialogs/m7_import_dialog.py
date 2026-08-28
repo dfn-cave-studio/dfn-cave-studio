@@ -44,6 +44,7 @@ from dfn_cave_studio.services.import_service import (
     STANDARD_DOMAIN_INTERVAL_FIELDS,
     read_input_table,
 )
+from dfn_cave_studio.services.field_mapping import detect_field_mapping, validate_field_mapping
 from dfn_cave_studio.services.m7_state import (
     get_excluded_records,
     set_raw_domain_intervals,
@@ -110,6 +111,7 @@ class M7ImportDialog(QDialog):
             copy.deepcopy(project.borehole_collection) if project.borehole_collection is not None else None
         )
         self._preview_df: Optional[pd.DataFrame] = None
+        self._mapping_conflicts: list[str] = []
         self._file_paths: Dict[str, str] = {}
         # Accumulated import results
         self._imported: Dict[str, Any] = {}
@@ -252,23 +254,40 @@ class M7ImportDialog(QDialog):
         field_defs = FIELD_DEFS.get(dtype, {})
         required = REQUIRED_FIELDS.get(dtype, set())
 
+        detected_by_standard: dict[str, str] = {}
+        if dtype == "collars":
+            detection = detect_field_mapping(df.columns, field_defs)
+            detected_by_standard = {standard: source for source, standard in detection.mapping.items()}
+            self._mapping_conflicts = detection.conflicts
+        else:
+            self._mapping_conflicts = []
+
         self._mapping_table.setRowCount(len(field_defs))
         row = 0
         for std_name, aliases in field_defs.items():
             self._mapping_table.setItem(row, 0, QTableWidgetItem(std_name))
             # Auto-detect: try aliases first, then exact match
-            found = ""
-            for alias in aliases:
-                if alias in df.columns:
-                    found = alias
-                    break
-            if not found and std_name in df.columns:
-                found = std_name
+            found = detected_by_standard.get(std_name, "")
+            if dtype != "collars":
+                for alias in aliases:
+                    if alias in df.columns:
+                        found = alias
+                        break
+                if not found and std_name in df.columns:
+                    found = std_name
             src_item = QTableWidgetItem(found)
             self._mapping_table.setItem(row, 1, src_item)
+            if dtype == "collars":
+                selector = QComboBox()
+                selector.addItems([""] + [str(column) for column in df.columns])
+                selector.setCurrentText(found)
+                selector.currentTextChanged.connect(src_item.setText)
+                self._mapping_table.setCellWidget(row, 1, selector)
             req_text = "Yes" if std_name in required else ""
             self._mapping_table.setItem(row, 2, QTableWidgetItem(req_text))
             row += 1
+        if self._mapping_conflicts:
+            self._status_label.setText(f"Mapping conflict: {'; '.join(self._mapping_conflicts)}")
 
     # ── Import ────────────────────────────────────────────────────────
 
@@ -283,7 +302,14 @@ class M7ImportDialog(QDialog):
             std = self._mapping_table.item(i, 0).text() if self._mapping_table.item(i, 0) else ""
             src = self._mapping_table.item(i, 1).text() if self._mapping_table.item(i, 1) else ""
             if std and src:
+                if src in rename and rename[src] != std:
+                    raise ValueError(
+                        f"Field mapping conflict: source column '{src}' is mapped to both "
+                        f"'{rename[src]}' and '{std}'"
+                    )
                 rename[src] = std
+        if self._type_combo.currentData() == "collars" and self._preview_df is not None:
+            rename = validate_field_mapping(self._preview_df.columns, rename, STANDARD_COLLAR_FIELDS)
         return rename
 
     def _check_required_fields(self, df_columns: set, dtype: str) -> list:
@@ -320,7 +346,11 @@ class M7ImportDialog(QDialog):
             return
         self._status_label.setText(f"Importing {dtype}...")
 
-        rename_map = self._build_rename_map()
+        try:
+            rename_map = self._build_rename_map()
+        except ValueError as error:
+            QMessageBox.critical(self, "Field Mapping Error", str(error))
+            return
 
         delim = self._delimiter_combo.currentText().replace("\\t", "\t")
         enc = self._encoding_combo.currentText()

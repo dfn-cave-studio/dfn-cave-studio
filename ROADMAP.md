@@ -37,7 +37,7 @@ database and confirm a reasonable voxel range.
 
 ## M9 — Local DFN parameter field and first voxelization
 
-**Version:** `v0.9.0-M9`
+**Version:** `v0.9.1-M9`
 
 - Estimate joint-set orientation, borehole P10, density, Kappa, set
   probabilities, and size-distribution parameters by structural domain.
@@ -48,23 +48,22 @@ database and confirm a reasonable voxel range.
 **Exit condition:** every input voxel has traceable DFN generation parameters
 and uncertainty.
 
-## M10 — Conditional explicit DFN and second voxelization
+## M10 — Conditional explicit DFN
 
 **Version:** `v0.10.0-M10`
 
-- Combine deterministic major structures with seeded stochastic fractures.
-- Generate through the analysis domain plus buffer.
-- Compute real fracture–fracture and fracture–voxel intersections,
-  connectivity graphs, and spanning paths.
-- Re-voxelize explicit DFN results and compare input and result fields.
+- Combine parameterized deterministic structures, Calibration observation constraints, and seeded stochastic fractures.
+- Generate only from valid M9 modelled cells over the buffered generation domain.
+- Manage reproducible realizations, merged display layers, compressed persistence, basic exports, and preliminary quality reports.
+- Do not claim centre-assigned voxel statistics are exact local P32.
 
-**Exit condition:** the database-to-explicit-DFN-to-result-grid path runs end
-to end.
+**Exit condition:** reproducible explicit geometry can be generated, inspected, saved, reopened, and exported.
 
-## M11 — Validation, external simulation, and ML export
+## M11 — Second voxelization, connectivity, validation, and external export
 
 **Version:** `v0.11.0-M11`
 
+- Compute exact fracture–voxel clipped areas, fracture intersections, connectivity, and spanning paths.
 - Validate P10, orientation, and set proportions on held-out holes.
 - Quantify multiple-realization uncertainty, error, and confidence intervals.
 - Assign fracture mechanics and export 3DEC, PFC, VTK, CSV, and ML-ready
@@ -85,4 +84,4 @@ to end.
 
 **Exit condition:** installable, usable, validated, and exportable v1.0.0.
 
-M9 implementation is now in development against the accepted `v0.8.0-M8` baseline. It remains review-pending and does not enter M10.
+M10 implementation is in development against the published `v0.9.1-M9` baseline and remains review-pending.

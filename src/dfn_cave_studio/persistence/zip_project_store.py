@@ -16,8 +16,8 @@ Format detection is automatic based on file extension.
 from __future__ import annotations
 
 import json
-import io
 import logging
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 
@@ -52,13 +52,15 @@ class ZipProjectStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        project.metadata.software_version = "0.9.1"
+        project.metadata.software_version = "0.10.0"
         project.metadata.modified_at = datetime.now(timezone.utc)
-        project.schema_version = 3
+        project.schema_version = 4
 
-        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        with tempfile.TemporaryDirectory(prefix="dfn-cave-save-") as temporary_directory, zipfile.ZipFile(
+            path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+        ) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.9.1")
+            zf.writestr("metadata/version.txt", "0.10.0")
             zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
@@ -86,9 +88,21 @@ class ZipProjectStore:
             if m9_state is not None:
                 zf.writestr("parameters/m9_state.json", m9_state.model_dump_json(indent=2))
                 if m9_state.parameter_field_arrays:
-                    buffer = io.BytesIO()
-                    np.savez_compressed(buffer, **m9_state.parameter_field_arrays)
-                    zf.writestr("results/voxel_parameter_field.npz", buffer.getvalue())
+                    npz_path = Path(temporary_directory) / "voxel_parameter_field.npz"
+                    np.savez_compressed(npz_path, **m9_state.parameter_field_arrays)
+                    zf.write(npz_path, "results/voxel_parameter_field.npz", compress_type=zipfile.ZIP_STORED)
+            m10_state = getattr(project, "m10_state", None)
+            if m10_state is not None:
+                zf.writestr("parameters/m10_state.json", m10_state.model_dump_json(indent=2))
+                for realization in m10_state.realizations:
+                    if realization.geometry_arrays:
+                        npz_path = Path(temporary_directory) / f"{realization.realization_id}.npz"
+                        np.savez_compressed(npz_path, **realization.geometry_arrays)
+                        zf.write(
+                            npz_path,
+                            f"results/m10/{realization.realization_id}.npz",
+                            compress_type=zipfile.ZIP_STORED,
+                        )
 
             # --- parameters ---
             joint_sets = getattr(project, "joint_sets", [])
@@ -216,7 +230,7 @@ class ZipProjectStore:
 
         project = Project()
 
-        with zipfile.ZipFile(path, "r") as zf:
+        with tempfile.TemporaryDirectory(prefix="dfn-cave-load-") as temporary_directory, zipfile.ZipFile(path, "r") as zf:
             # --- project.json ---
             if "project.json" in zf.namelist():
                 project_dict = json.loads(zf.read("project.json").decode("utf-8"))
@@ -254,8 +268,25 @@ class ZipProjectStore:
 
                 project.m9_state = M9State.model_validate_json(zf.read("parameters/m9_state.json").decode("utf-8"))
                 if "results/voxel_parameter_field.npz" in zf.namelist():
-                    with np.load(io.BytesIO(zf.read("results/voxel_parameter_field.npz")), allow_pickle=False) as archive:
+                    extracted = Path(zf.extract("results/voxel_parameter_field.npz", temporary_directory))
+                    with np.load(extracted, allow_pickle=False) as archive:
                         project.m9_state.parameter_field_arrays = {name: archive[name].copy() for name in archive.files}
+            if "parameters/m10_state.json" in zf.namelist():
+                from dfn_cave_studio.models.m10 import M10State
+
+                project.m10_state = M10State.model_validate_json(
+                    zf.read("parameters/m10_state.json").decode("utf-8")
+                )
+                for realization in project.m10_state.realizations:
+                    array_path = f"results/m10/{realization.realization_id}.npz"
+                    if array_path not in zf.namelist():
+                        raise ValueError(f"M10 realization geometry is missing: {array_path}")
+                    extracted = Path(zf.extract(array_path, temporary_directory))
+                    with np.load(extracted, allow_pickle=False) as archive:
+                        realization.geometry_arrays = {name: archive[name].copy() for name in archive.files}
+                    from dfn_cave_studio.dfn.m10_geometry import migrate_legacy_geometry
+
+                    migrate_legacy_geometry(realization)
 
             # --- results ---
             if "results/dfn_realizations.json" in zf.namelist():
@@ -800,11 +831,13 @@ class ZipProjectStore:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.9.1",
+            "version": "0.10.0",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,
             "fracture_count": 0,
+            "m10_realization_count": 0,
+            "m10_fracture_count": 0,
             "has_voxel_p32": False,
             "has_connectivity": False,
         }
@@ -815,6 +848,10 @@ class ZipProjectStore:
         summary["joint_set_count"] = len(getattr(project, "joint_sets", []))
         for r in getattr(project, "dfn_realizations", []):
             summary["fracture_count"] += len(getattr(r, "stochastic_fractures", []))
+        m10_state = getattr(project, "m10_state", None)
+        if m10_state is not None:
+            summary["m10_realization_count"] = len(m10_state.realizations)
+            summary["m10_fracture_count"] = sum(item.fracture_count for item in m10_state.realizations)
         summary["has_voxel_p32"] = getattr(project, "voxel_p32_results", None) is not None
         summary["has_connectivity"] = getattr(project, "connectivity_results", None) is not None
         return summary

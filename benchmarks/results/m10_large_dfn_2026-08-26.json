@@ -1,0 +1,385 @@
+{
+  "source_project": "C:\\Users\\Administrator\\Desktop\\081102.dfnproj",
+  "generated_at": "2026-08-26T18:27:23+0800",
+  "logical_cpu_count": 20,
+  "cases": [
+    {
+      "requested_count": 10000,
+      "worker_count": 1,
+      "expected_count": 10000.000407165164,
+      "actual_count": 9995,
+      "stochastic_count": 9935,
+      "conditioned_count": 60,
+      "deterministic_count": 0,
+      "generation": {
+        "elapsed_seconds": 0.4833119000541046,
+        "average_cpu_percent": 4.849352974213189,
+        "peak_cpu_percent": 7.74281467096115,
+        "peak_rss_delta_bytes": 22618112,
+        "fractures_per_second": 20680.22740363129
+      },
+      "final_array_bytes": 1179410,
+      "estimated_final_bytes": 1410541,
+      "estimated_peak_generation_bytes": 2644993,
+      "modelled_voxels": 162150,
+      "voxel_volume": 125.0,
+      "target_breakdown": [
+        {
+          "domain_id": 1,
+          "set_id": 1,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.0007619521929882467,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 2367.7969578812135
+        },
+        {
+          "domain_id": 2,
+          "set_id": 1,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.000575492565985769,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 1455.9312687014506
+        },
+        {
+          "domain_id": 3,
+          "set_id": 1,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.0009403998265042901,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 765.7828755760547
+        },
+        {
+          "domain_id": 1,
+          "set_id": 2,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.00047894660383462906,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 1488.3457544752634
+        },
+        {
+          "domain_id": 2,
+          "set_id": 2,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.00029866915429010987,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 755.5992664870355
+        },
+        {
+          "domain_id": 3,
+          "set_id": 2,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.001420633983798325,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 1156.8453615077146
+        },
+        {
+          "domain_id": 1,
+          "set_id": 3,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.0002954727679025382,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 918.1934607112072
+        },
+        {
+          "domain_id": 2,
+          "set_id": 3,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.00023526287986896932,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 595.1885452755885
+        },
+        {
+          "domain_id": 3,
+          "set_id": 3,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.0005358076887205243,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 436.31691654963413
+        }
+      ],
+      "save": {
+        "elapsed_seconds": 0.1774162999354303,
+        "average_cpu_percent": 4.8438334037671,
+        "peak_cpu_percent": 7.643128314420228,
+        "peak_rss_delta_bytes": 2838528
+      },
+      "saved_project_bytes": 756703,
+      "reopen": {
+        "elapsed_seconds": 0.028820899897255003,
+        "average_cpu_percent": 5.421412952302775,
+        "peak_cpu_percent": 7.712545362107434,
+        "peak_rss_delta_bytes": 23224320
+      },
+      "reopened_arrays_equal": true,
+      "lod": {
+        "elapsed_seconds": 0.4075881000608206,
+        "average_cpu_percent": 5.941966901483645,
+        "peak_cpu_percent": 29.812159668873743,
+        "peak_rss_delta_bytes": 89161728
+      },
+      "lod_displayed_count": 9995,
+      "lod_actor_count": 1
+    },
+    {
+      "requested_count": 100000,
+      "worker_count": 1,
+      "expected_count": 99999.99874349602,
+      "actual_count": 99946,
+      "stochastic_count": 99886,
+      "conditioned_count": 60,
+      "deterministic_count": 0,
+      "generation": {
+        "elapsed_seconds": 0.5084179000696167,
+        "average_cpu_percent": 5.685529560631504,
+        "peak_cpu_percent": 13.720944549373428,
+        "peak_rss_delta_bytes": 29892608,
+        "fractures_per_second": 196582.37836691938
+      },
+      "final_array_bytes": 11793628,
+      "estimated_final_bytes": 14104000,
+      "estimated_peak_generation_bytes": 21721856,
+      "modelled_voxels": 162150,
+      "voxel_volume": 125.0,
+      "target_breakdown": [
+        {
+          "domain_id": 1,
+          "set_id": 1,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.007660915143787861,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 23806.600648929198
+        },
+        {
+          "domain_id": 2,
+          "set_id": 1,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.005786189343780279,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 14638.406280377832
+        },
+        {
+          "domain_id": 3,
+          "set_id": 1,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.00945508573204279,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 7699.430111144137
+        },
+        {
+          "domain_id": 1,
+          "set_id": 2,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.004815485328435898,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 14964.313530846437
+        },
+        {
+          "domain_id": 2,
+          "set_id": 2,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.0030029169283807278,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 7597.041059693774
+        },
+        {
+          "domain_id": 3,
+          "set_id": 2,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.014283516444265842,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 11631.299780953184
+        },
+        {
+          "domain_id": 1,
+          "set_id": 3,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.002970779314637184,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 9231.81570768557
+        },
+        {
+          "domain_id": 2,
+          "set_id": 3,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.002365409629419446,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 5984.219512653866
+        },
+        {
+          "domain_id": 3,
+          "set_id": 3,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.005387184675782919,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 4386.872111212027
+        }
+      ],
+      "save": {
+        "elapsed_seconds": 0.32988320000004023,
+        "average_cpu_percent": 5.210177420371181,
+        "peak_cpu_percent": 13.817488253546369,
+        "peak_rss_delta_bytes": 6955008
+      },
+      "saved_project_bytes": 5134016,
+      "reopen": {
+        "elapsed_seconds": 0.05040079995524138,
+        "average_cpu_percent": 6.200298413467976,
+        "peak_cpu_percent": 7.483954418946192,
+        "peak_rss_delta_bytes": 31735808
+      },
+      "reopened_arrays_equal": true,
+      "lod": {
+        "elapsed_seconds": 0.004962199949659407,
+        "average_cpu_percent": 0.0,
+        "peak_cpu_percent": 0.0,
+        "peak_rss_delta_bytes": 24576
+      },
+      "lod_displayed_count": 99946,
+      "lod_actor_count": 1
+    },
+    {
+      "requested_count": 721452,
+      "worker_count": 1,
+      "expected_count": 721451.9919833806,
+      "actual_count": 721786,
+      "stochastic_count": 721726,
+      "conditioned_count": 60,
+      "deterministic_count": 0,
+      "generation": {
+        "elapsed_seconds": 0.7459458000957966,
+        "average_cpu_percent": 5.131907706308395,
+        "peak_cpu_percent": 12.043967164729002,
+        "peak_rss_delta_bytes": 107094016,
+        "fractures_per_second": 967611.8558577662
+      },
+      "final_array_bytes": 85170748,
+      "estimated_final_bytes": 101753590,
+      "estimated_peak_generation_bytes": 107432515,
+      "modelled_voxels": 162150,
+      "voxel_volume": 125.0,
+      "target_breakdown": [
+        {
+          "domain_id": 1,
+          "set_id": 1,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.05529841035604477,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 171842.02502679787
+        },
+        {
+          "domain_id": 2,
+          "set_id": 1,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.04176616668701172,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 105663.68993708413
+        },
+        {
+          "domain_id": 3,
+          "set_id": 1,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.0682491809129715,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 55576.418181109984
+        },
+        {
+          "domain_id": 1,
+          "set_id": 2,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.03475937992334366,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 108016.16531550555
+        },
+        {
+          "domain_id": 2,
+          "set_id": 2,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.02167580835521221,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 54837.34981819731
+        },
+        {
+          "domain_id": 3,
+          "set_id": 2,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.10310200601816177,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 83957.64059180995
+        },
+        {
+          "domain_id": 1,
+          "set_id": 3,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.02144383080303669,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 66637.56310172199
+        },
+        {
+          "domain_id": 2,
+          "set_id": 3,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.017074119299650192,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 43195.595639569634
+        },
+        {
+          "domain_id": 3,
+          "set_id": 3,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.03888605162501335,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures": 31665.544371584157
+        }
+      ],
+      "save": {
+        "elapsed_seconds": 1.1634672000072896,
+        "average_cpu_percent": 4.968984084780197,
+        "peak_cpu_percent": 14.857746020299421,
+        "peak_rss_delta_bytes": 34529280
+      },
+      "saved_project_bytes": 34652167,
+      "reopen": {
+        "elapsed_seconds": 0.19514959992375225,
+        "average_cpu_percent": 4.804006774117368,
+        "peak_cpu_percent": 7.708588239771224,
+        "peak_rss_delta_bytes": 109895680
+      },
+      "reopened_arrays_equal": true,
+      "lod": {
+        "elapsed_seconds": 0.0356484999647364,
+        "average_cpu_percent": 4.383073625946756,
+        "peak_cpu_percent": 7.717116514942245,
+        "peak_rss_delta_bytes": 29491200
+      },
+      "lod_displayed_count": 721786,
+      "lod_actor_count": 1
+    }
+  ]
+}

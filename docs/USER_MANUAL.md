@@ -1,4 +1,20 @@
-# DFN Cave Studio v0.9.1-M9 使用说明书
+# DFN Cave Studio v0.10.0-M10 使用说明书
+
+## M10 显式DFN操作（步骤12）
+
+完成M9 Density、Size、First Voxel Parameter Field并确认Voxel Grid和DFN Generation Domain后，点击左侧工作流的`12. Explicit DFN Generation`，或选择`DFN → Explicit DFN Generation`。
+
+1. 查看预计裂隙数和内存；设置`base seed`与1–5个小型实现。实现种子为`base_seed + realization_index`。
+2. 如尺寸模型为EXPERIMENTAL，勾选明确确认；较差Validation只形成警告，用户确认后仍可继续，软件不会声称模型可靠。
+3. 可导入参数化确定性圆盘CSV。必需字段为`structure_id, center_x, center_y, center_z, dip_direction, dip, radius, structure_type, domain_id`；可选`set_id`用于明确面积预算扣减。STL/OBJ复杂曲面尚不支持。
+4. 点击`Generate Batch`。计算在后台执行，可显示进度并取消；取消或失败不会留下半成品。生成完成后点击OK才提交到项目，Cancel完整回滚。
+5. 在实现列表中选择一个实现，可整体、按节理组、按条件裂隙或确定性结构面渲染。图层支持显示/隐藏、透明度、颜色、删除当前实现或清除全部DFN图层。清除不会删除钻孔、边界、坐标轴或M9切片。
+6. 点击`Export Selected`导出`fractures.csv`、质量摘要JSON/CSV、完整NPZ、VTP以及单独的条件/确定性CSV。这些是通用审计格式，不是正式3DEC/PFC输入。
+7. 保存`.dfnproj`后关闭并重开，M10配置、质量报告和完整几何数组会恢复；渲染图层属于session-only显示状态，需要重新渲染。
+
+多尺度设置中，`Auto`默认使SMALL/MEDIUM/LARGE约占目标P32的10%/60%/30%（连续分布），默认只显式生成MEDIUM和LARGE。未生成的SMALL不会被丢弃，而是作为逐体素、逐节理组`P32_subgrid`保存。`Manual`模式使用`R < r_sm`、`r_sm ≤ R < r_ml`和`R ≥ r_ml`。阈值是数值建模分辨率建议，不是固定地质分类标准。`Color By`可按Joint Set、Domain、Source或Size Class切换，仅影响当前会话显示。
+
+M10按每个体素、每个节理组使用`N~Poisson(P32·V/(πE[R²]))`。Calibration FULL_ORIENTATION可生成经过观测点的条件裂隙；Validation不参与条件化，DIP_ONLY只作为密度证据且不伪造方位角。质量报告中的局部值仅为`CENTER_ASSIGNED_PRELIMINARY`，真实裂隙—体素裁剪面积回算留到M11。
 
 ## M9 新增操作（步骤 8–11）
 
@@ -9,9 +25,9 @@ M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、V
 3. `First Voxel Parameter Field`：后台按块生成，可显示进度并取消。NO_DATA、TRUE_ZERO、OUTSIDE_MODEL 和 MODELED_VALUE 独立保存；本步骤不生成显式裂隙面。
 4. `Validation`：从参数场提取预测 P32，按留出孔真实局部轨迹换算预测 P10，报告 MAE、RMSE、Bias、可用时的 R²/相关系数；样本不足显示 INSUFFICIENT_VALIDATION。
 
-`.dfnproj` 保存 M9 设置、P10/P32、尺寸模型、压缩参数场数组、Validation 结果及工作流。可导出 P10/P32 CSV、密度/尺寸 JSON、参数场 NPZ/VTI 和 Validation CSV/JSON。本版本不含 M10 显式 DFN。
+`.dfnproj` 保存 M9 设置、P10/P32、尺寸模型、压缩参数场数组、Validation结果，以及M10配置、实现质量报告和压缩显式裂隙几何。
 
-> 适用版本：v0.9.1-M9（开发完成、等待外部审查）
+> 适用版本：v0.10.0-M10（开发完成、等待外部审查）
 > 文档语言：简体中文
 > 适用平台：当前以 Windows 源代码运行环境为主
 
@@ -19,7 +35,7 @@ M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、V
 
 DFN Cave Studio 是面向地下矿山与岩体裂隙研究的离散裂隙网络（DFN）建模软件。
 
-当前 v0.9.1-M9 包含完整 M8 基础、局部 DFN 参数场，以及裂隙方位角缺失时的科学降级处理：
+当前 v0.10.0-M10 包含完整 M8/M9 基础、裂隙方位角缺失时的科学降级处理，以及可复现的条件显式DFN生成、管理、保存和基础导出：
 
 ## 裂隙方向完整性
 

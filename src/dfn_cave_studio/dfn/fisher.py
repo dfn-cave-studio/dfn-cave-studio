@@ -68,6 +68,10 @@ def fisher_sample(
         >>> normals.shape
         (100, 3)
     """
+    if n_samples < 0:
+        raise ValueError(f"n_samples must be non-negative, got {n_samples}")
+    if n_samples == 0:
+        return np.empty((0, 3), dtype=np.float64)
     if kappa <= 0:
         raise ValueError(f"kappa must be positive, got {kappa}")
     if rng is None:
@@ -115,8 +119,6 @@ def fisher_sample(
     elif flip[0]:
         samples = -samples
 
-    if n_samples == 1:
-        return samples[0]
     return samples
 
 

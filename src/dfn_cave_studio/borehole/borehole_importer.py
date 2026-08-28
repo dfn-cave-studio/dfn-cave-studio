@@ -22,6 +22,13 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from dfn_cave_studio.services.field_mapping import (
+    COLLAR_FIELD_ALIASES,
+    FieldMappingConflictError,
+    detect_field_mapping,
+    validate_field_mapping,
+)
+
 from dfn_cave_studio.models.borehole import (
     BoreholeCollection,
     Borehole,
@@ -62,15 +69,7 @@ class ImportResult:
 # Standard Field Names
 # =============================================================================
 
-STANDARD_COLLAR_FIELDS = {
-    "borehole_id": ["borehole_id", "hole_id", "bh_id", "borehole", "hole", "id"],
-    "collar_x": ["collar_x", "x", "easting", "east", "x_coord"],
-    "collar_y": ["collar_y", "y", "northing", "north", "y_coord"],
-    "collar_z": ["collar_z", "z", "elevation", "elev", "z_coord", "rl"],
-    "azimuth": ["azimuth", "az", "bearing", "azm"],
-    "dip": ["dip", "inclination", "incl", "dip_angle"],
-    "final_depth": ["final_depth", "total_depth", "depth", "length", "eoh"],
-}
+STANDARD_COLLAR_FIELDS = COLLAR_FIELD_ALIASES
 
 STANDARD_SURVEY_FIELDS = {
     "borehole_id": ["borehole_id", "hole_id", "bh_id"],
@@ -358,16 +357,28 @@ class BoreholeImporter:
 
         # Apply user-provided mapping first
         if user_map:
-            df = df.rename(columns={v: k for k, v in user_map.items() if v in df.columns})
+            standards_by_source: Dict[str, List[str]] = {}
+            for standard, source in user_map.items():
+                standards_by_source.setdefault(source, []).append(standard)
+            duplicates = {source: standards for source, standards in standards_by_source.items() if len(standards) > 1}
+            if duplicates:
+                detail = "; ".join(
+                    f"source column '{source}' maps to multiple fields: {', '.join(standards)}"
+                    for source, standards in duplicates.items()
+                )
+                raise FieldMappingConflictError(f"Field mapping conflict: {detail}")
+            source_mapping = validate_field_mapping(
+                df.columns,
+                {source: standard for standard, source in user_map.items()},
+                standard_fields,
+            )
+            df = df.rename(columns=source_mapping)
 
-        # Auto-detect standard fields
-        for std_name, aliases in standard_fields.items():
-            if std_name in df.columns:
-                continue
-            for alias in aliases:
-                if alias in df.columns:
-                    df = df.rename(columns={alias: std_name})
-                    break
+        # Auto-detect through the same normalized, conflict-aware matcher used
+        # by preview dialogs and the M8 repository.
+        detection = detect_field_mapping(df.columns, standard_fields)
+        auto_mapping = detection.require_unambiguous()
+        df = df.rename(columns={source: standard for source, standard in auto_mapping.items() if standard not in df.columns})
 
         # Check required fields
         missing = [f for f in standard_fields if f not in df.columns]

@@ -20,6 +20,7 @@ class VoxelCellState(StrEnum):
     """Non-conflated semantic state of an analysis cell."""
 
     OUTSIDE_MODEL = "outside_model"
+    EXCAVATION = "excavation"
     NO_DATA = "no_data"
     TRUE_ZERO = "true_zero"
     MODELED_VALUE = "modeled_value"

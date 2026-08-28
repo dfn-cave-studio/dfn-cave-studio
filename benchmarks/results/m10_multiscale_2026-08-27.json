@@ -1,0 +1,1708 @@
+{
+  "source_project": "C:\\Users\\Administrator\\Desktop\\untitled0812.dfnproj",
+  "generated_at": "2026-08-27T18:00:01+0800",
+  "logical_cpu_count": 20,
+  "cases": [
+    {
+      "requested_count": 10000,
+      "worker_count": 1,
+      "expected_count": 10000.000407165164,
+      "actual_count": 9995,
+      "stochastic_count": 9935,
+      "conditioned_count": 60,
+      "deterministic_count": 0,
+      "generation": {
+        "elapsed_seconds": 0.4915362000465393,
+        "average_cpu_percent": 4.927154906944176,
+        "peak_cpu_percent": 7.731321132800228,
+        "peak_rss_delta_bytes": 25243648,
+        "fractures_per_second": 20334.209360477744
+      },
+      "final_array_bytes": 3135205,
+      "estimated_final_bytes": 1420542,
+      "estimated_peak_generation_bytes": 2656195,
+      "modelled_voxels": 162150,
+      "voxel_volume": 125.0,
+      "target_breakdown": [
+        {
+          "domain_id": 1,
+          "set_id": 1,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.0007619521929882467,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 2367.7969578812135,
+          "expected_fractures": 2367.7969578812135,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 2367.7969578812135,
+              "target_p32": 0.0007619521929882467,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 1,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.000575492565985769,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 1455.9312687014506,
+          "expected_fractures": 1455.9312687014506,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 1455.9312687014506,
+              "target_p32": 0.000575492565985769,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 1,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.0009403998265042901,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 765.7828755760547,
+          "expected_fractures": 765.7828755760547,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 765.7828755760547,
+              "target_p32": 0.0009403998265042901,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 1,
+          "set_id": 2,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.00047894660383462906,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 1488.3457544752634,
+          "expected_fractures": 1488.3457544752634,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 1488.3457544752634,
+              "target_p32": 0.00047894660383462906,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 2,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.00029866915429010987,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 755.5992664870355,
+          "expected_fractures": 755.5992664870355,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 755.5992664870355,
+              "target_p32": 0.00029866915429010987,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 2,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.001420633983798325,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 1156.8453615077146,
+          "expected_fractures": 1156.8453615077146,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 1156.8453615077146,
+              "target_p32": 0.001420633983798325,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 1,
+          "set_id": 3,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.0002954727679025382,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 918.1934607112072,
+          "expected_fractures": 918.1934607112072,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 918.1934607112072,
+              "target_p32": 0.0002954727679025382,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 3,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.00023526287986896932,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 595.1885452755885,
+          "expected_fractures": 595.1885452755885,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 595.1885452755885,
+              "target_p32": 0.00023526287986896932,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 3,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.0005358076887205243,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 436.31691654963413,
+          "expected_fractures": 436.31691654963413,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 436.31691654963413,
+              "target_p32": 0.0005358076887205243,
+              "p32_share": 1.0
+            }
+          ]
+        }
+      ],
+      "save": {
+        "elapsed_seconds": 0.1814259000821039,
+        "average_cpu_percent": 6.028632072405459,
+        "peak_cpu_percent": 15.079426397761333,
+        "peak_rss_delta_bytes": 3121152
+      },
+      "saved_project_bytes": 759282,
+      "reopen": {
+        "elapsed_seconds": 0.030539400060661137,
+        "average_cpu_percent": 2.558170751384063,
+        "peak_cpu_percent": 7.340160728068769,
+        "peak_rss_delta_bytes": 22716416
+      },
+      "reopened_arrays_equal": true,
+      "lod": {
+        "elapsed_seconds": 0.4094475000165403,
+        "average_cpu_percent": 4.960953479793977,
+        "peak_cpu_percent": 7.748574309202215,
+        "peak_rss_delta_bytes": 88821760
+      },
+      "lod_displayed_count": 9995,
+      "lod_actor_count": 1
+    },
+    {
+      "requested_count": 100000,
+      "worker_count": 1,
+      "expected_count": 99999.99874349602,
+      "actual_count": 99946,
+      "stochastic_count": 99886,
+      "conditioned_count": 60,
+      "deterministic_count": 0,
+      "generation": {
+        "elapsed_seconds": 0.5113494000397623,
+        "average_cpu_percent": 5.194589061399997,
+        "peak_cpu_percent": 13.326567005717138,
+        "peak_rss_delta_bytes": 32358400,
+        "fractures_per_second": 195455.39701861047
+      },
+      "final_array_bytes": 13839374,
+      "estimated_final_bytes": 14204000,
+      "estimated_peak_generation_bytes": 21833856,
+      "modelled_voxels": 162150,
+      "voxel_volume": 125.0,
+      "target_breakdown": [
+        {
+          "domain_id": 1,
+          "set_id": 1,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.007660915143787861,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 23806.600648929198,
+          "expected_fractures": 23806.600648929198,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 23806.600648929198,
+              "target_p32": 0.007660915143787861,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 1,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.005786189343780279,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 14638.406280377832,
+          "expected_fractures": 14638.406280377832,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 14638.406280377832,
+              "target_p32": 0.005786189343780279,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 1,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.00945508573204279,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 7699.430111144137,
+          "expected_fractures": 7699.430111144137,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 7699.430111144137,
+              "target_p32": 0.00945508573204279,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 1,
+          "set_id": 2,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.004815485328435898,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 14964.313530846437,
+          "expected_fractures": 14964.313530846437,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 14964.313530846437,
+              "target_p32": 0.004815485328435898,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 2,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.0030029169283807278,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 7597.041059693774,
+          "expected_fractures": 7597.041059693774,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 7597.041059693774,
+              "target_p32": 0.0030029169283807278,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 2,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.014283516444265842,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 11631.299780953184,
+          "expected_fractures": 11631.299780953184,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 11631.299780953184,
+              "target_p32": 0.014283516444265842,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 1,
+          "set_id": 3,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.002970779314637184,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 9231.81570768557,
+          "expected_fractures": 9231.81570768557,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 9231.81570768557,
+              "target_p32": 0.002970779314637184,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 3,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.002365409629419446,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 5984.219512653866,
+          "expected_fractures": 5984.219512653866,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 5984.219512653866,
+              "target_p32": 0.002365409629419446,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 3,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.005387184675782919,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 4386.872111212027,
+          "expected_fractures": 4386.872111212027,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 4386.872111212027,
+              "target_p32": 0.005387184675782919,
+              "p32_share": 1.0
+            }
+          ]
+        }
+      ],
+      "save": {
+        "elapsed_seconds": 0.3155780000379309,
+        "average_cpu_percent": 5.198793958396355,
+        "peak_cpu_percent": 14.057326900312919,
+        "peak_rss_delta_bytes": 6094848
+      },
+      "saved_project_bytes": 5136707,
+      "reopen": {
+        "elapsed_seconds": 0.051949999993667006,
+        "average_cpu_percent": 4.511549567441224,
+        "peak_cpu_percent": 7.4357314673139285,
+        "peak_rss_delta_bytes": 31686656
+      },
+      "reopened_arrays_equal": true,
+      "lod": {
+        "elapsed_seconds": 0.033719100058078766,
+        "average_cpu_percent": 4.633872189081869,
+        "peak_cpu_percent": 4.695548177288499,
+        "peak_rss_delta_bytes": 7516160
+      },
+      "lod_displayed_count": 99946,
+      "lod_actor_count": 1
+    },
+    {
+      "requested_count": 721452,
+      "worker_count": 1,
+      "expected_count": 721451.9919833806,
+      "actual_count": 721786,
+      "stochastic_count": 721726,
+      "conditioned_count": 60,
+      "deterministic_count": 0,
+      "generation": {
+        "elapsed_seconds": 0.7646925000008196,
+        "average_cpu_percent": 5.108262471510853,
+        "peak_cpu_percent": 13.887160718721878,
+        "peak_rss_delta_bytes": 109236224,
+        "fractures_per_second": 943890.5180830548
+      },
+      "final_array_bytes": 87838334,
+      "estimated_final_bytes": 102475042,
+      "estimated_peak_generation_bytes": 108240542,
+      "modelled_voxels": 162150,
+      "voxel_volume": 125.0,
+      "target_breakdown": [
+        {
+          "domain_id": 1,
+          "set_id": 1,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.05529841035604477,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 171842.02502679787,
+          "expected_fractures": 171842.02502679787,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 171842.02502679787,
+              "target_p32": 0.05529841035604477,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 1,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.04176616668701172,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 105663.68993708413,
+          "expected_fractures": 105663.68993708413,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 105663.68993708413,
+              "target_p32": 0.04176616668701172,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 1,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.0682491809129715,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 55576.418181109984,
+          "expected_fractures": 55576.418181109984,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 55576.418181109984,
+              "target_p32": 0.0682491809129715,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 1,
+          "set_id": 2,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.03475937992334366,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 108016.16531550555,
+          "expected_fractures": 108016.16531550555,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 108016.16531550555,
+              "target_p32": 0.03475937992334366,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 2,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.02167580835521221,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 54837.34981819731,
+          "expected_fractures": 54837.34981819731,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 54837.34981819731,
+              "target_p32": 0.02167580835521221,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 2,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.10310200601816177,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 83957.64059180995,
+          "expected_fractures": 83957.64059180995,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 83957.64059180995,
+              "target_p32": 0.10310200601816177,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 1,
+          "set_id": 3,
+          "modelled_voxels": 78101,
+          "mean_target_p32": 0.02144383080303669,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 66637.56310172199,
+          "expected_fractures": 66637.56310172199,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 66637.56310172199,
+              "target_p32": 0.02144383080303669,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 2,
+          "set_id": 3,
+          "modelled_voxels": 63583,
+          "mean_target_p32": 0.017074119299650192,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 43195.595639569634,
+          "expected_fractures": 43195.595639569634,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 43195.595639569634,
+              "target_p32": 0.017074119299650192,
+              "p32_share": 1.0
+            }
+          ]
+        },
+        {
+          "domain_id": 3,
+          "set_id": 3,
+          "modelled_voxels": 20466,
+          "mean_target_p32": 0.03888605162501335,
+          "voxel_volume": 125.0,
+          "mean_squared_radius": 1.0,
+          "expected_fractures_total": 31665.544371584157,
+          "expected_fractures": 31665.544371584157,
+          "small_medium_radius": 0.9999999999999999,
+          "medium_large_radius": 1.0,
+          "small_medium_voxel_ratio": [
+            0.19999999999999998,
+            0.19999999999999998,
+            0.19999999999999998
+          ],
+          "medium_large_voxel_ratio": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "degenerate_thresholds": true,
+          "classes": [
+            {
+              "size_class": "SMALL",
+              "radius_range": [
+                0.0,
+                0.9999999999999999
+              ],
+              "generate": false,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "MEDIUM",
+              "radius_range": [
+                0.9999999999999999,
+                1.0
+              ],
+              "generate": true,
+              "expected_count": 0.0,
+              "target_p32": 0.0,
+              "p32_share": 0.0
+            },
+            {
+              "size_class": "LARGE",
+              "radius_range": [
+                1.0,
+                Infinity
+              ],
+              "generate": true,
+              "expected_count": 31665.544371584157,
+              "target_p32": 0.03888605162501335,
+              "p32_share": 1.0
+            }
+          ]
+        }
+      ],
+      "save": {
+        "elapsed_seconds": 1.1680539000080898,
+        "average_cpu_percent": 5.016356693778787,
+        "peak_cpu_percent": 15.203409418310224,
+        "peak_rss_delta_bytes": 35287040
+      },
+      "saved_project_bytes": 34655339,
+      "reopen": {
+        "elapsed_seconds": 0.1967860999284312,
+        "average_cpu_percent": 5.1610606662227205,
+        "peak_cpu_percent": 14.626862922778065,
+        "peak_rss_delta_bytes": 104480768
+      },
+      "reopened_arrays_equal": true,
+      "lod": {
+        "elapsed_seconds": 0.2861902000149712,
+        "average_cpu_percent": 4.913690265866673,
+        "peak_cpu_percent": 9.963398477582976,
+        "peak_rss_delta_bytes": 108208128
+      },
+      "lod_displayed_count": 721786,
+      "lod_actor_count": 1
+    }
+  ]
+}

@@ -30,17 +30,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          cache: pip
 
       - name: Install dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov pytest-html pytest-json-report pytest-qt pytest-timeout
+          pip install pytest-cov pytest-json-report pytest-qt pytest-timeout
 
-      # ── Process 1: Core tests (unit / integration / scientific / e2e) ──
-      # Must pass.  Writes .coverage for later combination with GUI coverage.
       - name: Run core tests with coverage
         shell: pwsh
         env:
@@ -49,15 +47,13 @@ jobs:
         run: |
           pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ `
             -v --tb=short `
-            --json-report --json-report-file=test-results-core.json `
+            --json-report --json-report-file=test_results_core.json `
             --cov=src/dfn_cave_studio `
             --cov-report= `
             --timeout=120 `
             --junitxml=junit-core.xml
 
-      # ── Process 2: GUI smoke tests (separate process — no Qt resource leak) ──
-      # Must pass.  Appends to .coverage so combined report covers everything.
-      - name: Run GUI smoke tests with coverage
+      - name: Run GUI tests with coverage
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
@@ -65,15 +61,14 @@ jobs:
         run: |
           pytest tests/gui/ `
             -v --tb=short `
-            --json-report --json-report-file=test-results-gui.json `
+            --json-report --json-report-file=test_results_gui.json `
             --cov=src/dfn_cave_studio `
             --cov-append `
             --cov-report= `
             --timeout=60 `
             --junitxml=junit-gui.xml
 
-      # ── Combined coverage report ───────────────────────────────────────
-      - name: Combine coverage and report
+      - name: Combine coverage and enforce threshold
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
@@ -83,25 +78,7 @@ jobs:
           coverage html -d coverage_html
           coverage report --fail-under=80
 
-      # ── HTML test report (core + GUI) ──────────────────────────────────
-      - name: Generate HTML test report
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
-        run: |
-          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
-            --collect-only -q
-          python -c "
-          import json
-          core = json.load(open('test-results-core.json'))
-          gui  = json.load(open('test-results-gui.json'))
-          total = core['summary']['total'] + gui['summary']['total']
-          passed = core['summary']['passed'] + gui['summary']['passed']
-          print(f'Total: {total}, Passed: {passed}')
-          "
-
-      - name: Upload test results
+      - name: Upload validated test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -109,9 +86,8 @@ jobs:
           path: |
             coverage.xml
             coverage_html/
-            test-results-*.json
+            test_results_*.json
             junit-*.xml
-            .pytest_cache/
 
   review-package:
     name: Build Review Package
@@ -127,84 +103,33 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
-      - name: Install dependencies
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest-cov pytest-html pytest-json-report pytest-timeout pytest-qt
+      - name: Download validated Python 3.12 test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-3.12
+          path: .
 
-      # ── Core tests + coverage ────────────────────────────────────────
-      - name: Run core test suite with coverage
+      - name: Generate review and source packages
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
-        run: |
-          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ `
-            -v --tb=long `
-            --junitxml=junit-core.xml `
-            --json-report --json-report-file=test_results_core.json `
-            --cov=src/dfn_cave_studio `
-            --cov-report= `
-            --timeout=120
-
-      # ── GUI smoke tests + append coverage ─────────────────────────────
-      - name: Run GUI smoke tests
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
-        run: |
-          pytest tests/gui/ `
-            -v --tb=long `
-            --junitxml=junit-gui.xml `
-            --json-report --json-report-file=test_results_gui.json `
-            --cov=src/dfn_cave_studio `
-            --cov-append `
-            --cov-report= `
-            --timeout=60
-
-      # ── Combined coverage + HTML report ──────────────────────────────
-      - name: Combine coverage and generate reports
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
-        run: |
-          coverage xml -o coverage.xml
-          coverage html -d coverage_html
-          coverage report --fail-under=80
-          pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ tests/gui/ `
-            --collect-only -q --no-header `
-            --html=test-report.html `
-            --self-contained-html `
-            --cov=src/dfn_cave_studio `
-            --cov-report= `
-            --timeout=120 `
-            -m "not vtk_render"
-
-      - name: Generate review package
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: src
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: python scripts/build_review_package.py
 
-      - name: Compress review package
+      - name: Verify package outputs
         shell: pwsh
         run: |
-          $VERSION = "$env:GITHUB_REF_NAME"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $reviewDir = "docs/review/$VERSION"
-          if (Test-Path $reviewDir) {
-            Compress-Archive -Path "$reviewDir/*" -DestinationPath "dist/dfn-cave-studio-$VERSION-review.zip" -Force
+          $version = "$env:GITHUB_REF_NAME"
+          $required = @(
+            "dist/dfn-cave-studio-$version-review.zip",
+            "dist/dfn-cave-studio-$version-source.zip"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing package output: $path"
+            }
           }
-          Compress-Archive -Path src/,tests/,*.md,*.toml,*.txt,LICENSE,conftest.py,examples/ -DestinationPath "dist/dfn-cave-studio-$VERSION-source.zip" -Force
 
       - name: Upload review package
         uses: actions/upload-artifact@v4
@@ -213,7 +138,6 @@ jobs:
           path: dist/
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*

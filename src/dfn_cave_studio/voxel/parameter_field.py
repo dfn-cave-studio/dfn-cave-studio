@@ -27,6 +27,7 @@ CELL_STATE_CODES = {
     VoxelCellState.NO_DATA: 1,
     VoxelCellState.TRUE_ZERO: 2,
     VoxelCellState.MODELED_VALUE: 3,
+    VoxelCellState.EXCAVATION: 4,
 }
 SIZE_TYPE_CODES = {
     "fixed": 0,
@@ -35,7 +36,7 @@ SIZE_TYPE_CODES = {
     "truncated_power_law": 3,
     "truncated_exponential": 4,
 }
-SIZE_SOURCE_CODES = {"fitted": 0, "size_proxy": 1, "assumed": 2, "user_defined": 3}
+SIZE_SOURCE_CODES = {"fitted": 0, "size_proxy": 1, "assumed": 2, "user_defined": 3, "experimental": 4}
 DENSITY_METHOD_CODES = {DensityMethod.GLOBAL_CONSTANT: 0, DensityMethod.IDW: 1}
 SIZE_PARAMETER_ORDER = {
     "fixed": ["radius"],

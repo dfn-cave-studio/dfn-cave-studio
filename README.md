@@ -4,16 +4,16 @@
 
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Milestone](https://img.shields.io/badge/Milestone-M9-orange.svg)](ROADMAP.md)
+[![Milestone](https://img.shields.io/badge/Milestone-M10-brightgreen.svg)](ROADMAP.md)
 
-## Quick Start (M9)
+## Quick Start (M10)
 
 ```bash
 pip install -r requirements.txt
 PYTHONPATH=src python -m dfn_cave_studio.app
 ```
 
-### M9 Workflow
+### M10 Workflow
 
 1. **Borehole Database** — Independently preview/map/import collars, surveys, fractures, RQD, and domain intervals.
 2. **Data Quality** — Review Raw, Formal, Excluded, and Pending records and traceable reasons.
@@ -27,8 +27,9 @@ PYTHONPATH=src python -m dfn_cave_studio.app
 9. **Fracture Size Distribution** — Fit real size observations or enter a clearly labelled assumed/user model.
 10. **First Voxel Parameter Field** — Build a domain-aware GLOBAL_CONSTANT or IDW input field in a cancelable worker.
 11. **Validation** — Compare field predictions against held-out Validation-hole P10 without refitting.
+12. **Explicit DFN Generation** — Generate seeded conditional explicit DFNs from the M9 field, manage merged display layers, save complete geometry, and export CSV/JSON/NPZ/VTP.
 
-Current status: M8 is the published baseline; M9 is in development and pending external review.
+Current status: v0.9.1-M9 is the published baseline; v0.10.0-M10 implementation is complete and ready for release.
 
 ### Overview
 
@@ -71,9 +72,9 @@ app.run()
 |-----------|--------|-------------|
 | M0–M7 | ✅ Published | Existing historical milestones through `v0.7.0-M7` |
 | M8 | ✅ Published baseline | Borehole database, spatial boundaries, and voxel-grid definition |
-| M9 | 🚧 In development / review pending | Local DFN parameter fields and first voxelization |
-| M10 | ⬜ Planned | Conditional explicit DFN and second voxelization |
-| M11 | ⬜ Planned | Independent validation, external simulation, and ML export |
+| M9 | ✅ Published | Local DFN parameter fields, first voxelization, and dip-only degradation |
+| M10 | ✅ Complete — ready for release | Seeded conditional explicit DFN, multi-scale columnar geometry, subgrid P32, display, persistence, and basic export |
+| M11 | ⬜ Planned | Exact second voxelization, intersections/connectivity, validation, and external/ML export |
 | M12 | ⬜ Planned | Fragmentation, integration, performance, and Windows release |
 
 ## Documentation

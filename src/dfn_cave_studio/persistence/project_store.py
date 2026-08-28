@@ -69,6 +69,8 @@ class ProjectStore:
         self._auto_save_enabled: bool = True
         self._auto_save_interval: int = 300  # seconds
         self._last_auto_save: float = 0.0
+        self._save_in_progress: bool = False
+        self._large_autosave_limit_bytes: int = 64 * 1024**2
 
         # Callbacks
         self._on_saved: Optional[Callable[[Path], None]] = None
@@ -205,6 +207,8 @@ class ProjectStore:
         """
         if self._current_project is None:
             raise ValueError("No project to save")
+        if self._save_in_progress:
+            raise RuntimeError("A project save is already in progress")
 
         target = Path(path) if path else self._current_path
         if target is None:
@@ -218,8 +222,15 @@ class ProjectStore:
             raise ValueError(
                 f"Unsupported project extension '{target.suffix}'. " "Use .dfnproj (ZIP) or .dfncs (JSON)."
             )
+        if (
+            target.suffix.lower() == ".dfncs"
+            and getattr(self._current_project, "m10_state", None) is not None
+            and self._current_project.m10_state.realizations
+        ):
+            raise ValueError("M10 geometry requires the compressed .dfnproj format; legacy .dfncs would lose arrays")
 
         tmp_path = target.with_name(f"{target.name}.tmp")
+        self._save_in_progress = True
         try:
             if target.suffix.lower() == ".dfnproj":
                 from dfn_cave_studio.persistence.zip_project_store import (
@@ -239,6 +250,8 @@ class ProjectStore:
             if tmp_path.exists():
                 tmp_path.unlink()
             raise
+        finally:
+            self._save_in_progress = False
 
         self._current_path = target
         self._last_save_time = datetime.now(timezone.utc)
@@ -321,6 +334,22 @@ class ProjectStore:
             return False
         if self._current_path is None:
             return False  # Never saved yet, can't auto-save
+        if self._save_in_progress:
+            return False
+        m10_state = getattr(self._current_project, "m10_state", None)
+        if m10_state is not None:
+            geometry_bytes = sum(
+                array.nbytes
+                for realization in m10_state.realizations
+                for array in realization.geometry_arrays.values()
+            )
+            if geometry_bytes > self._large_autosave_limit_bytes:
+                _logger.info(
+                    "Skipping synchronous auto-save for large M10 state (%0.1f MiB)",
+                    geometry_bytes / 1024**2,
+                )
+                self._last_auto_save = time.time()
+                return False
 
         elapsed = time.time() - self._last_auto_save
         if elapsed < self._auto_save_interval:

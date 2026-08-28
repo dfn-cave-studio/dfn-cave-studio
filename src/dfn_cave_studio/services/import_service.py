@@ -12,6 +12,7 @@ Extends the existing BoreholeImporter with:
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Optional, List, Dict, Tuple
 from dataclasses import dataclass, field
 
@@ -31,6 +32,11 @@ from dfn_cave_studio.borehole.borehole_importer import (
     STANDARD_SURVEY_FIELDS,
     STANDARD_FRACTURE_FIELDS,
     STANDARD_RQD_FIELDS,
+)
+from dfn_cave_studio.services.field_mapping import (
+    FieldMappingConflictError,
+    detect_field_mapping,
+    validate_field_mapping,
 )
 
 # ── Standard fields for domain intervals ─────────────────────────────────
@@ -294,21 +300,31 @@ class UnifiedImportService:
         else:
             return {}
 
-        detected: Dict[str, Optional[str]] = {}
-        for std_name, aliases in field_defs.items():
-            found = None
-            for alias in aliases:
-                if alias in df.columns:
-                    found = alias
-                    break
-            detected[std_name] = found
+        detection = detect_field_mapping(df.columns, field_defs)
+        detection.require_unambiguous()
+        by_standard = {standard: source for source, standard in detection.mapping.items()}
+        detected: Dict[str, Optional[str]] = {
+            standard: by_standard.get(standard) for standard in field_defs
+        }
         return detected
 
     def apply_field_mapping(self, df: pd.DataFrame, mapping: FieldMapping) -> pd.DataFrame:
         """Apply a FieldMapping to rename columns."""
         df = df.copy()
-        reverse_map = {v: k for k, v in mapping.column_map.items() if v in df.columns}
-        df = df.rename(columns=reverse_map)
+        if mapping.data_type == "collars":
+            field_defs = STANDARD_COLLAR_FIELDS
+        elif mapping.data_type == "surveys":
+            field_defs = STANDARD_SURVEY_FIELDS
+        elif mapping.data_type == "fractures":
+            field_defs = STANDARD_FRACTURE_FIELDS
+        elif mapping.data_type == "rqd":
+            field_defs = STANDARD_RQD_FIELDS
+        elif mapping.data_type == "domain_intervals":
+            field_defs = STANDARD_DOMAIN_INTERVAL_FIELDS
+        else:
+            raise FieldMappingConflictError(f"Unknown data type: {mapping.data_type}")
+        column_map = validate_field_mapping(df.columns, mapping.column_map, field_defs)
+        df = df.rename(columns=column_map)
         return df
 
     # ── Private import helpers ────────────────────────────────────────────
@@ -316,7 +332,20 @@ class UnifiedImportService:
     def _import_collars(
         self, path: str, encoding: str, delimiter: str, sheet_name: str, mapping: Optional[FieldMapping]
     ) -> ImportResult:
-        return self._importer.import_all(collar_path=path)
+        dataframe = read_input_table(path, encoding, delimiter, sheet_name)
+        if mapping is not None:
+            source_to_standard = validate_field_mapping(
+                dataframe.columns, mapping.column_map, STANDARD_COLLAR_FIELDS
+            )
+        else:
+            source_to_standard = detect_field_mapping(
+                dataframe.columns, STANDARD_COLLAR_FIELDS
+            ).require_unambiguous()
+        mapped = dataframe.rename(columns=source_to_standard)
+        with TemporaryDirectory(prefix="dfn-collars-") as temporary_directory:
+            mapped_path = Path(temporary_directory) / "mapped_collars.csv"
+            mapped.to_csv(mapped_path, index=False)
+            return self._importer.import_all(collar_path=str(mapped_path))
 
     def _import_surveys(
         self, path: str, encoding: str, delimiter: str, sheet_name: str, mapping: Optional[FieldMapping]

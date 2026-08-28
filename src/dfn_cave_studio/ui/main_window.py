@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self._project_store.set_on_dirty_changed(self._on_project_dirty_changed)
         self._dfn_renderer = None  # Lazy-loaded (imports pyvista)
         self._m9_layer_manager = None
+        self._dfn_layer_manager = None
         self._database_panel = None
 
         # M7 workflow controller
@@ -146,7 +147,7 @@ class MainWindow(QMainWindow):
             self._dfn_menu, "&Joint Set Manager...", None, self._on_joint_set_manager, "Manage fracture sets"
         )
         self._add_menu_action(
-            self._dfn_menu, "&Generate DFN...", None, self._on_generate_dfn, "Generate stochastic DFN"
+            self._dfn_menu, "&Explicit DFN Generation...", None, self._on_generate_dfn, "Generate M10 conditional explicit DFN"
         )
 
         # === Domains Menu ===
@@ -196,7 +197,7 @@ class MainWindow(QMainWindow):
         self._add_toolbar_action("Open Project", self._on_open_project)
         self._add_toolbar_action("Save Project", self._on_save_project)
         self._toolbar.addSeparator()
-        self._add_toolbar_action("Generate DFN", self._on_generate_dfn)
+        self._add_toolbar_action("Explicit DFN", self._on_generate_dfn)
 
     def _init_status_bar(self) -> None:
         """Create the status bar."""
@@ -242,7 +243,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.9.1-M9</p>"
+                "<p>Version 0.10.0-M10</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -337,7 +338,7 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.9.1-M9 started")
+        self.log_message("DFN Cave Studio v0.10.0-M10 started")
         self.log_message(
             f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}"
         )
@@ -440,6 +441,7 @@ class MainWindow(QMainWindow):
         if self._plotter is None:
             return
         self._clear_m9_layers()
+        self._clear_dfn_layers()
         if self._dfn_renderer is not None:
             try:
                 self._dfn_renderer.clear(self._plotter)
@@ -464,6 +466,21 @@ class MainWindow(QMainWindow):
         """Remove M9 slice actors without touching other scene namespaces."""
         if self._m9_layer_manager is not None:
             self._m9_layer_manager.clear_m9_layers()
+
+    def _get_dfn_layer_manager(self):
+        """Return the main-window-owned, session-only M10 DFN registry."""
+        if self._plotter is None:
+            return None
+        if self._dfn_layer_manager is None or self._dfn_layer_manager.plotter is not self._plotter:
+            from dfn_cave_studio.visualization.dfn_layer_manager import DFNLayerManager
+
+            self._dfn_layer_manager = DFNLayerManager(self._plotter)
+        return self._dfn_layer_manager
+
+    def _clear_dfn_layers(self) -> None:
+        """Remove M10 DFN actors without touching M9 or reference actors."""
+        if self._dfn_layer_manager is not None:
+            self._dfn_layer_manager.clear_dfn_layers()
 
     def _on_open_project(self) -> None:
         """Open an existing project (.dfnproj or legacy .dfncs)."""
@@ -504,6 +521,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            self.set_status("Saving project…")
             path = self._save_project_to(self._project_store.current_path)
             self._recent_manager.add(path, self._project_store.current_project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
@@ -529,6 +547,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            self.set_status("Saving project…")
             saved_path = self._save_project_to(Path(path))
             self._recent_manager.add(saved_path, self._project_store.current_project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
@@ -576,6 +595,11 @@ class MainWindow(QMainWindow):
 
         project = self._project_store.current_project
         scientific_before = self._spatial_science_snapshot(project)
+        m10_generation_before = (
+            project.spatial_grid_config.generation_domain.model_dump(mode="json")
+            if project.spatial_grid_config is not None
+            else None
+        )
         persisted_before = {
             "spatial_grid_config": (
                 project.spatial_grid_config.model_dump(mode="json") if project.spatial_grid_config is not None else None
@@ -600,12 +624,16 @@ class MainWindow(QMainWindow):
                 project.voxel_config = m8_dialog.get_voxel_config()
                 if not self._workflow.is_step_done("voxel_grid"):
                     self._workflow.complete_step("voxel_grid")
+                self._refresh_m10_readiness()
                 message = "M8 voxel grid and DFN generation domain confirmed"
 
             scientific_after = self._spatial_science_snapshot(project)
             if any(scientific_before[key] != scientific_after[key] for key in scientific_before):
                 self._invalidate_m9_spatial_results()
                 self._refresh_m9_readiness()
+            m10_generation_after = config.generation_domain.model_dump(mode="json")
+            if m10_generation_before != m10_generation_after:
+                self._workflow.invalidate_steps(["explicit_dfn"])
             persisted_after = {
                 "spatial_grid_config": config.model_dump(mode="json"),
                 "model_bounds": project.model_bounds.model_dump(mode="json"),
@@ -652,6 +680,10 @@ class MainWindow(QMainWindow):
             self._update_project_tree_from_project(project)
 
     def _on_generate_dfn(self) -> None:
+        """Open the M10 explicit DFN workflow entry."""
+        self._m7_explicit_dfn()
+
+    def _on_generate_dfn_legacy(self) -> None:
         """Run full computation pipeline: DFN → Voxel → Connectivity."""
         if not self._project_store.has_project:
             QMessageBox.warning(self, "No Project", "Please create or open a project first.")
@@ -862,11 +894,11 @@ class MainWindow(QMainWindow):
         seed = project.m9_state.random_seed
         settings = project.m9_state.density_settings
         project.m9_state = M9State(random_seed=seed, density_settings=settings)
-        self._workflow.invalidate_steps(["density", "size", "parameter_field", "validation"])
+        self._workflow.invalidate_steps(["density", "size", "parameter_field", "validation", "explicit_dfn"])
 
     def _invalidate_m9_spatial_results(self) -> None:
         """Mark spatial M9 products stale while retaining their auditable values."""
-        self._workflow.invalidate_steps(["parameter_field", "validation"])
+        self._workflow.invalidate_steps(["parameter_field", "validation", "explicit_dfn"])
 
     def _refresh_m9_readiness(self) -> None:
         """Expose density modelling only when every M8 scientific dependency is complete."""
@@ -878,6 +910,22 @@ class MainWindow(QMainWindow):
             if all(self._workflow.is_step_done(step_id) for step_id in prerequisites):
                 self._workflow.mark_ready("density")
 
+    def _refresh_m10_readiness(self) -> None:
+        """Expose M10 only when its real M9 and spatial prerequisites exist."""
+        from dfn_cave_studio.services.workflow_controller import StepStatus
+
+        step = self._workflow.get_step("explicit_dfn")
+        prerequisites = ("density", "size", "parameter_field", "voxel_grid")
+        project = self._project_store.current_project if self._project_store.has_project else None
+        if (
+            step is not None
+            and step.status in (StepStatus.NOT_STARTED, StepStatus.READY)
+            and project is not None
+            and project.spatial_grid_config is not None
+            and all(self._workflow.is_step_done(step_id) for step_id in prerequisites)
+        ):
+            self._workflow.mark_ready("explicit_dfn")
+
     def _open_m9_dialog(self, dialog_type, completed_step: str) -> None:
         """Open one transactional M9 workflow dialog and apply lifecycle effects."""
         if not self._project_store.has_project:
@@ -886,10 +934,13 @@ class MainWindow(QMainWindow):
         project = self._project_store.current_project
         dialog = dialog_type(project, self._workflow, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            if completed_step in {"density", "size", "parameter_field"}:
+                self._workflow.invalidate_steps(["explicit_dfn"])
             self._project_store.mark_dirty()
             self._workflow_panel._refresh()
             self._update_project_tree_from_project(project)
             self.log_message(f"M9 workflow step completed: {completed_step}")
+            self._refresh_m10_readiness()
 
     def _m7_density(self) -> None:
         """Open M9 P10/P32 density modelling."""
@@ -914,6 +965,21 @@ class MainWindow(QMainWindow):
         from dfn_cave_studio.ui.dialogs.m9_dialogs import M9ValidationDialog
 
         self._open_m9_dialog(M9ValidationDialog, "validation")
+
+    def _m7_explicit_dfn(self) -> None:
+        """Open transactional M10 generation and session layer management."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Open an M9 project first.")
+            return
+        from dfn_cave_studio.ui.dialogs.m10_dialog import M10ExplicitDFNDialog
+
+        project = self._project_store.current_project
+        dialog = M10ExplicitDFNDialog(project, self._workflow, self._get_dfn_layer_manager(), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            self._project_store.mark_dirty()
+            self._workflow_panel._refresh()
+            self._update_project_tree_from_project(project)
+            self.log_message("M10 explicit DFN generation committed")
 
     def _on_domain_manager(self) -> None:
         """Open domain manager."""
@@ -1052,7 +1118,7 @@ class MainWindow(QMainWindow):
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.9.1-M9</p>"
+            "<p>Version 0.10.0-M10</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"
@@ -1119,6 +1185,7 @@ class MainWindow(QMainWindow):
         from dfn_cave_studio.services.m7_state import set_workflow
 
         self._clear_m9_layers()
+        self._clear_dfn_layers()
         suffix = path.suffix.lower()
         if suffix == ".dfnproj":
             from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
@@ -1165,6 +1232,8 @@ class MainWindow(QMainWindow):
 
             if not isinstance(saved_ho, HoldoutService):
                 m7["holdout"] = HoldoutService.from_dict(saved_ho.to_dict() if hasattr(saved_ho, "to_dict") else {})
+
+        self._refresh_m10_readiness()
 
         if not self._plotter:
             self._update_project_tree_from_project(project)
@@ -1261,6 +1330,14 @@ class MainWindow(QMainWindow):
             shape = project.m9_state.parameter_field_metadata.shape
             QTreeWidgetItem(m9_node, [f"Voxel parameter field {shape[0]}x{shape[1]}x{shape[2]}"])
         QTreeWidgetItem(m9_node, [f"Validation: {project.m9_state.validation_summary.state.value}"])
+
+        m10_node = QTreeWidgetItem(root, ["M10 Explicit DFN"])
+        QTreeWidgetItem(m10_node, [f"Deterministic structures ({len(project.m10_state.deterministic_structures)})"])
+        QTreeWidgetItem(m10_node, [f"Realizations ({len(project.m10_state.realizations)})"])
+        QTreeWidgetItem(
+            m10_node,
+            [f"Fractures ({sum(item.fracture_count for item in project.m10_state.realizations)})"],
+        )
 
         # Domains section
         domains_node = QTreeWidgetItem(root, ["Structural Domains"])

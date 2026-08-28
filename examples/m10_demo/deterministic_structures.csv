@@ -1,0 +1,2 @@
+structure_id,center_x,center_y,center_z,dip_direction,dip,radius,structure_type,domain_id,set_id
+FAULT-DEMO-01,25,25,15,90,70,8,fault,1,1

@@ -71,6 +71,8 @@ class BoreholeRecord(BaseModel):
     imported_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     original_values: dict[str, Any]
     values: dict[str, Any]
+    source_field_mapping: dict[str, str] = Field(default_factory=dict)
+    normalized_source_headers: dict[str, str] = Field(default_factory=dict)
     state: RecordState
     exclusion_reason: str | None = None
     modification_source: str = "import"

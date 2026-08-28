@@ -1,4 +1,4 @@
-"""M9 workflow state controller — tracks M8/M9 completion and invalidation.
+"""M10 workflow state controller — tracks M8/M9/M10 completion and invalidation.
 
 Pure logic layer (no Qt dependency).  The workflow panel in the UI
 reads state from this controller and renders accordingly.
@@ -98,6 +98,7 @@ class WorkflowController:
         ("size", "9. Fracture Size Distribution", "Fit measured sizes or define explicit prior assumptions"),
         ("parameter_field", "10. First Voxel Parameter Field", "Build the traceable input parameter voxel field"),
         ("validation", "11. Validation", "Evaluate predictions using held-out boreholes only"),
+        ("explicit_dfn", "12. Explicit DFN Generation", "Generate reproducible conditional explicit fracture geometry"),
     ]
     DEPENDENCIES: ClassVar[dict[str, list[str]]] = {
         "import": [],
@@ -111,6 +112,7 @@ class WorkflowController:
         "size": ["density"],
         "parameter_field": ["density", "size", "voxel_grid"],
         "validation": ["parameter_field"],
+        "explicit_dfn": ["density", "size", "parameter_field", "voxel_grid"],
     }
 
     def __init__(self):

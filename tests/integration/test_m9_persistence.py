@@ -21,7 +21,7 @@ def test_m9_state_and_arrays_round_trip(tmp_path):
     path = tmp_path / "m9.dfnproj"
     ZipProjectStore().save(project, path)
     restored = ZipProjectStore().load(path)
-    assert restored.metadata.software_version == "0.9.1"
+    assert restored.metadata.software_version == "0.10.0"
     assert restored.m9_state.p10_intervals == project.m9_state.p10_intervals
     np.testing.assert_equal(restored.m9_state.parameter_field_arrays["p32_total"], project.m9_state.parameter_field_arrays["p32_total"])
 
@@ -30,8 +30,9 @@ def test_m8_project_model_migrates_to_empty_m9_state():
     data = Project().model_dump(mode="json", exclude={"m9_state"})
     data["schema_version"] = 2
     restored = Project.from_dict(data)
-    assert restored.schema_version == 3
+    assert restored.schema_version == 4
     assert restored.m9_state.p10_intervals == []
+    assert restored.m10_state.realizations == []
 
 
 def test_experimental_size_fit_status_round_trips(tmp_path):

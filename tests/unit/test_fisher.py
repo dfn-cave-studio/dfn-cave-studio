@@ -3,7 +3,6 @@
 Scientific validation: SV-03 (Fisher distribution), SV-06 (seed reproducibility).
 """
 
-import math
 import numpy as np
 import pytest
 
@@ -25,7 +24,31 @@ class TestFisherSample:
     def test_single_sample(self, fixed_seed):
         rng = np.random.default_rng(fixed_seed)
         result = fisher_sample(45, 30, 20, rng, n_samples=1)
-        assert result.shape == (3,)
+        assert result.shape == (1, 3)
+        assert np.linalg.norm(result[0]) == pytest.approx(1.0, abs=1e-12)
+
+    def test_two_samples_have_stable_matrix_shape(self):
+        result = fisher_sample(45, 30, 20, np.random.default_rng(42), n_samples=2)
+        assert result.shape == (2, 3)
+
+    def test_single_sample_seed_42_values_are_unchanged(self):
+        result = fisher_sample(45, 30, 20, np.random.default_rng(42), n_samples=1)
+        expected_pre_fix_vector = np.array(
+            [-0.19465424770630507, -0.021412520373810362, 0.9806381737527525]
+        )
+        np.testing.assert_array_equal(result[0], expected_pre_fix_vector)
+
+    def test_zero_samples_return_empty_matrix_without_advancing_rng(self):
+        rng = np.random.default_rng(42)
+        before = rng.bit_generator.state
+        result = fisher_sample(45, 30, 20, rng, n_samples=0)
+        after = rng.bit_generator.state
+        assert result.shape == (0, 3)
+        assert before == after
+
+    def test_negative_sample_count_is_rejected(self):
+        with pytest.raises(ValueError, match="n_samples must be non-negative"):
+            fisher_sample(45, 30, 20, np.random.default_rng(42), n_samples=-1)
 
     def test_unit_length(self, fixed_seed):
         rng = np.random.default_rng(fixed_seed)
@@ -40,9 +63,7 @@ class TestFisherSample:
         kappa = 50  # High kappa → tightly clustered
         samples = fisher_sample(dd, dip, kappa, rng, n_samples=1000)
 
-        from dfn_cave_studio.geometry.coordinate import (
-            normal_to_dip_dir_dip, dip_dir_dip_to_normal,
-        )
+        from dfn_cave_studio.geometry.coordinate import normal_to_dip_dir_dip
         mean_normal = np.mean(samples, axis=0)
         mean_normal = mean_normal / np.linalg.norm(mean_normal)
         dd_out, dip_out = normal_to_dip_dir_dip(mean_normal)

@@ -67,7 +67,7 @@ allocation-free preview; dirty lifecycle; and repeated save/autosave/reopen.
 M8 produces no P10/P32 interpolation, parameter field, conditional DFN,
 fragmentation, external-simulation export, or formal release.
 
-## M9 — v0.9.0-M9
+## M9 — v0.9.1-M9
 
 Build local DFN parameter fields and the first voxelization: structural-domain
 orientation statistics, borehole P10, density, Kappa and set-probability
@@ -78,13 +78,16 @@ converted to P32.
 ## M10 — v0.10.0-M10
 
 Generate seeded conditional explicit DFNs from deterministic major structures
-and M9 small-fracture parameters over the buffered domain. Compute real
-fracture intersections, connectivity, spanning paths, and the second
-voxelization; compare input and result voxel fields.
+and M9 small-fracture parameters over the buffered domain. M10 includes
+Calibration observation conditioning, multi-realization management,
+visualization, compressed persistence, generic export, and preliminary
+quality reporting. Exact intersections, connectivity, and the second
+voxelization are deferred to M11.
 
 ## M11 — v0.11.0-M11
 
-Independently validate on held-out holes, quantify multi-realization
+Compute exact fracture–voxel areas, fracture intersections, connectivity and
+spanning paths; independently validate on held-out holes, quantify multi-realization
 uncertainty, assign mechanical properties, and export 3DEC, PFC, VTK, CSV, and
 ML-ready voxel input/output datasets with full provenance.
 

@@ -1,8 +1,20 @@
 # DFN Cave Studio — Scientific Specification
 
-**Document Version:** 1.1.0 (M9 review draft)
+**Document Version:** 1.2.0 (M10 review draft)
 **Status:** Authoritative Reference
 **Scope:** All scientific methods, algorithms, formulae, and validation approaches
+
+## M10 Conditional explicit DFN (v0.10.0)
+
+For every MODELED_VALUE voxel and joint set, M10 independently computes target area `A_t=P32·V` and expected count `λ=A_remaining/(πE[R²])`, then samples `N~Poisson(λ)`. It never substitutes `π(E[R])²`. TRUE_ZERO generates zero fractures; NO_DATA, OUTSIDE_MODEL, EXCAVATION, and cells without a reliable Domain/Set Fisher model generate none.
+
+M10 multiscale generation partitions each supported radius distribution into SMALL, MEDIUM, and LARGE by the deterministic area-weighted CDF `F_A(r)=E[R² I(R≤r)]/E[R²]`. Defaults place approximately 10%, 60%, and 30% of target P32 in the three classes for continuous distributions. Poisson counts and radii are sampled directly within enabled classes; disabled class P32 is retained per voxel and set as `P32_subgrid`. Fixed-radius distributions are degenerate and are classified without inventing unattainable shares. These thresholds are numerical resolution recommendations, not universal geological classes.
+
+Stochastic centres are uniform within their source voxel. Directions use the saved Domain/Set Fisher mean and Kappa with an explicit seed; sizes use the saved FIXED, UNIFORM, TRUNCATED_LOGNORMAL, TRUNCATED_POWER_LAW, or TRUNCATED_EXPONENTIAL model and preserve source provenance. EXPERIMENTAL models require explicit confirmation.
+
+Calibration FULL_ORIENTATION observations may create one conditioned disc each. The measured point lies in the disc plane and inside its radius; Validation and DIP_ONLY observations never receive fabricated conditioning directions. Conditioned original area is deducted before stochastic Poisson sampling. Parameterized deterministic discs are seed-independent and affect the random budget only under an explicit option with a supplied set ID.
+
+Generation-boundary clipping preserves both `original_area` and polygon `clipped_area`. M10 centre assignment is labelled `CENTER_ASSIGNED_PRELIMINARY`; exact local P32 from fracture–voxel intersection, fracture connectivity, and second voxelization are M11 work.
 
 ## M9 Local DFN parameter field (v0.9.0)
 
