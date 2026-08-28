@@ -25,19 +25,20 @@ REQUIRED_RESULTS = (
     "coverage.xml",
 )
 BENCHMARK_STEM = "m10_multiscale_closure_2026-08-27"
-SOURCE_DIRECTORIES = ("src", "tests", "scripts", "benchmarks", "docs", "examples", "resources", "sample_data")
+REQUIRED_SOURCE_DIRECTORIES = ("src", "tests", "scripts", "benchmarks", "docs", "examples", ".github/workflows")
+OPTIONAL_SOURCE_DIRECTORIES = ("resources", "sample_data")
 SOURCE_ROOT_FILES = ("LICENSE", "conftest.py", ".gitignore")
 EXCLUDED_PARTS = {
     ".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache", "dist", "coverage_html",
 }
 EXCLUDED_NAMES = {".coverage", "coverage.xml", "test_results_core.json", "test_results_gui.json", "junit-core.xml", "junit-gui.xml"}
-EXCLUDED_SUFFIXES = {".dfnproj", ".dfncs", ".pyc", ".pyo", ".pem", ".key"}
+EXCLUDED_SUFFIXES = {".dfnproj", ".dfncs", ".h5", ".hdf5", ".pyc", ".pyo", ".pem", ".key"}
 
 
 def parse_arguments() -> argparse.Namespace:
     """Parse review-package command line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", help="Exact tag-shaped version, for example v0.10.0-M10")
+    parser.add_argument("--version", help="Exact tag-shaped version, for example v0.10.1-M10")
     parser.add_argument("--results-dir", type=Path, default=Path.cwd())
     parser.add_argument("--output-root", type=Path)
     return parser.parse_args()
@@ -236,6 +237,7 @@ def build_review_directory(
     if not benchmark_cases or int(large_case["actual_count"]) < 700_000:
         raise RuntimeError("Required M10 benchmark report does not contain an audited 700k+ fracture case")
 
+    source_status = source_directory_status(repo_root)
     manifest = {
         "project_name": "DFN Cave Studio",
         "version": version,
@@ -273,6 +275,7 @@ def build_review_directory(
             "formal 3DEC/PFC and machine-learning export",
         ],
         "known_issues": ["Historical repository Ruff F/E9 baseline contains 177 findings; it is not newly passing."],
+        "source_package_directories": source_status,
         "changed_files": changed_files(repo_root, commit_sha),
         "source_archive": f"dfn-cave-studio-{version}-source.zip",
         "review_archive": f"dfn-cave-studio-{version}-review.zip",
@@ -301,6 +304,8 @@ def include_source_file(path: Path, repo_root: Path) -> bool:
         return False
     if path.name in EXCLUDED_NAMES or path.suffix.lower() in EXCLUDED_SUFFIXES:
         return False
+    if any(part.lower().endswith(".zarr") for part in relative.parts):
+        return False
     lowered = path.name.lower()
     if lowered.startswith(".env") or "credential" in lowered or "secret" in lowered:
         return False
@@ -309,18 +314,28 @@ def include_source_file(path: Path, repo_root: Path) -> bool:
     return path.is_file()
 
 
+def source_directory_status(repo_root: Path) -> dict[str, list[str]]:
+    """Validate required source directories and report available optional directories."""
+    missing_required = [name for name in REQUIRED_SOURCE_DIRECTORIES if not (repo_root / name).is_dir()]
+    if missing_required:
+        missing = ", ".join(str(repo_root / name) for name in missing_required)
+        raise RuntimeError(f"Missing required source-package directory: {missing}")
+    included_optional = [name for name in OPTIONAL_SOURCE_DIRECTORIES if (repo_root / name).is_dir()]
+    omitted_optional = [name for name in OPTIONAL_SOURCE_DIRECTORIES if name not in included_optional]
+    return {
+        "required": list(REQUIRED_SOURCE_DIRECTORIES),
+        "included_optional": included_optional,
+        "omitted_optional": omitted_optional,
+    }
+
+
 def source_files(repo_root: Path) -> list[Path]:
     """Collect the documented complete source-archive inputs."""
+    status = source_directory_status(repo_root)
     files: set[Path] = set()
-    for directory in SOURCE_DIRECTORIES:
+    for directory in (*REQUIRED_SOURCE_DIRECTORIES, *status["included_optional"]):
         root = repo_root / directory
-        if not root.is_dir():
-            raise RuntimeError(f"Missing required source-package directory: {root}")
         files.update(path for path in root.rglob("*") if include_source_file(path, repo_root))
-    workflow_root = repo_root / ".github" / "workflows"
-    if not workflow_root.is_dir():
-        raise RuntimeError(f"Missing required source-package directory: {workflow_root}")
-    files.update(path for path in workflow_root.rglob("*") if include_source_file(path, repo_root))
     files.update(
         path for path in repo_root.iterdir()
         if path.is_file() and (path.suffix.lower() in {".md", ".toml", ".txt"} or path.name in SOURCE_ROOT_FILES)
@@ -340,7 +355,8 @@ def build_archives(repo_root: Path, review_dir: Path, dist_dir: Path, version: s
             archive.write(path, f"{prefix}/{path.relative_to(review_dir).as_posix()}")
     with zipfile.ZipFile(source_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         prefix = f"dfn-cave-studio-{version}-source"
-        for directory in (*SOURCE_DIRECTORIES, ".github/workflows"):
+        status = source_directory_status(repo_root)
+        for directory in (*REQUIRED_SOURCE_DIRECTORIES, *status["included_optional"]):
             archive.writestr(f"{prefix}/{directory}/", b"")
         for path in source_files(repo_root):
             archive.write(path, f"{prefix}/{path.relative_to(repo_root).as_posix()}")

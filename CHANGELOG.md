@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.10.0-M10] — Unreleased (ready for release)
+## [0.10.1-M10] — Unreleased (ready for release)
+
+### Fixed
+
+- Release source packaging now treats `sample_data` and `resources` as optional in clean GitHub Actions checkouts.
+- Missing required source directories still fail explicitly, while omitted optional directories are recorded in the review manifest.
+- Source archives exclude local `.dfnproj`, HDF5/Zarr data, virtual environments, Git metadata, and test/tool caches.
+
+### Compatibility
+
+- The M10 scientific generator remains `m10-multiscale-1`; no scientific algorithm or project schema changed.
+
+## [0.10.0-M10] — Released as `v0.10.0-M10` (2026-08-28)
 
 ### Added
 

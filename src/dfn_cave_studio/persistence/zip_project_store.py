@@ -52,7 +52,7 @@ class ZipProjectStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        project.metadata.software_version = "0.10.0"
+        project.metadata.software_version = "0.10.1"
         project.metadata.modified_at = datetime.now(timezone.utc)
         project.schema_version = 4
 
@@ -60,7 +60,7 @@ class ZipProjectStore:
             path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
         ) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.10.0")
+            zf.writestr("metadata/version.txt", "0.10.1")
             zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
@@ -831,7 +831,7 @@ class ZipProjectStore:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.10.0",
+            "version": "0.10.1",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,

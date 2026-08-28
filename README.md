@@ -29,7 +29,7 @@ PYTHONPATH=src python -m dfn_cave_studio.app
 11. **Validation** — Compare field predictions against held-out Validation-hole P10 without refitting.
 12. **Explicit DFN Generation** — Generate seeded conditional explicit DFNs from the M9 field, manage merged display layers, save complete geometry, and export CSV/JSON/NPZ/VTP.
 
-Current status: v0.9.1-M9 is the published baseline; v0.10.0-M10 implementation is complete and ready for release.
+Current status: v0.10.0-M10 is published; v0.10.1-M10 is the release-packaging patch ready for release.
 
 ### Overview
 
