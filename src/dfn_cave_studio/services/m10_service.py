@@ -15,8 +15,8 @@ from dfn_cave_studio.dfn.m10_generator import ConditionedObservation, M10Explici
 from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal
 from dfn_cave_studio.models.borehole import FractureObservation, OrientationCompleteness
 from dfn_cave_studio.models.borehole_database import BoreholeDataType, RecordState
-from dfn_cave_studio.models.m10 import DeterministicStructure, M10GenerationConfig, M10Realization
 from dfn_cave_studio.models.m9 import ValidationState
+from dfn_cave_studio.models.m10 import DeterministicStructure, M10GenerationConfig, M10Realization
 from dfn_cave_studio.services.m7_state import get_domain_intervals, get_holdout
 
 
@@ -33,9 +33,14 @@ class M10Service:
     def __init__(self, project: Any) -> None:
         self.project = project
 
+    @staticmethod
+    def validated_config(config: M10GenerationConfig) -> M10GenerationConfig:
+        """Re-parse a complete M10 config so unchecked model copies cannot be committed."""
+        return M10GenerationConfig.model_validate(config.model_dump(mode="python"))
+
     def validate_readiness(self, config: M10GenerationConfig | None = None) -> list[str]:
         """Return blocking input errors; an empty list means generation is allowed."""
-        config = config or self.project.m10_state.config
+        config = self.validated_config(config or self.project.m10_state.config)
         errors: list[str] = []
         state = self.project.m9_state
         if state.parameter_field_metadata is None or not state.parameter_field_arrays:
@@ -61,12 +66,16 @@ class M10Service:
 
     def estimate(self, config: M10GenerationConfig | None = None) -> tuple[float, int]:
         """Estimate fracture count and storage before allocation."""
-        generator = self._generator(config or self.project.m10_state.config, realization_index=0)
+        generator = self._generator(
+            self.validated_config(config or self.project.m10_state.config), realization_index=0
+        )
         return generator.estimate()
 
     def estimate_details(self, config: M10GenerationConfig | None = None) -> dict[str, Any]:
         """Return count, storage, generation, render, and save memory estimates."""
-        generator = self._generator(config or self.project.m10_state.config, realization_index=0)
+        generator = self._generator(
+            self.validated_config(config or self.project.m10_state.config), realization_index=0
+        )
         details = generator.estimate_details()
         details["available_memory_bytes"] = self.available_memory_bytes()
         return details
@@ -107,6 +116,7 @@ class M10Service:
         deterministic_structures: list[DeterministicStructure] | None = None,
     ) -> list[M10Realization]:
         """Generate a complete small batch and commit only after every run succeeds."""
+        config = self.validated_config(config)
         errors = self.validate_readiness(config)
         if errors:
             raise RuntimeError("; ".join(errors))
@@ -189,8 +199,11 @@ class M10Service:
         self, config: M10GenerationConfig, realizations: list[M10Realization], *, replace: bool = True
     ) -> None:
         """Commit an already complete batch as one project mutation."""
+        config = self.validated_config(config)
         if any(not item.complete for item in realizations):
             raise ValueError("Cannot commit an incomplete M10 realization")
+        self.project.m11_state.results = []
+        self.project.m11_state.provenance["invalidated_by"] = "M10 realization regeneration"
         self.project.m10_state.config = config
         if replace:
             self.project.m10_state.realizations = list(realizations)
@@ -205,6 +218,12 @@ class M10Service:
                 "validation_used_for_generation": False,
             }
         )
+
+    def commit_config(self, config: M10GenerationConfig) -> M10GenerationConfig:
+        """Validate and atomically replace only the persisted M10 configuration."""
+        validated = self.validated_config(config)
+        self.project.m10_state.config = validated
+        return validated
 
     def import_deterministic_csv(self, path: Path, *, commit: bool = True) -> list[DeterministicStructure]:
         """Read parameterized deterministic discs from CSV transactionally."""

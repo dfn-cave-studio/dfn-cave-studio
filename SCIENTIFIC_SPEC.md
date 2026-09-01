@@ -755,6 +755,63 @@ The intersection area is used for:
 
 ---
 
+### 8.5 M11.1 Exact Second-Voxelization Contract (normative)
+
+The earlier conservative intersection description is retained for historical
+context only. M11.1 uses the following normative definition for explicit
+circular fractures:
+
+```
+A_fv = Area(D_f intersect B_v intersect GenerationDomain)
+P32_explicit_intersection(v, set) = sum_f(A_fv) / voxel_volume
+P32_total = P32_explicit_intersection + P32_subgrid
+```
+
+Tangency by only a point or line has zero effective area.
+`p32_unresolved_orientation` remains a separate audit quantity and is not
+silently treated as explicit or subgrid P32.
+
+Candidate voxels come only from the deterministic index range of the tight disk
+AABB, whose axis `j` extent is `R * sqrt(1 - n_j^2)`. The implementation never
+constructs a fracture-by-all-voxels Cartesian product. Candidate, positive, and
+rejected-pair counts are retained.
+
+The disk plane is mapped to a deterministic orthonormal 2-D basis. The six AABB
+half spaces clip a square containing the circle. The area shared by that convex
+polygon and the true circle is then integrated with straight-line and
+circular-arc boundary terms. No fixed 8-, 16-, or 32-sided approximation is
+substituted for the circle. Computation uses float64, finite unit normals,
+positive finite radii, and a saved scale-relative tolerance policy based on
+`128 * machine_epsilon * coordinate_scale`.
+
+Voxel ownership is half-open (`[minimum, maximum)`) on all internal faces, with
+the outer grid maximum included in the final voxel. A disk exactly coplanar with
+a shared X, Y, or Z face is assigned once to the minimum-inclusive voxel on the
+positive side.
+
+Positive intersections are stored as stable columns sorted by
+`(voxel_flat_index, fracture_ordinal)`:
+
+```
+fracture_ordinal
+voxel_flat_index
+intersection_area  # float64, m^2
+```
+
+Per-set and aggregate voxel arrays retain explicit-intersection P32, subgrid
+P32, total P32, intersecting-fracture count, and semantic `cell_state`. For each
+fracture, exact area in both the Generation Domain and Voxel Analysis Domain is
+computed independently. The sum assigned to analysis voxels must equal the
+analysis-domain target within the stored tolerance and must not exceed the
+generation-domain target. Error totals, maximum, p50/p95/p99, offending
+ordinals, and difference from the M10 clipped-area cache are persisted. M10
+geometry and its cache are not overwritten.
+
+M11.1 does not implement fracture-fracture intersections, connectivity,
+percolation, block cutting, mechanics, or external numerical-model export.
+
+---
+
 ## 9. Connectivity Analysis
 
 ### 9.1 Graph Construction
@@ -1439,6 +1496,32 @@ Reproducibility is tested:
 | `VXL_CHUNK_SIZE` | 32 | Default voxel chunk dimension |
 | `MIN_BLOCK_VOLUME` | 1e-12 | Minimum reportable block volume (m³) |
 | `RQD_THRESHOLD` | 0.1 | RQD intact length threshold (m) |
+
+---
+
+## M11 interactive P32 cloud visualization (display-only)
+
+The interactive M11 visualization layer visualizes persisted M11.1 intersection-derived fields without changing them. Supported fields are `p32_explicit_intersection`, `p32_subgrid`, and `p32_total`, for all joint sets or an individual set. The scientific identity remains:
+
+```text
+p32_total = p32_explicit_intersection + p32_subgrid
+```
+
+`p32_unresolved_orientation` is not added to `p32_total` by the visualization layer.
+
+**Exact Cell Colours** is the authoritative audit view. It maps the original cell scalar directly to each valid voxel or section cell. **Smooth Display** is display interpolation only: invalid cells (`OUTSIDE_MODEL`, `NO_DATA`, and `EXCAVATION`) are removed before cell values are converted to point values. Consequently, invalid values cannot contribute to interpolation at the model boundary. Smooth arrays are temporary VTK display arrays and are neither written back to the M11 result nor saved in `.dfnproj`.
+
+The outer surface is extracted from the actual set of valid cells, not from the rectangular model bounds. Orthogonal and arbitrary sections use VTK plane slicing. Global colour ranges are calculated from all finite valid values in the selected M11 field so separate sections remain visually comparable. Manual ranges and discrete colour bands alter only mapper configuration.
+
+The non-modal M11 dock owns stable interactive slots for the three orthogonal planes, one arbitrary plane, one cutaway plane, and one box cutaway. Coordinate input, sliders, and VTK widgets update the same slot; snapshots are explicit separate layers. Orthogonal normals are fixed to X, Y, or Z and only their origin may translate. Arbitrary and cutaway normals are validated and normalized on temporary display values without modifying user input or scientific arrays. Interactive widgets and box bounds are constrained to the Analysis Domain, while initial/reset positions use the effective valid-cell mask bounds.
+
+A plane cutaway first clips the finite, valid-cell volume by a plane and then extracts the retained volume surface. Consequently, the newly exposed internal face carries P32 display scalars; it is not an open outer shell. Flip Side selects the opposite half-space.
+
+The axis-aligned Box Cutaway follows the same volume-first rule. It masks invalid or non-finite cells, retains the valid volume inside six axis-aligned bounds, and only then extracts a display surface. Box faces therefore expose the P32 values of their source cells wherever valid volume exists; the renderer does not fabricate faces across `NO_DATA` holes or outside the model. `TRUE_ZERO` remains a valid displayed value. **Snap Box to Voxel Faces** is enabled by default and retains complete source voxels with bounds on real voxel faces. When snapping is disabled, continuous geometric clipping is display-only and does not create new scientific voxel values. Algorithm-generated triangulation edges are hidden in continuous mode rather than being represented as voxel grid lines.
+
+Slice, plane/box cutaway, and scientific domains are distinct. A slice constructs a plane intersection for viewing. A cutaway retains part of the valid display volume and exposes its display surface. Neither operation changes the Analysis Domain, Generation Domain, persisted cell mask, sparse intersection table, or any P32 array.
+
+This feature is not Kriging, spatial estimation, second scientific interpolation, or volume rendering. Cloud actors, scalar bars, plane widgets, and preparation caches are session-only state. They cannot change P32 conservation, sparse fracture/voxel intersections, workflow state, or project dirty state.
 
 ---
 

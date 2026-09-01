@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-
 M9_SLICE_PREFIX = "m9_slice:"
+M9_SCALAR_BAR_PREFIX = "m9_scalar_bar:"
 
 
 @dataclass(slots=True)
@@ -17,6 +17,8 @@ class M9LayerRecord:
     layer_id: str
     actor_name: str
     actor: Any
+    scalar_bar_id: str
+    scalar_bar_actor: Any
     field_name: str
     axis: str
     slice_index: int
@@ -43,6 +45,8 @@ class M9LayerManager:
         slice_index: int,
         coordinate: float,
         opacity: float,
+        scalar_bar_id: str = "",
+        scalar_bar_actor: Any = None,
     ) -> M9LayerRecord:
         """Register a successfully rendered actor, replacing the same layer."""
         if not layer_id.startswith(M9_SLICE_PREFIX):
@@ -57,6 +61,8 @@ class M9LayerManager:
             layer_id=layer_id,
             actor_name=layer_id,
             actor=actor,
+            scalar_bar_id=str(scalar_bar_id),
+            scalar_bar_actor=scalar_bar_actor,
             field_name=field_name,
             axis=axis.lower(),
             slice_index=int(slice_index),
@@ -68,7 +74,35 @@ class M9LayerManager:
         self._layers[layer_id] = record
         self._set_actor_visibility(actor, True)
         self._set_actor_opacity(actor, opacity)
+        if scalar_bar_id:
+            self._sync_scalar_bar_visibility(scalar_bar_id)
         return record
+
+    @staticmethod
+    def scalar_bar_id(field_name: str) -> str:
+        """Return a stable internal M9-only scalar-bar identity."""
+        return f"{M9_SCALAR_BAR_PREFIX}{field_name}"
+
+    def create_or_get_scalar_bar(self, scalar_bar_id: str, visible_title: str, mesh_actor: Any) -> Any:
+        """Create or reuse a private M9 scalar bar when supported by the plotter."""
+        existing = self._get_scalar_bar_actor(scalar_bar_id)
+        if existing is not None:
+            return existing
+        creator = getattr(self.plotter, "add_scalar_bar", None)
+        if creator is None:
+            return None
+        mapper = getattr(mesh_actor, "mapper", None)
+        if mapper is None:
+            getter = getattr(mesh_actor, "GetMapper", None)
+            mapper = getter() if getter is not None else None
+        if mapper is None:
+            return None
+        created = creator(title=scalar_bar_id, mapper=mapper, render=False)
+        actor = created if created is not None else self._get_scalar_bar_actor(scalar_bar_id)
+        setter = getattr(actor, "SetTitle", None)
+        if setter is not None:
+            setter(str(visible_title))
+        return actor
 
     def contains(self, layer_id: str) -> bool:
         """Return whether a layer is registered."""
@@ -89,6 +123,8 @@ class M9LayerManager:
             return False
         record.visible = bool(visible)
         self._set_actor_visibility(record.actor, record.visible)
+        if record.scalar_bar_id:
+            self._sync_scalar_bar_visibility(record.scalar_bar_id)
         self._render()
         return True
 
@@ -108,6 +144,7 @@ class M9LayerManager:
         if record is None:
             return False
         self._remove_actor(record.actor)
+        self._remove_scalar_bar_if_unused(record.scalar_bar_id)
         self._render()
         return True
 
@@ -117,9 +154,50 @@ class M9LayerManager:
         self._layers.clear()
         for record in records:
             self._remove_actor(record.actor)
+        for scalar_bar_id in {record.scalar_bar_id for record in records if record.scalar_bar_id}:
+            self._remove_scalar_bar_if_unused(scalar_bar_id)
         if records:
             self._render()
         return len(records)
+
+    def discard_unregistered(self, actor: Any, scalar_bar_id: str = "") -> None:
+        """Remove display objects created before a failed registry operation."""
+        self._remove_actor(actor)
+        self._remove_scalar_bar_if_unused(scalar_bar_id)
+        self._render()
+
+    def _get_scalar_bar_actor(self, scalar_bar_id: str) -> Any:
+        scalar_bars = getattr(self.plotter, "scalar_bars", None)
+        if scalar_bars is None:
+            return None
+        try:
+            return scalar_bars[scalar_bar_id]
+        except (KeyError, TypeError):
+            return None
+
+    def _remove_scalar_bar_if_unused(self, scalar_bar_id: str) -> bool:
+        if not scalar_bar_id or any(
+            record.scalar_bar_id == scalar_bar_id for record in self._layers.values()
+        ):
+            return False
+        actor = self._get_scalar_bar_actor(scalar_bar_id)
+        if actor is None:
+            return False
+        remover = getattr(self.plotter, "remove_scalar_bar", None)
+        if remover is not None:
+            remover(title=scalar_bar_id, render=False)
+        else:
+            self._remove_actor(actor)
+        return True
+
+    def _sync_scalar_bar_visibility(self, scalar_bar_id: str) -> None:
+        actor = self._get_scalar_bar_actor(scalar_bar_id)
+        if actor is None:
+            return
+        visible = any(
+            record.visible for record in self._layers.values() if record.scalar_bar_id == scalar_bar_id
+        )
+        self._set_actor_visibility(actor, visible)
 
     def _remove_actor(self, actor: Any) -> None:
         remover = getattr(self.plotter, "remove_actor", None)

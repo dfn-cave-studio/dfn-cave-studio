@@ -1,12 +1,11 @@
 """Joint set manager dialog for configuring fracture population parameters."""
 
-import math
 from typing import List, Optional
 
 from dfn_cave_studio.ui.qt_adapter import (
     Qt, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QPushButton, QDoubleSpinBox, QSpinBox, QComboBox,
-    QDialogButtonBox, QGroupBox, QListWidget, QListWidgetItem,
+    QLabel, QPushButton, QDoubleSpinBox, QComboBox,
+    QDialogButtonBox, QListWidget, QListWidgetItem,
     QSplitter, QTabWidget, QWidget, QColorDialog, QLineEdit,
 )
 from dfn_cave_studio.models.fracture_set import (
@@ -77,8 +76,9 @@ class JointSetManagerDialog(QDialog):
         self._dip_spin = self._make_double(0, 90, 0); self._dip_spin.setValue(60)
         self._kappa_spin = self._make_double(0.1, 200, 1); self._kappa_spin.setValue(30)
         self._dist_combo = QComboBox()
-        self._dist_combo.addItems(["lognormal", "power_law", "fixed", "exponential", "truncated_power_law"])
-        self._dist_combo.currentTextChanged.connect(self._update_stats)
+        for value in ("lognormal", "power_law", "fixed", "exponential", "truncated_power_law"):
+            self._dist_combo.addItem(value, value)
+        self._dist_combo.currentIndexChanged.connect(self._update_stats)
         self._mu_spin = self._make_double(0.1, 5, 1); self._mu_spin.setValue(1.0)
         self._sigma_spin = self._make_double(0.1, 3, 1); self._sigma_spin.setValue(0.5)
         self._D_spin = self._make_double(1.5, 5, 1); self._D_spin.setValue(3.0)
@@ -226,7 +226,7 @@ class JointSetManagerDialog(QDialog):
             s.opacity = self._opacity_spin.value()
             dist_map = {"lognormal": "lognormal", "power_law": "power_law", "fixed": "fixed",
                         "exponential": "exponential", "truncated_power_law": "truncated_power_law"}
-            s.size.distribution_type = SizeDistributionType(dist_map.get(self._dist_combo.currentText(), "lognormal"))
+            s.size.distribution_type = SizeDistributionType(dist_map.get(self._dist_combo.currentData(), "lognormal"))
 
             mean_r = s.size.mean_radius
             mean_area = s.expected_mean_area()

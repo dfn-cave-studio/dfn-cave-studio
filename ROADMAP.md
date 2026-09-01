@@ -63,13 +63,17 @@ and uncertainty.
 
 **Version:** `v0.11.0-M11`
 
-- Compute exact fracture–voxel clipped areas, fracture intersections, connectivity, and spanning paths.
+- M11.1: compute exact circular-fracture/voxel intersection areas and intersection-derived P32 using sparse deterministic indexing. Implemented in development; not yet released.
+- Later M11 phases: compute fracture intersections, connectivity, and spanning paths. Not implemented in M11.1.
 - Validate P10, orientation, and set proportions on held-out holes.
 - Quantify multiple-realization uncertainty, error, and confidence intervals.
 - Assign fracture mechanics and export 3DEC, PFC, VTK, CSV, and ML-ready
   input/output voxel datasets with provenance, seeds, and versions.
 
 **Exit condition:** the model is independently validated and transferable.
+
+M11.1 is intentionally limited to second voxelization. It does not claim
+connectivity, percolation, block cutting, mechanics, or external simulator export.
 
 ## M12 — Fragmentation, integration, and formal release
 

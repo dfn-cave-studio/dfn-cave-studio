@@ -290,8 +290,8 @@ def test_density_dialog_restores_all_saved_controls_and_noop_ok(qtbot) -> None:
     dialog = M9DensityDialog(project, workflow)
     qtbot.addWidget(dialog)
 
-    assert dialog.interval_mode.currentText() == "domain"
-    assert dialog.method.currentText() == DensityMethod.IDW.value
+    assert dialog.interval_mode.currentData() == "domain"
+    assert dialog.method.currentData() == DensityMethod.IDW.value
     assert dialog.interval_length.value() == 25
     assert dialog.power.value() == 3.5
     assert dialog.radius.value() == 123

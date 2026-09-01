@@ -24,7 +24,7 @@ import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Callable, Dict
+from typing import Callable, Dict, Optional
 
 from dfn_cave_studio.models.project import Project
 
@@ -222,21 +222,27 @@ class ProjectStore:
             raise ValueError(
                 f"Unsupported project extension '{target.suffix}'. " "Use .dfnproj (ZIP) or .dfncs (JSON)."
             )
-        if (
-            target.suffix.lower() == ".dfncs"
-            and getattr(self._current_project, "m10_state", None) is not None
+        has_m10_arrays = bool(
+            getattr(self._current_project, "m10_state", None) is not None
             and self._current_project.m10_state.realizations
-        ):
-            raise ValueError("M10 geometry requires the compressed .dfnproj format; legacy .dfncs would lose arrays")
+        )
+        has_m11_arrays = bool(
+            getattr(self._current_project, "m11_state", None) is not None
+            and self._current_project.m11_state.results
+        )
+        if target.suffix.lower() == ".dfncs" and (has_m10_arrays or has_m11_arrays):
+            raise ValueError(
+                "M10/M11 geometry requires the compressed .dfnproj format; legacy .dfncs would lose arrays"
+            )
+
+        from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
+
+        ZipProjectStore.validate_project_metadata(self._current_project)
 
         tmp_path = target.with_name(f"{target.name}.tmp")
         self._save_in_progress = True
         try:
             if target.suffix.lower() == ".dfnproj":
-                from dfn_cave_studio.persistence.zip_project_store import (
-                    ZipProjectStore,
-                )
-
                 ZipProjectStore().save(self._current_project, tmp_path)
             else:
                 self._current_project.save_to_file(tmp_path)
@@ -246,7 +252,7 @@ class ProjectStore:
                 shutil.copy2(target, backup_path)
             # Atomic rename
             shutil.move(str(tmp_path), str(target))
-        except (OSError, ValueError, TypeError):
+        except BaseException:
             if tmp_path.exists():
                 tmp_path.unlink()
             raise
@@ -337,15 +343,21 @@ class ProjectStore:
         if self._save_in_progress:
             return False
         m10_state = getattr(self._current_project, "m10_state", None)
-        if m10_state is not None:
+        m11_state = getattr(self._current_project, "m11_state", None)
+        if m10_state is not None or m11_state is not None:
             geometry_bytes = sum(
                 array.nbytes
-                for realization in m10_state.realizations
+                for realization in (m10_state.realizations if m10_state is not None else [])
                 for array in realization.geometry_arrays.values()
+            )
+            geometry_bytes += sum(
+                array.nbytes
+                for result in (m11_state.results if m11_state is not None else [])
+                for array in result.arrays.values()
             )
             if geometry_bytes > self._large_autosave_limit_bytes:
                 _logger.info(
-                    "Skipping synchronous auto-save for large M10 state (%0.1f MiB)",
+                    "Skipping synchronous auto-save for large M10/M11 state (%0.1f MiB)",
                     geometry_bytes / 1024**2,
                 )
                 self._last_auto_save = time.time()

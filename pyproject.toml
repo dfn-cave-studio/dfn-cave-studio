@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dfn-cave-studio"
-version = "0.10.1"
+version = "0.11.0"
 description = "Discrete Fracture Network modeling for underground block cave mining research"
 readme = "README.md"
 license = {text = "MIT"}
@@ -64,6 +64,9 @@ dfn-cave-studio = "dfn_cave_studio.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+dfn_cave_studio = ["resources/i18n/*.qm", "resources/i18n/*.ts"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
@@ -76,6 +79,7 @@ markers = [
     "slow: Slow tests (>5s)",
     "performance: Performance benchmarks",
     "vtk_render: Tests that require real VTK/OpenGL rendering (not run on headless CI)",
+    "real_vtk_render: Real VTK/OpenGL pixel or widget rendering tests; run under Linux Mesa/Xvfb CI",
 ]
 
 [tool.coverage.run]

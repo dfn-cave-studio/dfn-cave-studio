@@ -625,3 +625,67 @@ Raw 是不可静默修改的审计层。Excluded 表示不参与正式计算，�
 9. 重启软件并重新打开项目后问题是否仍然存在。
 
 报告问题时建议同时提供：软件版本、项目文件格式、操作步骤、日志信息、相关来源文件名和 `source_row`。不要发送无法脱敏的敏感工程数据。
+## M11 三维 P32 云图与交互侧栏
+
+完成 M11.1 精确第二次体素化后，在 `M11.1 Exact Second Voxelization` 窗口的三维显示区域选择字段、节理组和显示方式，然后点击 `Render Cloud`。
+
+支持四种显示方式：
+
+1. `Voxel Cells`：按原始体素逐格赋色，是默认的科学审计视图；
+2. `Outer Surface Cloud`：提取有效模型体素的真实外围表面；
+3. `Orthogonal Section`：选择 X、Y 或 Z，并通过位置控件设置剖面；界面显示实际坐标和体素索引；
+4. `Arbitrary Plane`：输入平面原点和法向量，可选交互式平面控件。零法向量会被拒绝。
+
+显示插值选项：
+
+- `Exact Cell Colours`：直接显示权威 cell scalar，一个体素一个数值；
+- `Smooth Display`：仅用于视觉平滑。系统先删除 `OUTSIDE_MODEL`、`NO_DATA` 和 `EXCAVATION` 单元，再将有效 cell scalar 转换为临时 point scalar。
+
+界面提示 `Display interpolation only — scientific voxel values unchanged`。Smooth Display 不是 Kriging，不会生成新的科学参数场，也不会覆盖或保存 M11 P32 数组。
+
+完成并提交 M11.1 后，从 `Visualization > M11 Visualization` 打开非模态侧栏。侧栏可停靠、浮动、关闭和重新打开；关闭侧栏只关闭交互手柄，已经保留的云图仍显示。没有有效的已提交 M11 结果、或其来源 M10/参数场已经失效时，侧栏会禁用操作并说明原因。
+
+正交剖面的 X、Y、Z 可同时启用。每个法向固定为对应坐标轴，只能沿自身法向平移，不能旋转。滑块、实际坐标输入和三维平面手柄双向同步；只有剖面恰好位于体素中心时才显示体素索引。拖动使用固定交互槽位更新原图层，`Keep Snapshot` 才会保留一个独立历史剖面。
+
+任意剖面可以平移和旋转。原点 X/Y/Z、法向 Nx/Ny/Nz 与三维控件双向同步；法向在显示计算内部归一化，不改写用户输入或科学数组。零向量和非有限输入会被拒绝。`Reset` 恢复模型中心和 Z 朝向，X/Y/Z 按钮提供常用朝向。
+
+`Cutaway / Clip Plane` 对有效体素场执行平面裁剪，再提取保留侧的外围及新暴露内部 P32 表面；`Flip Side` 切换保留侧。它不同于二维 Slice，也不同于只裁剪既有外围壳的显示技巧。Cutaway 支持 Exact/Smooth、实时手柄和快照，但始终只是 session 显示状态，不改变科学计算范围、稀疏求交或 P32 数组。
+
+`Display Clipping Box — retains box interior` 是体积优先的 Box Cutaway。它先按 cell state 和所选字段有限性筛选有效体素，再用六个轴向平面保留盒内体积，最后提取外围面和新暴露的内部 P32 面；不再裁剪已经生成的外围空壳。`TRUE_ZERO` 保留，`OUTSIDE_MODEL`、`NO_DATA`、`EXCAVATION` 和非有限值不生成显示几何，因此盒子经过无数据孔洞或模型外部时不会伪造规则六面体表面。
+
+`Snap Box to Voxel Faces` 默认开启：六个边界吸附到真实体素面，Exact 模式保留完整来源体素及其原始 cell scalar，网格线显示来源体素的真实表面边界。关闭 Snap 后可以连续移动裁剪面，但这是显示几何裁切，不产生新的科学体素值；为避免误导，连续裁剪产生的内部三角剖分线不会作为体素网格线显示。Smooth 模式同样先应用有效体素 mask，再生成临时 point scalars，只用于视觉插值。
+
+数值框和三维 Box Handle 双向同步。`Reset to Model Bounds` 恢复有效模型范围，`Reset to Centre` 取模型中央范围；实时移动始终替换同一个 `box_cutaway` 槽位，只有 `Keep Snapshot` 才保留独立快照。所有 Box 图层、控件和色标都是 session-only 显示状态，不写入项目，也不改变 P32、workflow 或 dirty 状态。
+
+请区分：
+
+- **Slice**：用一个平面查看体数据截面；
+- **Plane Cutaway**：用一个任意平面保留有效体积的一侧，并显示新暴露内部面；
+- **Box Cutaway**：用六个轴向平面保留盒内有效体积，并显示实际存在的外围面和内部面；
+- **Clip**：只隐藏所选 M11 显示对象的一部分；
+- **Analysis / Generation Domain**：科学计算使用的持久化范围。
+
+Clip、Show/Hide、Opacity 和清除图层都只改变 session 显示状态，不删除体素或裂隙，不重算 P32，不改变项目 dirty 状态，也不会裁剪 M9、M10、钻孔、边界或坐标轴。隐藏图层不等于删除科学数据，云图配置和 VTK 缓存不写入 `.dfnproj`。
+
+颜色范围默认使用所选字段在整个有效模型中的全局范围，保证不同切片可比较。也可以设置合法的手动最小值和最大值。颜色可选择连续渐变或 5～30 级分级色带。`Show Grid Lines` 只改变显示边线。
+
+所有云图进入 `Rendered Layers`：可显示/隐藏、调整透明度、删除当前图层或清除全部 M11 图层。M11 图层和色卡使用独立命名空间，不会删除 M9、M10、钻孔、边界、网格或坐标轴。关闭窗口会移除交互式平面控件；云图、色卡和缓存均为 session-only，不写入 `.dfnproj`。
+
+必须注意：云图不会改变 `p32_total = p32_explicit_intersection + p32_subgrid`，也不会改变稀疏求交、面积守恒或工作流状态。当前版本未实现 Kriging、连通性、贯通、块度或 Volume Rendering。
+
+## 界面语言 / Interface language
+
+从主窗口选择 `Settings / 设置 → Language / 语言`，可在 `简体中文` 和 `English` 之间切换。语言偏好以稳定代码 `zh_CN` 或 `en` 保存到用户级 `QSettings`，不写入 `.dfnproj`，因此不会改变项目 dirty 状态、工作流、随机种子或任何科学结果。中文操作系统首次启动默认简体中文，其他系统默认英文；以后启动使用上次选择。
+
+语言切换会立即刷新已支持的菜单、工具栏、工作流、钻孔数据库以及 M7–M11 对话框。运行计算、DFN生成或项目保存时语言菜单暂时禁用，任务结束后自动恢复。若中文翻译文件缺失或损坏，程序安全回退英文。P10、P32、RQD、坐标轴、单位、字段键、ID、用户名称和路径保持原样。
+
+### 维护翻译
+
+翻译源文件位于 `src/dfn_cave_studio/resources/i18n/dfn_cave_studio_zh_CN.ts`。先提取新增的Qt界面英文原文，再修改新增的 `type="unfinished"` 翻译，最后编译：
+
+```powershell
+.venv\Scripts\python.exe scripts\extract_translations.py
+.venv\Scripts\python.exe scripts\compile_translations.py
+```
+
+该脚本从当前 PySide6 安装中定位 `lrelease`，生成同目录的 `.qm` 文件，不依赖系统 PATH。新增用户可见文字时，将英文原文加入 TS 的 `DFNCaveStudio` context，编译后运行中英文 GUI 测试。业务枚举、JSON/NPZ键、CSV标准列名、actor/scalar-bar/widget ID及config hash输入不得加入翻译替换流程。

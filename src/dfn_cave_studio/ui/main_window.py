@@ -26,6 +26,8 @@ from dfn_cave_studio.ui.qt_adapter import (
     QFileDialog,
     QSettings,
     QTimer,
+    QThreadPool,
+    QActionGroup,
     PyVistaQtInteractor,
     HAS_PYVISTAQT,
 )
@@ -56,6 +58,8 @@ class MainWindow(QMainWindow):
         self._dfn_renderer = None  # Lazy-loaded (imports pyvista)
         self._m9_layer_manager = None
         self._dfn_layer_manager = None
+        self._m11_layer_manager = None
+        self._m11_visualization_panel = None
         self._database_panel = None
 
         # M7 workflow controller
@@ -76,6 +80,7 @@ class MainWindow(QMainWindow):
         self._init_docks()
         self._init_connections()
         self._restore_state()
+        self._init_language_state()
         self._log_startup_info()
 
     # ------------------------------------------------------------------
@@ -182,6 +187,22 @@ class MainWindow(QMainWindow):
         self._tools_menu = menu_bar.addMenu("&Tools")
         self._add_menu_action(self._tools_menu, "&Settings...", "Ctrl+,", self._on_settings, "Application settings")
 
+        # === Settings Menu ===
+        self._settings_menu = menu_bar.addMenu("&Settings")
+        self._language_menu = self._settings_menu.addMenu("&Language")
+        self._language_group = QActionGroup(self)
+        self._language_group.setExclusive(True)
+        self._language_actions: dict[str, QAction] = {}
+        for label, code in (("简体中文", "zh_CN"), ("English", "en")):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setData(code)
+            action.triggered.connect(lambda checked=False, value=code: self._on_language_selected(value))
+            self._language_group.addAction(action)
+            self._language_menu.addAction(action)
+            self._language_actions[code] = action
+        self._language_menu.aboutToShow.connect(self._refresh_language_actions)
+
         # === Help Menu ===
         self._help_menu = menu_bar.addMenu("&Help")
         self._add_menu_action(self._help_menu, "&About", None, self._on_about, "About DFN Cave Studio")
@@ -243,7 +264,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.10.1-M10</p>"
+                "<p>Version 0.11.0-M11 (M11.1 exact second voxelization)</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -289,6 +310,25 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self._project_dock, self._workflow_panel)
         self._project_dock.raise_()
 
+        # Session-only controls for committed M11 visualization results.
+        from dfn_cave_studio.ui.panels.m11_visualization_panel import M11VisualizationPanel
+
+        self._m11_visualization_panel = M11VisualizationPanel(self._get_m11_layer_manager(), self)
+        self._m11_visualization_panel.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self._m11_visualization_panel.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._m11_visualization_panel)
+        self._m11_visualization_panel.hide()
+        self._m11_visualization_action = self._m11_visualization_panel.toggleViewAction()
+        self._m11_visualization_action.setText("M11 Visualization")
+        self._vis_menu.addSeparator()
+        self._vis_menu.addAction(self._m11_visualization_action)
+
     def _init_project_tree(self) -> None:
         """Initialize the project tree with default structure."""
         tree = self._project_tree
@@ -326,6 +366,51 @@ class MainWindow(QMainWindow):
         # Project tree selection
         self._project_tree.itemClicked.connect(self._on_tree_item_clicked)
 
+    def _init_language_state(self) -> None:
+        """Bind language preference UI without touching project state."""
+        from dfn_cave_studio.ui.i18n import language_manager
+
+        manager = language_manager()
+        manager.language_changed.connect(self._language_state_changed)
+        manager.switching_enabled_changed.connect(self._language_state_changed)
+        self._refresh_language_actions()
+        manager.retranslate_open_windows()
+
+    def _language_state_changed(self, _value) -> None:
+        """Refresh language actions; direct QObject binding auto-disconnects on close."""
+        self._refresh_language_actions()
+
+    def _refresh_language_actions(self) -> None:
+        """Reflect the current language and active-task lock in the menu."""
+        from dfn_cave_studio.ui.i18n import language_manager
+
+        manager = language_manager()
+        enabled = manager.switching_enabled and QThreadPool.globalInstance().activeThreadCount() == 0
+        for code, action in self._language_actions.items():
+            action.setChecked(code == manager.language)
+            action.setEnabled(enabled)
+
+    def _on_language_selected(self, language: str) -> None:
+        """Apply a user-level interface language immediately and safely."""
+        from dfn_cave_studio.ui.i18n import language_manager, tr
+
+        manager = language_manager()
+        if QThreadPool.globalInstance().activeThreadCount() or not manager.switching_enabled:
+            QMessageBox.information(
+                self,
+                tr("Language Change Unavailable"),
+                tr("Wait for the active calculation, generation, or save operation to finish."),
+            )
+            self._refresh_language_actions()
+            return
+        if not manager.set_language(language):
+            QMessageBox.warning(
+                self,
+                tr("Translation Unavailable"),
+                tr("The selected translation catalog could not be loaded. English is being used."),
+            )
+        self._refresh_language_actions()
+
     def _restore_state(self) -> None:
         """Restore window state from settings."""
         settings = QSettings("DFNCaveStudio", "MainWindow")
@@ -338,7 +423,7 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.10.1-M10 started")
+        self.log_message("DFN Cave Studio v0.11.0-M11 started")
         self.log_message(
             f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}"
         )
@@ -432,6 +517,7 @@ class MainWindow(QMainWindow):
             self.set_status("New project created")
             self._update_project_tree_from_project(project)
             self._ensure_database_panel(project)
+            self._m11_visualization_panel.set_context(project, self._workflow)
             self.log_message(f"New project '{project.metadata.name}' created")
         except (RuntimeError, TypeError, ValueError) as e:
             self.log_error(f"Failed to create project: {e}")
@@ -442,6 +528,7 @@ class MainWindow(QMainWindow):
             return
         self._clear_m9_layers()
         self._clear_dfn_layers()
+        self._clear_m11_layers()
         if self._dfn_renderer is not None:
             try:
                 self._dfn_renderer.clear(self._plotter)
@@ -481,6 +568,32 @@ class MainWindow(QMainWindow):
         """Remove M10 DFN actors without touching M9 or reference actors."""
         if self._dfn_layer_manager is not None:
             self._dfn_layer_manager.clear_dfn_layers()
+
+    def _clear_m11_layers(self) -> None:
+        """Remove only session M11 voxel actors."""
+        if self._m11_layer_manager is not None:
+            self._m11_layer_manager.clear_m11_layers()
+
+    def _get_m11_layer_manager(self):
+        """Return the main-window-owned, session-only M11 slice registry."""
+        if self._plotter is None:
+            return None
+        if self._m11_layer_manager is None or self._m11_layer_manager.plotter is not self._plotter:
+            from dfn_cave_studio.visualization.m11_layer_manager import M11LayerManager
+
+            self._m11_layer_manager = M11LayerManager(self._plotter)
+        return self._m11_layer_manager
+
+    def _invalidate_m11_after_m10_change(self) -> None:
+        """Invalidate M11 computation and discard its now-stale session views."""
+        self._workflow.invalidate_steps(["second_voxelization"])
+        self._discard_stale_m11_visualization()
+
+    def _discard_stale_m11_visualization(self) -> None:
+        """Remove stale M11 session resources and refresh the non-modal dock."""
+        self._clear_m11_layers()
+        if self._m11_visualization_panel is not None:
+            self._m11_visualization_panel.refresh()
 
     def _on_open_project(self) -> None:
         """Open an existing project (.dfnproj or legacy .dfncs)."""
@@ -522,7 +635,10 @@ class MainWindow(QMainWindow):
 
         try:
             self.set_status("Saving project…")
-            path = self._save_project_to(self._project_store.current_path)
+            from dfn_cave_studio.ui.i18n import language_manager
+
+            with language_manager().busy("project-save"):
+                path = self._save_project_to(self._project_store.current_path)
             self._recent_manager.add(path, self._project_store.current_project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
             self.set_status(f"Saved: {path.name}")
@@ -548,7 +664,10 @@ class MainWindow(QMainWindow):
 
         try:
             self.set_status("Saving project…")
-            saved_path = self._save_project_to(Path(path))
+            from dfn_cave_studio.ui.i18n import language_manager
+
+            with language_manager().busy("project-save"):
+                saved_path = self._save_project_to(Path(path))
             self._recent_manager.add(saved_path, self._project_store.current_project.metadata.name)
             self.setWindowTitle(f"DFN Cave Studio — {self._project_store.current_project.metadata.name}")
             self.set_status(f"Saved: {saved_path.name}")
@@ -633,7 +752,8 @@ class MainWindow(QMainWindow):
                 self._refresh_m9_readiness()
             m10_generation_after = config.generation_domain.model_dump(mode="json")
             if m10_generation_before != m10_generation_after:
-                self._workflow.invalidate_steps(["explicit_dfn"])
+                self._workflow.invalidate_steps(["explicit_dfn", "second_voxelization"])
+                self._discard_stale_m11_visualization()
             persisted_after = {
                 "spatial_grid_config": config.model_dump(mode="json"),
                 "model_bounds": project.model_bounds.model_dump(mode="json"),
@@ -894,11 +1014,15 @@ class MainWindow(QMainWindow):
         seed = project.m9_state.random_seed
         settings = project.m9_state.density_settings
         project.m9_state = M9State(random_seed=seed, density_settings=settings)
-        self._workflow.invalidate_steps(["density", "size", "parameter_field", "validation", "explicit_dfn"])
+        self._workflow.invalidate_steps(
+            ["density", "size", "parameter_field", "validation", "explicit_dfn", "second_voxelization"]
+        )
+        self._discard_stale_m11_visualization()
 
     def _invalidate_m9_spatial_results(self) -> None:
         """Mark spatial M9 products stale while retaining their auditable values."""
-        self._workflow.invalidate_steps(["parameter_field", "validation", "explicit_dfn"])
+        self._workflow.invalidate_steps(["parameter_field", "validation", "explicit_dfn", "second_voxelization"])
+        self._discard_stale_m11_visualization()
 
     def _refresh_m9_readiness(self) -> None:
         """Expose density modelling only when every M8 scientific dependency is complete."""
@@ -925,6 +1049,15 @@ class MainWindow(QMainWindow):
             and all(self._workflow.is_step_done(step_id) for step_id in prerequisites)
         ):
             self._workflow.mark_ready("explicit_dfn")
+        m11_step = self._workflow.get_step("second_voxelization")
+        if (
+            m11_step is not None
+            and m11_step.status in (StepStatus.NOT_STARTED, StepStatus.READY)
+            and project is not None
+            and bool(project.m10_state.realizations)
+            and self._workflow.is_step_done("explicit_dfn")
+        ):
+            self._workflow.mark_ready("second_voxelization")
 
     def _open_m9_dialog(self, dialog_type, completed_step: str) -> None:
         """Open one transactional M9 workflow dialog and apply lifecycle effects."""
@@ -935,7 +1068,8 @@ class MainWindow(QMainWindow):
         dialog = dialog_type(project, self._workflow, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
             if completed_step in {"density", "size", "parameter_field"}:
-                self._workflow.invalidate_steps(["explicit_dfn"])
+                self._workflow.invalidate_steps(["explicit_dfn", "second_voxelization"])
+                self._discard_stale_m11_visualization()
             self._project_store.mark_dirty()
             self._workflow_panel._refresh()
             self._update_project_tree_from_project(project)
@@ -976,10 +1110,29 @@ class MainWindow(QMainWindow):
         project = self._project_store.current_project
         dialog = M10ExplicitDFNDialog(project, self._workflow, self._get_dfn_layer_manager(), self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            self._invalidate_m11_after_m10_change()
             self._project_store.mark_dirty()
             self._workflow_panel._refresh()
             self._update_project_tree_from_project(project)
             self.log_message("M10 explicit DFN generation committed")
+            self._refresh_m10_readiness()
+
+    def _m7_second_voxelization(self) -> None:
+        """Open transactional M11.1 exact disk/voxel intersection analysis."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Open a project with a complete M10 realization first.")
+            return
+        from dfn_cave_studio.ui.dialogs.m11_dialog import M11SecondVoxelizationDialog
+
+        project = self._project_store.current_project
+        dialog = M11SecondVoxelizationDialog(project, self._workflow, self._get_m11_layer_manager(), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            self._project_store.mark_dirty()
+            self._workflow_panel._refresh()
+            self._update_project_tree_from_project(project)
+            self.log_message("M11.1 exact second voxelization committed")
+            if self._m11_visualization_panel is not None:
+                self._m11_visualization_panel.set_context(project, self._workflow)
 
     def _on_domain_manager(self) -> None:
         """Open domain manager."""
@@ -1118,7 +1271,7 @@ class MainWindow(QMainWindow):
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.10.1-M10</p>"
+            "<p>Version 0.11.0-M11 (M11.1 exact second voxelization)</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"
@@ -1186,6 +1339,7 @@ class MainWindow(QMainWindow):
 
         self._clear_m9_layers()
         self._clear_dfn_layers()
+        self._clear_m11_layers()
         suffix = path.suffix.lower()
         if suffix == ".dfnproj":
             from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
@@ -1234,6 +1388,8 @@ class MainWindow(QMainWindow):
                 m7["holdout"] = HoldoutService.from_dict(saved_ho.to_dict() if hasattr(saved_ho, "to_dict") else {})
 
         self._refresh_m10_readiness()
+        if self._m11_visualization_panel is not None:
+            self._m11_visualization_panel.set_context(project, self._workflow)
 
         if not self._plotter:
             self._update_project_tree_from_project(project)
@@ -1339,14 +1495,21 @@ class MainWindow(QMainWindow):
             [f"Fractures ({sum(item.fracture_count for item in project.m10_state.realizations)})"],
         )
 
+        m11_node = QTreeWidgetItem(root, ["M11.1 Exact Second Voxelization"])
+        QTreeWidgetItem(m11_node, [f"Completed realizations ({len(project.m11_state.results)})"])
+        QTreeWidgetItem(
+            m11_node,
+            [f"Positive fracture/voxel pairs ({sum(item.positive_intersection_count for item in project.m11_state.results)})"],
+        )
+
         # Domains section
         domains_node = QTreeWidgetItem(root, ["Structural Domains"])
         QTreeWidgetItem(domains_node, [f"Domains ({len(project.structural_domains.domains)})"])
 
         # Analysis section
         analysis = QTreeWidgetItem(root, ["Analysis"])
-        QTreeWidgetItem(analysis, ["Connectivity"])
-        QTreeWidgetItem(analysis, ["Fragmentation"])
+        QTreeWidgetItem(analysis, ["Connectivity (not implemented in M11.1)"])
+        QTreeWidgetItem(analysis, ["Fragmentation (planned M12)"])
 
         for i in range(root.childCount()):
             root.child(i).setExpanded(True)

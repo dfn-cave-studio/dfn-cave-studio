@@ -99,6 +99,11 @@ class WorkflowController:
         ("parameter_field", "10. First Voxel Parameter Field", "Build the traceable input parameter voxel field"),
         ("validation", "11. Validation", "Evaluate predictions using held-out boreholes only"),
         ("explicit_dfn", "12. Explicit DFN Generation", "Generate reproducible conditional explicit fracture geometry"),
+        (
+            "second_voxelization",
+            "13. Exact Second Voxelization",
+            "Compute exact disk-voxel intersection-derived P32 without connectivity analysis",
+        ),
     ]
     DEPENDENCIES: ClassVar[dict[str, list[str]]] = {
         "import": [],
@@ -113,6 +118,7 @@ class WorkflowController:
         "parameter_field": ["density", "size", "voxel_grid"],
         "validation": ["parameter_field"],
         "explicit_dfn": ["density", "size", "parameter_field", "voxel_grid"],
+        "second_voxelization": ["explicit_dfn", "parameter_field", "voxel_grid"],
     }
 
     def __init__(self):

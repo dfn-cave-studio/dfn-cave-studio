@@ -11,12 +11,20 @@ import os
 
 def pytest_configure(config):
     """Force offscreen rendering for all GUI tests."""
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     import sys
     from pathlib import Path
     src_dir = str(Path(__file__).parent.parent.parent / "src")
     if src_dir not in sys.path:
         sys.path.insert(0, src_dir)
+
+    # GUI tests start from a deterministic English preference. Individual
+    # i18n tests explicitly exercise both languages and restore this value.
+    from PySide6.QtCore import QSettings
+
+    preferences = QSettings("DFNCaveStudio", "Preferences")
+    preferences.setValue("language", "en")
+    preferences.sync()
 
     # ── Inject FakePlotter factory ──────────────────────────────────────
     _inject_fake_plotter_factory()
@@ -142,12 +150,12 @@ def _install_dialog_mocks():
       - QFileDialog.getOpenFileName → ("", "")
       - QFileDialog.getSaveFileName → ("", "")
     """
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock
 
     # We use a module-level patch that is active for the entire test session.
     # These patches are intentionally NEVER stopped so they cover every test.
     import PySide6.QtWidgets as _qtw
-    from PySide6.QtWidgets import QMessageBox, QFileDialog
+    from PySide6.QtWidgets import QMessageBox
 
     # QMessageBox static helpers
     _qtw.QMessageBox.question = MagicMock(
@@ -166,17 +174,11 @@ def _install_dialog_mocks():
     _qtw.QFileDialog.getExistingDirectory = MagicMock(return_value="")
 
     # QColorDialog (used in joint_set_dialog)
-    try:
-        from PySide6.QtWidgets import QColorDialog
+    if hasattr(_qtw, "QColorDialog"):
         _qtw.QColorDialog.getColor = MagicMock(return_value=None)
-    except ImportError:
-        pass
 
     # QInputDialog
-    try:
-        from PySide6.QtWidgets import QInputDialog
+    if hasattr(_qtw, "QInputDialog"):
         _qtw.QInputDialog.getText = MagicMock(return_value=("", False))
         _qtw.QInputDialog.getInt = MagicMock(return_value=(0, False))
         _qtw.QInputDialog.getDouble = MagicMock(return_value=(0.0, False))
-    except ImportError:
-        pass

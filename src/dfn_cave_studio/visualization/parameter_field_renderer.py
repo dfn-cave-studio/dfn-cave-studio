@@ -9,8 +9,9 @@ import numpy as np
 import pyvista as pv
 
 from dfn_cave_studio.models.m9 import ParameterFieldMetadata
-from dfn_cave_studio.voxel.parameter_field import CELL_STATE_CODES
 from dfn_cave_studio.models.spatial_grid import VoxelCellState
+from dfn_cave_studio.visualization.scalar_lut import make_lookup_table_opaque
+from dfn_cave_studio.voxel.parameter_field import CELL_STATE_CODES
 
 
 class ParameterFieldRenderer:
@@ -39,11 +40,40 @@ class ParameterFieldRenderer:
         opacity: float = 1.0,
         cmap: str = "viridis",
         actor_name: str | None = None,
+        scalar_bar_title: str | None = None,
+        show_scalar_bar: bool = True,
     ) -> Any:
         """Show one X/Y/Z slice, keeping NO_DATA transparent and TRUE_ZERO visible."""
         if field_name not in arrays or axis not in {"x", "y", "z"} or not 0 <= fraction <= 1:
             raise ValueError("invalid parameter-field slice request")
-        grid = self.create_grid(metadata, arrays)
+        values = np.asarray(arrays[field_name])
+        if values.shape != metadata.shape:
+            raise ValueError("parameter-field display array shape does not match metadata")
+        states = arrays.get("cell_state")
+        if states is None:
+            hidden = np.zeros(metadata.shape, dtype=bool)
+        else:
+            states = np.asarray(states)
+            if states.shape != metadata.shape:
+                raise ValueError("parameter-field cell_state shape does not match metadata")
+            hidden = np.isin(
+                states,
+                [
+                    CELL_STATE_CODES[VoxelCellState.OUTSIDE_MODEL],
+                    CELL_STATE_CODES[VoxelCellState.NO_DATA],
+                    CELL_STATE_CODES[VoxelCellState.EXCAVATION],
+                ],
+            )
+        valid = ~hidden & np.isfinite(values)
+        grid = pv.ImageData(
+            dimensions=tuple(item + 1 for item in metadata.shape),
+            spacing=metadata.spacing,
+            origin=metadata.origin,
+        )
+        grid.cell_data[field_name] = np.asarray(values, dtype=np.float32).copy().ravel(order="F")
+        grid.cell_data["__m9_valid__"] = valid.astype(np.uint8).ravel(order="F")
+        grid = grid.threshold((1, 1), scalars="__m9_valid__", preference="cell")
+        del grid.cell_data["__m9_valid__"]
         axis_index = {"x": 0, "y": 1, "z": 2}[axis]
         normal = [0.0, 0.0, 0.0]
         normal[axis_index] = 1.0
@@ -57,11 +87,12 @@ class ParameterFieldRenderer:
             scalars=field_name,
             cmap=cmap,
             opacity=opacity,
-            nan_opacity=0.0,
-            show_scalar_bar=True,
-            scalar_bar_args={"title": field_name},
+            nan_opacity=1.0,
+            show_scalar_bar=show_scalar_bar,
+            scalar_bar_args={"title": scalar_bar_title or field_name},
             name=name,
         )
+        make_lookup_table_opaque(actor)
         return actor
 
     @staticmethod

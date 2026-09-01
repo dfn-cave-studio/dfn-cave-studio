@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
+import uuid
 import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 _logger = logging.getLogger(__name__)
@@ -43,6 +46,31 @@ class ZipProjectStore:
 
     # ── Save ──────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def validate_project_metadata(project: "Project") -> None:
+        """Validate serialized M10/M11 metadata without copying their NumPy arrays."""
+        from dfn_cave_studio.models.m10 import M10State
+        from dfn_cave_studio.models.m11 import M11State
+
+        m10_state = getattr(project, "m10_state", None)
+        if m10_state is not None:
+            M10State.model_validate_json(m10_state.model_dump_json())
+        m11_state = getattr(project, "m11_state", None)
+        if m11_state is not None:
+            M11State.model_validate_json(m11_state.model_dump_json())
+
+    @staticmethod
+    @contextmanager
+    def _atomic_archive_path(target: Path):
+        """Yield a sibling temporary archive and replace the target only on success."""
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            yield temporary
+            os.replace(temporary, target)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
     def save(self, project: "Project", path: Path) -> None:
         """Save a Project to a .dfnproj ZIP file.
 
@@ -52,15 +80,18 @@ class ZipProjectStore:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        project.metadata.software_version = "0.10.1"
+        self.validate_project_metadata(project)
+        project.metadata.software_version = "0.11.0"
         project.metadata.modified_at = datetime.now(timezone.utc)
-        project.schema_version = 4
+        project.schema_version = 5
 
-        with tempfile.TemporaryDirectory(prefix="dfn-cave-save-") as temporary_directory, zipfile.ZipFile(
-            path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+        with self._atomic_archive_path(path) as archive_path, tempfile.TemporaryDirectory(
+            prefix="dfn-cave-save-"
+        ) as temporary_directory, zipfile.ZipFile(
+            archive_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
         ) as zf:
             # --- metadata ---
-            zf.writestr("metadata/version.txt", "0.10.1")
+            zf.writestr("metadata/version.txt", "0.11.0")
             zf.writestr("metadata/created_at.txt", datetime.now(timezone.utc).isoformat())
             zf.writestr("metadata/format.txt", "dfnproj/1.0")
 
@@ -101,6 +132,18 @@ class ZipProjectStore:
                         zf.write(
                             npz_path,
                             f"results/m10/{realization.realization_id}.npz",
+                            compress_type=zipfile.ZIP_STORED,
+                        )
+            m11_state = getattr(project, "m11_state", None)
+            if m11_state is not None:
+                zf.writestr("parameters/m11_state.json", m11_state.model_dump_json(indent=2))
+                for result in m11_state.results:
+                    if result.arrays:
+                        npz_path = Path(temporary_directory) / f"{result.realization_id}.npz"
+                        np.savez_compressed(npz_path, **result.arrays)
+                        zf.write(
+                            npz_path,
+                            f"results/m11/{result.realization_id}.npz",
                             compress_type=zipfile.ZIP_STORED,
                         )
 
@@ -287,6 +330,19 @@ class ZipProjectStore:
                     from dfn_cave_studio.dfn.m10_geometry import migrate_legacy_geometry
 
                     migrate_legacy_geometry(realization)
+            if "parameters/m11_state.json" in zf.namelist():
+                from dfn_cave_studio.models.m11 import M11State
+
+                project.m11_state = M11State.model_validate_json(
+                    zf.read("parameters/m11_state.json").decode("utf-8")
+                )
+                for result in project.m11_state.results:
+                    array_path = f"results/m11/{result.realization_id}.npz"
+                    if array_path not in zf.namelist():
+                        raise ValueError(f"M11 second-voxelization arrays are missing: {array_path}")
+                    extracted = Path(zf.extract(array_path, temporary_directory))
+                    with np.load(extracted, allow_pickle=False) as archive:
+                        result.arrays = {name: archive[name].copy() for name in archive.files}
 
             # --- results ---
             if "results/dfn_realizations.json" in zf.namelist():
@@ -487,12 +543,12 @@ class ZipProjectStore:
     def _deserialize_borehole_collection(self, data: dict):
         """Deserialize a BoreholeCollection from dict."""
         from dfn_cave_studio.models.borehole import (
-            BoreholeCollection,
             Borehole,
-            Collar,
+            BoreholeCollection,
             BoreholeSurvey,
-            SurveyStation,
+            Collar,
             FractureObservation,
+            SurveyStation,
         )
         from dfn_cave_studio.models.enums import FractureType
 
@@ -565,12 +621,12 @@ class ZipProjectStore:
 
     def _deserialize_joint_sets(self, data: list) -> list:
         """Deserialize a list of JointSetConfigs from dicts."""
+        from dfn_cave_studio.models.enums import SizeDistributionType
         from dfn_cave_studio.models.fracture_set import (
             JointSetConfig,
             OrientationDistribution,
             SizeDistribution,
         )
-        from dfn_cave_studio.models.enums import SizeDistributionType
 
         result = []
         for d in data:
@@ -638,15 +694,15 @@ class ZipProjectStore:
 
     def _deserialize_realizations(self, data: list) -> list:
         """Deserialize DFN realizations from dicts."""
-        from dfn_cave_studio.models.fracture import (
-            StochasticFracture,
-            FractureGeometry,
-        )
         from dfn_cave_studio.models.dfn_realization import (
-            DFNRealization,
             DFNGenerationResult,
+            DFNRealization,
         )
         from dfn_cave_studio.models.enums import FractureSource
+        from dfn_cave_studio.models.fracture import (
+            FractureGeometry,
+            StochasticFracture,
+        )
 
         result = []
         for rd in data:
@@ -831,7 +887,7 @@ class ZipProjectStore:
         """Build a summary dict from the project state."""
         summary = {
             "name": project.metadata.name if hasattr(project, "metadata") else "",
-            "version": "0.10.1",
+            "version": "0.11.0",
             "borehole_count": 0,
             "observation_count": 0,
             "joint_set_count": 0,
