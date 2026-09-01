@@ -8,6 +8,8 @@ QFileDialog, QColorDialog, and QInputDialog.
 
 import os
 
+import pytest
+
 
 def pytest_configure(config):
     """Force offscreen rendering for all GUI tests."""
@@ -31,6 +33,27 @@ def pytest_configure(config):
 
     # ── Mock modal dialogs so they never block tests ────────────────────
     _install_dialog_mocks()
+
+
+@pytest.fixture(autouse=True)
+def _dispose_top_level_widgets(qapp):
+    """Finish Qt object destruction before the next GUI test starts."""
+    yield
+
+    from shiboken6 import isValid
+
+    from dfn_cave_studio.ui.qt_adapter import QApplication, QEvent
+
+    app = QApplication.instance() or qapp
+    for widget in tuple(app.topLevelWidgets()):
+        if not isValid(widget):
+            continue
+        widget.close()
+        if isValid(widget):
+            widget.deleteLater()
+    for _ in range(3):
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -34,6 +34,7 @@ from dfn_cave_studio.ui.qt_adapter import (
     QTranslator,
     QWidget,
     Signal,
+    is_valid_qobject,
 )
 
 LANGUAGE_ENGLISH = "en"
@@ -166,7 +167,15 @@ class LanguageManager(QObject):
 
     def retranslate_open_windows(self, language: str | None = None) -> None:
         """Retranslate existing windows without rebuilding application state."""
-        for widget in QApplication.topLevelWidgets():
+        # Snapshot first: translating a widget can dispatch Qt events which alter
+        # the top-level collection.  A wrapper may also outlive its C++ QObject
+        # while deferred deletion is being drained, so validate before touching
+        # any Qt property or walking its child tree.
+        for widget in tuple(QApplication.topLevelWidgets()):
+            if not is_valid_qobject(widget):
+                continue
+            if bool(widget.property("i18n_window_closed")):
+                continue
             retranslate_widget_tree(widget, language or self._language)
 
     def dispose(self) -> None:
@@ -181,7 +190,13 @@ class LanguageManager(QObject):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
         """Translate newly shown windows and widgets created after startup."""
-        if event.type() == QEvent.Type.Show and isinstance(watched, QWidget):
+        if not is_valid_qobject(watched):
+            return False
+        if event.type() == QEvent.Type.Close and isinstance(watched, QWidget) and watched.isWindow():
+            watched.setProperty("i18n_window_closed", True)
+        elif event.type() == QEvent.Type.Show and isinstance(watched, QWidget):
+            if watched.isWindow():
+                watched.setProperty("i18n_window_closed", False)
             retranslate_widget_tree(watched, self._language)
         return super().eventFilter(watched, event)
 
@@ -201,8 +216,12 @@ def _translated(source: str, language: str) -> str:
 
 def retranslate_widget_tree(root: QWidget, language: str) -> None:
     """Update presentation text while preserving widget values and signals."""
+    if not is_valid_qobject(root):
+        return
     objects: list[QObject] = [root, *root.findChildren(QObject)]
     for obj in objects:
+        if not is_valid_qobject(obj):
+            continue
         with QSignalBlocker(obj):
             if isinstance(obj, QWidget) and not isinstance(obj, (QDockWidget, QToolBar, QMenu)) and obj.windowTitle():
                 source = _source(obj, "window_title", obj.windowTitle())
