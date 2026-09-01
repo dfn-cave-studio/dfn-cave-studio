@@ -84,9 +84,9 @@ visualization, compressed persistence, generic export, and preliminary
 quality reporting. M10 defers exact intersections and second voxelization to
 M11.1; connectivity remains deferred to later M11 work.
 
-## M11.1 — v0.11.0-M11.1 (READY FOR RELEASE)
+## M11.1 — v0.11.0-M11.1 (PUBLISHED)
 
-This bounded release candidate implements the first M11 work package: analytic circular disk/AABB
+This bounded release implements the first M11 work package: analytic circular disk/AABB
 intersection area, sparse fracture-voxel pairs, intersection-derived explicit
 P32, combination with M10 subgrid P32, conservation diagnostics, background
 execution, fast cancellation, persistence, invalidation, and cloud/section/cutaway
@@ -118,4 +118,4 @@ validation.
 6. Evaluate held-out boreholes only after fitting, reporting interval errors and aggregate metrics or `INSUFFICIENT_VALIDATION`.
 7. Export P10/P32 tables, density/size JSON, validation outputs, NPZ and VTI; do not generate explicit DFN geometry.
 
-M9 and M10 are published historical foundations for the M11.1 release candidate. Later M11 work remains separately planned.
+M9 and M10 are published historical foundations for the published M11.1 phase. Later M11 work remains separately planned.

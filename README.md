@@ -30,7 +30,7 @@ PYTHONPATH=src python -m dfn_cave_studio.app
 12. **Explicit DFN Generation** — Generate seeded conditional explicit DFNs from the M9 field, manage merged display layers, save complete geometry, and export CSV/JSON/NPZ/VTP.
 13. **Exact Second Voxelization** — Compute analytic disk–voxel intersection area, persist sparse pairs, and inspect per-set or aggregate `P32_explicit_intersection + P32_subgrid` clouds and sections.
 
-Current status: v0.11.0-M11.1 is **READY FOR RELEASE** as the bounded **M11.1 Exact Second Voxelization** phase. Its tag and GitHub Release have not been created. Fracture-fracture connectivity, spanning/percolation, block cutting, mechanics, formal 3DEC/PFC export, and Kriging remain planned; this candidate does not claim completion of all M11 work.
+Current status: **v0.11.0-M11.1 is PUBLISHED** as the bounded **M11.1 Exact Second Voxelization** phase. See the [Tag](https://github.com/dfn-cave-studio/dfn-cave-studio/tree/v0.11.0-M11.1), [GitHub Release](https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.11.0-M11.1), and [Review](docs/review/v0.11.0-M11.1/). Fracture-fracture connectivity, spanning/percolation, block cutting, mechanics, formal 3DEC/PFC export, and Kriging remain planned; this release does not claim completion of all M11 work.
 
 ### Overview
 
@@ -75,7 +75,7 @@ app.run()
 | M8 | ✅ Published baseline | Borehole database, spatial boundaries, and voxel-grid definition |
 | M9 | ✅ Published | Local DFN parameter fields, first voxelization, and dip-only degradation |
 | M10 | ✅ Published | Seeded conditional explicit DFN, multi-scale columnar geometry, subgrid P32, display, persistence, and basic export |
-| M11.1 | 🟦 Ready for release | Planned tag `v0.11.0-M11.1`: analytic disk–voxel intersection, sparse second voxelization, P32 clouds/sections/cutaways, persistence, cancellation, and bilingual UI |
+| M11.1 | ✅ Published | [`v0.11.0-M11.1`](https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.11.0-M11.1): analytic disk–voxel intersection, sparse second voxelization, P32 clouds/sections/cutaways, persistence, cancellation, and bilingual UI |
 | Later M11 | ⬜ Planned | Fracture graph, connected clusters, boundary spanning, flow channels, mechanics, formal 3DEC/PFC export, and Kriging |
 | M12 | ⬜ Planned | Fragmentation, integration, performance, and Windows release |
 

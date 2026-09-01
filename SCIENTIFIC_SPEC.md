@@ -14,7 +14,7 @@ Stochastic centres are uniform within their source voxel. Directions use the sav
 
 Calibration FULL_ORIENTATION observations may create one conditioned disc each. The measured point lies in the disc plane and inside its radius; Validation and DIP_ONLY observations never receive fabricated conditioning directions. Conditioned original area is deducted before stochastic Poisson sampling. Parameterized deterministic discs are seed-independent and affect the random budget only under an explicit option with a supplied set ID.
 
-Generation-boundary clipping preserves both `original_area` and polygon `clipped_area`. M10 centre assignment is labelled `CENTER_ASSIGNED_PRELIMINARY`; exact local P32 from fracture–voxel intersection and second voxelization are implemented in the M11.1 release candidate, while fracture connectivity remains later M11 work.
+Generation-boundary clipping preserves both `original_area` and polygon `clipped_area`. M10 centre assignment is labelled `CENTER_ASSIGNED_PRELIMINARY`; exact local P32 from fracture–voxel intersection and second voxelization are published in M11.1, while fracture connectivity remains later M11 work.
 
 ## M9 Local DFN parameter field (v0.9.0)
 
@@ -757,9 +757,9 @@ The intersection area is used for:
 
 ### 8.5 M11.1 Exact Second-Voxelization Contract (normative)
 
-**Release-candidate scientific scope:** planned tag `v0.11.0-M11.1` implements
-this contract as the bounded **M11.1 Exact Second Voxelization** phase. Its
-ready-for-release status does not mean that the complete M11 roadmap is finished.
+**Published scientific scope:** `v0.11.0-M11.1` implements this contract as the
+bounded **M11.1 Exact Second Voxelization** phase. Publication of M11.1 does not
+mean that the complete M11 roadmap is finished.
 
 The earlier conservative intersection description is retained for historical
 context only. M11.1 uses the following normative definition for explicit

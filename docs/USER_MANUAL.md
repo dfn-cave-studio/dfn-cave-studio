@@ -6,7 +6,7 @@
 
 `M11 Visualization`支持体素云图、正交与任意剖面、Plane Cutaway和Box Cutaway。Exact Cell Colours是权威审计显示；Smooth Display仅为显示插值，不修改科学数组。显示图层、色标和交互控件属于session-only状态，不写入项目。
 
-> M11.1当前已准备发布，仅包含精确第二次体素化及其可视化；Tag和GitHub Release尚未创建。裂隙—裂隙求交图、连通簇、边界贯通、渗流通道、块体切割、力学属性、正式3DEC/PFC导出和Kriging尚未实现。
+> M11.1已正式发布，仅包含精确第二次体素化及其可视化。裂隙—裂隙求交图、连通簇、边界贯通、渗流通道、块体切割、力学属性、正式3DEC/PFC导出和Kriging尚未实现。
 
 ## M10 显式DFN操作（步骤12）
 

@@ -3,7 +3,10 @@
 **Phase:** M11.1 Exact Second Voxelization
 **Commit baseline:** `e066e6cedb05cac2b01caea1464ba86b6a29f930`
 **Milestone identifier:** `M11.1`
-**Status:** READY FOR RELEASE
+**Status:** PUBLISHED
+**Release commit:** `ff76b3e`
+**Tag:** [v0.11.0-M11.1](https://github.com/dfn-cave-studio/dfn-cave-studio/tree/v0.11.0-M11.1)
+**Release:** [GitHub Release](https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.11.0-M11.1)
 
 ## Test jobs (not summed across duplicated Python matrix runs)
 
@@ -39,4 +42,4 @@ Linux Mesa/Xvfb real VTK: 22/22 passed.
 - Formal 3DEC/PFC export
 - Kriging interpolation
 
-M11.1 is ready for release as a bounded phase. Its tag and GitHub Release have not been created, and it does not claim completion of all M11 work.
+M11.1 is published as a bounded phase. It does not claim completion of all M11 work.
