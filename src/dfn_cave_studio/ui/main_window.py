@@ -264,7 +264,7 @@ class MainWindow(QMainWindow):
             welcome = QLabel(
                 "<h1>DFN Cave Studio</h1>"
                 "<p>Discrete Fracture Network Modeling for Block Cave Mining</p>"
-                "<p>Version 0.11.0-M11 (M11.1 exact second voxelization)</p>"
+                "<p>Version 0.11.0 (v0.11.0-M11.1 — Exact Second Voxelization)</p>"
                 "<hr>"
                 "<p>PyVistaQt not available. 3D visualization disabled.</p>"
                 "<p>Create or open a project to begin.</p>"
@@ -426,7 +426,7 @@ class MainWindow(QMainWindow):
 
     def _log_startup_info(self) -> None:
         """Log startup information."""
-        self.log_message("DFN Cave Studio v0.11.0-M11 started")
+        self.log_message("DFN Cave Studio v0.11.0-M11.1 started")
         self.log_message(
             f"Python: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}"
         )
@@ -1274,7 +1274,7 @@ class MainWindow(QMainWindow):
             self,
             "About DFN Cave Studio",
             "<h2>DFN Cave Studio</h2>"
-            "<p>Version 0.11.0-M11 (M11.1 exact second voxelization)</p>"
+            "<p>Version 0.11.0 (v0.11.0-M11.1 — Exact Second Voxelization)</p>"
             "<p>Discrete Fracture Network Modeling<br>"
             "for Underground Block Cave Mining Research</p>"
             f"<p>Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}</p>"

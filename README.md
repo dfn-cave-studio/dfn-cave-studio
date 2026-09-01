@@ -4,16 +4,16 @@
 
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Milestone](https://img.shields.io/badge/Milestone-M10-brightgreen.svg)](ROADMAP.md)
+[![Milestone](https://img.shields.io/badge/Milestone-M11.1-brightgreen.svg)](ROADMAP.md)
 
-## Quick Start (M10)
+## Quick Start (M11.1)
 
 ```bash
 pip install -r requirements.txt
 PYTHONPATH=src python -m dfn_cave_studio.app
 ```
 
-### M10 Workflow
+### M8–M11.1 Workflow
 
 1. **Borehole Database** — Independently preview/map/import collars, surveys, fractures, RQD, and domain intervals.
 2. **Data Quality** — Review Raw, Formal, Excluded, and Pending records and traceable reasons.
@@ -28,8 +28,9 @@ PYTHONPATH=src python -m dfn_cave_studio.app
 10. **First Voxel Parameter Field** — Build a domain-aware GLOBAL_CONSTANT or IDW input field in a cancelable worker.
 11. **Validation** — Compare field predictions against held-out Validation-hole P10 without refitting.
 12. **Explicit DFN Generation** — Generate seeded conditional explicit DFNs from the M9 field, manage merged display layers, save complete geometry, and export CSV/JSON/NPZ/VTP.
+13. **Exact Second Voxelization** — Compute analytic disk–voxel intersection area, persist sparse pairs, and inspect per-set or aggregate `P32_explicit_intersection + P32_subgrid` clouds and sections.
 
-Current status: v0.10.1-M10 is the published release. Development of v0.11.0-M11 has started with M11.1 exact fracture-voxel second voxelization; connectivity and later M11 phases remain unimplemented.
+Current status: v0.11.0-M11.1 is **READY FOR RELEASE** as the bounded **M11.1 Exact Second Voxelization** phase. Its tag and GitHub Release have not been created. Fracture-fracture connectivity, spanning/percolation, block cutting, mechanics, formal 3DEC/PFC export, and Kriging remain planned; this candidate does not claim completion of all M11 work.
 
 ### Overview
 
@@ -37,9 +38,9 @@ DFN Cave Studio is a desktop scientific software for:
 
 - **DFN Modeling** — Stochastic and deterministic discrete fracture network generation
 - **Voxelization** — Spatial discretization with sparse/chunked storage
-- **Connectivity Analysis** — Fracture network graph construction and percolation analysis
+- **Connectivity Analysis** — Planned after M11.1; fracture graph, clusters, and percolation are not in this release
 - **Fragmentation Analysis** — Planned for the integrated v1.0.0-M12 release
-- **Numerical Export** — Model export for 3DEC, FLAC3D, and other solvers
+- **Numerical Export** — Generic audited exports exist; formal 3DEC/PFC export remains planned
 
 ## Installation
 
@@ -74,7 +75,8 @@ app.run()
 | M8 | ✅ Published baseline | Borehole database, spatial boundaries, and voxel-grid definition |
 | M9 | ✅ Published | Local DFN parameter fields, first voxelization, and dip-only degradation |
 | M10 | ✅ Published | Seeded conditional explicit DFN, multi-scale columnar geometry, subgrid P32, display, persistence, and basic export |
-| M11 | 🟨 In development | M11.1 exact fracture-voxel second voxelization implemented; connectivity, validation, and external/ML export remain planned |
+| M11.1 | 🟦 Ready for release | Planned tag `v0.11.0-M11.1`: analytic disk–voxel intersection, sparse second voxelization, P32 clouds/sections/cutaways, persistence, cancellation, and bilingual UI |
+| Later M11 | ⬜ Planned | Fracture graph, connected clusters, boundary spanning, flow channels, mechanics, formal 3DEC/PFC export, and Kriging |
 | M12 | ⬜ Planned | Fragmentation, integration, performance, and Windows release |
 
 ## Documentation

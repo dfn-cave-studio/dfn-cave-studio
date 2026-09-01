@@ -1,12 +1,23 @@
 # Changelog
 
-## [0.11.0-M11] — Unreleased (M11.1 development)
+## [0.11.0-M11.1] — Unreleased (ready for release)
+
+This release candidate contains the bounded **M11.1 Exact Second Voxelization** phase. The planned tag and GitHub Release have not been created, and the complete M11 milestone is not marked as finished.
+
+### Added
 
 - Added exact analytic circular disk/AABB intersection areas without fixed-sided disk approximation.
 - Added deterministic sparse second voxelization and intersection-derived per-set/aggregate P32.
 - Preserved `P32_subgrid` in `P32_total` while keeping unresolved-orientation P32 separate.
-- Added half-open shared-face ownership, conservation diagnostics, background cancellation, persistence, and P32 slice/voxel inspection.
-- Fracture-fracture connectivity, percolation, block analysis, mechanics, and external simulator export are not implemented in M11.1.
+- Added half-open shared-face ownership, conservation diagnostics, fast cooperative cancellation, sparse persistence, reopen, and invalidation management.
+- Added M11 cloud, orthogonal/arbitrary sections, plane/box cutaways, display-only smoothing, and session-safe layer/scalar-bar lifecycle.
+- Added Chinese/English interface selection, M10 configuration save protection, and opaque finite-value rendering fixes for M9/M11.
+- Isolated real VTK pixel tests to Linux Mesa/Xvfb while retaining Windows Python 3.12/3.13 core and GUI CI.
+
+### Not included in M11.1
+
+- Fracture-fracture intersection graph, connected clusters, boundary spanning, flow/percolation channels, and Kriging.
+- Block cutting and fragmentation, mechanical properties, and formal 3DEC/PFC export.
 
 ## [0.10.1-M10] — 2026-08-28
 

@@ -81,21 +81,24 @@ Generate seeded conditional explicit DFNs from deterministic major structures
 and M9 small-fracture parameters over the buffered domain. M10 includes
 Calibration observation conditioning, multi-realization management,
 visualization, compressed persistence, generic export, and preliminary
-quality reporting. Exact intersections, connectivity, and the second
-voxelization are deferred to M11.
+quality reporting. M10 defers exact intersections and second voxelization to
+M11.1; connectivity remains deferred to later M11 work.
 
-## M11 — v0.11.0-M11
+## M11.1 — v0.11.0-M11.1 (READY FOR RELEASE)
 
-Compute exact fracture–voxel areas, fracture intersections, connectivity and
-spanning paths; independently validate on held-out holes, quantify multi-realization
-uncertainty, assign mechanical properties, and export 3DEC, PFC, VTK, CSV, and
-ML-ready voxel input/output datasets with full provenance.
-
-M11.1 implements only the first work package: analytic circular disk/AABB
+This bounded release candidate implements the first M11 work package: analytic circular disk/AABB
 intersection area, sparse fracture-voxel pairs, intersection-derived explicit
 P32, combination with M10 subgrid P32, conservation diagnostics, background
-execution, persistence, and slice inspection. Connectivity and every later M11
-work package remain explicitly unimplemented.
+execution, fast cancellation, persistence, invalidation, and cloud/section/cutaway
+inspection. It also includes bilingual UI, M10 save protection, M9/M11 opaque
+rendering fixes, and Windows/Linux rendering CI.
+
+## Later M11 work packages — PLANNED
+
+Compute fracture-fracture intersections, connected clusters, boundary-spanning
+paths, flow/percolation channels, independent held-out validation, uncertainty,
+mechanical properties, and formal 3DEC/PFC export. Kriging is not implemented.
+Connectivity and every later M11 work package remain explicitly outside M11.1.
 
 ## M12 — v1.0.0-M12
 
@@ -115,4 +118,4 @@ validation.
 6. Evaluate held-out boreholes only after fitting, reporting interval errors and aggregate metrics or `INSUFFICIENT_VALIDATION`.
 7. Export P10/P32 tables, density/size JSON, validation outputs, NPZ and VTI; do not generate explicit DFN geometry.
 
-M9 is implemented as a review-pending development milestone. M10 remains blocked until external M9 acceptance.
+M9 and M10 are published historical foundations for the M11.1 release candidate. Later M11 work remains separately planned.
