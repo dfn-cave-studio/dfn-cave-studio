@@ -59,21 +59,33 @@ and uncertainty.
 
 **Exit condition:** reproducible explicit geometry can be generated, inspected, saved, reopened, and exported.
 
-## M11 — Second voxelization, connectivity, validation, and external export
+## M11.1 — Exact Second Voxelization
 
-**Version:** `v0.11.0-M11`
+**Version:** `v0.11.0-M11.1`
+**Status:** READY FOR RELEASE
 
-- M11.1: compute exact circular-fracture/voxel intersection areas and intersection-derived P32 using sparse deterministic indexing. Implemented in development; not yet released.
-- Later M11 phases: compute fracture intersections, connectivity, and spanning paths. Not implemented in M11.1.
+- Compute exact circular-fracture/voxel intersection areas and intersection-derived P32 using sparse deterministic indexing.
+- Persist per-set/all-set sparse results, `P32_explicit_intersection + P32_subgrid`, diagnostics, provenance, and invalidation state.
+- Provide P32 clouds, orthogonal/arbitrary sections, plane and box cutaways, and session-only layer/scalar-bar management.
+- Support transactional background execution, fast cancellation, save/reopen, bilingual UI, and audited cross-platform rendering CI.
+
+**Exit condition:** exact second voxelization can be calculated, audited, visualized, saved, reopened, cancelled, and invalidated without changing M10 geometry.
+
+## Later M11 — Connectivity, validation, and external export
+
+**Status:** PLANNED
+
+- Compute fracture-fracture intersections, connected clusters, boundary-spanning paths, and flow/percolation channels.
 - Validate P10, orientation, and set proportions on held-out holes.
 - Quantify multiple-realization uncertainty, error, and confidence intervals.
 - Assign fracture mechanics and export 3DEC, PFC, VTK, CSV, and ML-ready
   input/output voxel datasets with provenance, seeds, and versions.
+- Evaluate interpolation extensions such as Kriging only as a separately validated future method.
 
 **Exit condition:** the model is independently validated and transferable.
 
 M11.1 is intentionally limited to second voxelization. It does not claim
-connectivity, percolation, block cutting, mechanics, or external simulator export.
+connectivity, percolation, block cutting, mechanics, formal simulator export, or Kriging.
 
 ## M12 — Fragmentation, integration, and formal release
 
@@ -88,4 +100,4 @@ connectivity, percolation, block cutting, mechanics, or external simulator expor
 
 **Exit condition:** installable, usable, validated, and exportable v1.0.0.
 
-M10 implementation is in development against the published `v0.9.1-M9` baseline and remains review-pending.
+Published baselines extend through `v0.10.1-M10`; `v0.11.0-M11.1` is ready for release, while later M11 work and M12 remain planned as described above.

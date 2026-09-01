@@ -1,0 +1,61 @@
+{
+  "tests_by_ci_job": {
+    "windows": {
+      "3.12": {
+        "platform": "windows-latest",
+        "python": "3.12",
+        "core": {
+          "total": 710,
+          "passed": 710,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 731,
+          "deselected": 21
+        },
+        "gui": {
+          "total": 155,
+          "passed": 155,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 156,
+          "deselected": 1
+        },
+        "coverage_percent": 87.25
+      },
+      "3.13": {
+        "platform": "windows-latest",
+        "python": "3.13",
+        "core": {
+          "total": 710,
+          "passed": 710,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 731,
+          "deselected": 21
+        },
+        "gui": {
+          "total": 155,
+          "passed": 155,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 156,
+          "deselected": 1
+        },
+        "coverage_percent": 87.25
+      }
+    },
+    "linux_real_vtk": {
+      "platform": "ubuntu-latest + Mesa/Xvfb",
+      "python": "3.12",
+      "tests": {
+        "total": 22,
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0,
+        "collected": 887,
+        "deselected": 865
+      }
+    },
+    "counting_note": "Counts are reported per independent CI job. Python matrix runs are not summed into a fictitious total."
+  }
+}

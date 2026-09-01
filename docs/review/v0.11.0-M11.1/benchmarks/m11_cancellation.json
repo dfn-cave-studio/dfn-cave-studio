@@ -1,0 +1,25 @@
+{
+  "benchmark_version": "m11-cancellation-1",
+  "generated_at": "2026-08-31T14:05:34.118590+00:00",
+  "case": "16 radius-60m disks over an 80x80x1 unit grid; cancel after 0.25s",
+  "results": [
+    {
+      "worker_count": 1,
+      "cancel_to_ui_feedback_seconds": 5.7998113334178925e-06,
+      "cancel_to_calculation_stop_seconds": 0.03287080000154674,
+      "cancel_to_all_owned_processes_exit_seconds": 0.03287689993157983,
+      "terminal_state": "cancelled",
+      "thread_alive": false,
+      "remaining_owned_process_ids": []
+    },
+    {
+      "worker_count": 2,
+      "cancel_to_ui_feedback_seconds": 1.0899966582655907e-05,
+      "cancel_to_calculation_stop_seconds": 0.5042485999874771,
+      "cancel_to_all_owned_processes_exit_seconds": 0.5042552999220788,
+      "terminal_state": "cancelled",
+      "thread_alive": false,
+      "remaining_owned_process_ids": []
+    }
+  ]
+}

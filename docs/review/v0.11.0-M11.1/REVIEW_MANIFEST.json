@@ -1,0 +1,416 @@
+{
+  "project_name": "DFN Cave Studio",
+  "version": "v0.11.0-M11.1",
+  "tag": "v0.11.0-M11.1",
+  "milestone": "M11.1",
+  "phase_name": "M11.1 Exact Second Voxelization",
+  "planned_tag": "v0.11.0-M11.1",
+  "release_status": "ready_for_release",
+  "commit_sha": "e066e6cedb05cac2b01caea1464ba86b6a29f930",
+  "baseline_commits": {
+    "main_baseline": "e066e6cedb05cac2b01caea1464ba86b6a29f930",
+    "m11_features": "2feaa4db394863a64da791e33e4ebf58f2ed6305",
+    "vtk_ci_isolation": "9bad673538b7fd852868e29965efda09db4bc069",
+    "python_313_lifecycle": "b94f87e33c79f854e71047a0d555e0a546cb2306"
+  },
+  "created_at": "2026-09-01T12:46:38.657582+00:00",
+  "packager_python_version": "3.14.5 (tags/v3.14.5:5607950, May 10 2026, 10:43:50) [MSC v.1944 64 bit (AMD64)]",
+  "project_schema_version": 5,
+  "generator_version": "m10-multiscale-1",
+  "geometry_format": "columnar-multiscale-v1",
+  "threshold_method": "area-weighted-cdf-1",
+  "m11_algorithm_version": "m11-second-voxelization-1",
+  "m11_geometry_kernel": "analytic-circle-convex-polygon-1",
+  "tests_by_ci_job": {
+    "windows": {
+      "3.12": {
+        "platform": "windows-latest",
+        "python": "3.12",
+        "core": {
+          "total": 710,
+          "passed": 710,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 731,
+          "deselected": 21
+        },
+        "gui": {
+          "total": 155,
+          "passed": 155,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 156,
+          "deselected": 1
+        },
+        "coverage_percent": 87.25
+      },
+      "3.13": {
+        "platform": "windows-latest",
+        "python": "3.13",
+        "core": {
+          "total": 710,
+          "passed": 710,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 731,
+          "deselected": 21
+        },
+        "gui": {
+          "total": 155,
+          "passed": 155,
+          "failed": 0,
+          "skipped": 0,
+          "collected": 156,
+          "deselected": 1
+        },
+        "coverage_percent": 87.25
+      }
+    },
+    "linux_real_vtk": {
+      "platform": "ubuntu-latest + Mesa/Xvfb",
+      "python": "3.12",
+      "tests": {
+        "total": 22,
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0,
+        "collected": 887,
+        "deselected": 865
+      }
+    },
+    "counting_note": "Counts are reported per independent CI job. Python matrix runs are not summed into a fictitious total."
+  },
+  "benchmarks": {
+    "reports": [
+      "benchmarks/m11_second_voxelization.json",
+      "benchmarks/m11_cloud_visualization.json",
+      "benchmarks/m11_cancellation.json",
+      "benchmarks/m11_second_voxelization_cancel_fix.json"
+    ],
+    "second_voxelization": {
+      "benchmark_version": "m11-second-voxelization-benchmark-1",
+      "algorithm_version": "m11-second-voxelization-1",
+      "geometry_kernel_version": "analytic-circle-convex-polygon-1",
+      "source_geometry": "synthetic contained horizontal disks; radius=0.1m; 100x100x10 unit grid",
+      "generated_at": "2026-08-29T03:24:06.150431+00:00",
+      "python": "3.14.5",
+      "numpy": "2.5.1",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "logical_cpu_count": 20,
+      "cases": [
+        {
+          "fracture_count": 10000,
+          "worker_count": 4,
+          "elapsed_seconds": 3.4032180999638513,
+          "fractures_per_second": 2938.3952794874413,
+          "average_system_cpu_percent": 15.894495412844037,
+          "rss_before_bytes": 143990784,
+          "rss_after_bytes": 161058816,
+          "parent_peak_working_set_bytes": 161058816,
+          "result_array_bytes": 5530816,
+          "sparse_bytes": 230816,
+          "candidate_pairs": 14427,
+          "positive_pairs": 14426,
+          "candidate_rejection_ratio": 6.931447979482915e-05,
+          "dfnproj_save_seconds": 0.0411916000302881,
+          "dfnproj_reopen_seconds": 0.016630499972961843,
+          "dfnproj_bytes": 753771,
+          "conservation_absolute_error": 0.0
+        },
+        {
+          "fracture_count": 100000,
+          "worker_count": 4,
+          "elapsed_seconds": 18.542183500016108,
+          "fractures_per_second": 5393.108098618112,
+          "average_system_cpu_percent": 20.185341196293177,
+          "rss_before_bytes": 153161728,
+          "rss_after_bytes": 180428800,
+          "parent_peak_working_set_bytes": 181608448,
+          "result_array_bytes": 7605424,
+          "sparse_bytes": 2305424,
+          "candidate_pairs": 144098,
+          "positive_pairs": 144089,
+          "candidate_rejection_ratio": 6.245749420533248e-05,
+          "dfnproj_save_seconds": 0.17335699999239296,
+          "dfnproj_reopen_seconds": 0.03472090000286698,
+          "dfnproj_bytes": 5564822,
+          "conservation_absolute_error": 0.0
+        },
+        {
+          "fracture_count": 721786,
+          "worker_count": 4,
+          "elapsed_seconds": 63.894817400025204,
+          "fractures_per_second": 11296.471754213282,
+          "average_system_cpu_percent": 32.2512013499138,
+          "rss_before_bytes": 200667136,
+          "rss_after_bytes": 305610752,
+          "parent_peak_working_set_bytes": 370855936,
+          "result_array_bytes": 21895744,
+          "sparse_bytes": 16595744,
+          "candidate_pairs": 1037347,
+          "positive_pairs": 1037234,
+          "candidate_rejection_ratio": 0.00010893172679922919,
+          "dfnproj_save_seconds": 0.7961987999733537,
+          "dfnproj_reopen_seconds": 0.15172720002010465,
+          "dfnproj_bytes": 28538862,
+          "conservation_absolute_error": 0.0
+        }
+      ]
+    },
+    "cloud_visualization": {
+      "benchmark": "m11-interactive-cloud-cpu-no-opengl-2",
+      "python": "3.14.5",
+      "numpy": "2.5.1",
+      "voxel_shape": [
+        69,
+        50,
+        47
+      ],
+      "voxel_count": 162150,
+      "cases": {
+        "outer_surface_exact": {
+          "seconds": 0.047226,
+          "cells": 18086,
+          "points": 18088,
+          "array_and_point_bytes": 578792
+        },
+        "outer_surface_smooth": {
+          "seconds": 0.039777,
+          "cells": 18086,
+          "points": 18088,
+          "array_and_point_bytes": 578800
+        },
+        "section_x": {
+          "seconds": 0.027041,
+          "cells": 2350,
+          "points": 2448,
+          "array_and_point_bytes": 38776
+        },
+        "section_y": {
+          "seconds": 0.030123,
+          "cells": 3243,
+          "points": 3360,
+          "array_and_point_bytes": 53292
+        },
+        "section_z": {
+          "seconds": 0.030575,
+          "cells": 3450,
+          "points": 3570,
+          "array_and_point_bytes": 56640
+        },
+        "arbitrary_plane": {
+          "seconds": 0.038875,
+          "cells": 4308,
+          "points": 2400,
+          "array_and_point_bytes": 46032
+        },
+        "clipped_outer_surface": {
+          "seconds": 0.054346,
+          "cells": 18474,
+          "points": 9626,
+          "array_and_point_bytes": 337200
+        }
+      },
+      "first_actor_render_seconds": 0.032135,
+      "ten_interactive_updates_seconds": 0.189102,
+      "actor_count_after_repeat": 1,
+      "scalar_bar_count_after_repeat": 1,
+      "active_widget_count_after_repeat": 1,
+      "note": "CPU-side VTK geometry and actor registration only; real OpenGL remains for manual acceptance."
+    },
+    "cancellation": {
+      "benchmark_version": "m11-cancellation-1",
+      "generated_at": "2026-08-31T14:05:34.118590+00:00",
+      "case": "16 radius-60m disks over an 80x80x1 unit grid; cancel after 0.25s",
+      "results": [
+        {
+          "worker_count": 1,
+          "cancel_to_ui_feedback_seconds": 5.7998113334178925e-06,
+          "cancel_to_calculation_stop_seconds": 0.03287080000154674,
+          "cancel_to_all_owned_processes_exit_seconds": 0.03287689993157983,
+          "terminal_state": "cancelled",
+          "thread_alive": false,
+          "remaining_owned_process_ids": []
+        },
+        {
+          "worker_count": 2,
+          "cancel_to_ui_feedback_seconds": 1.0899966582655907e-05,
+          "cancel_to_calculation_stop_seconds": 0.5042485999874771,
+          "cancel_to_all_owned_processes_exit_seconds": 0.5042552999220788,
+          "terminal_state": "cancelled",
+          "thread_alive": false,
+          "remaining_owned_process_ids": []
+        }
+      ]
+    },
+    "cancellation_comparison": {
+      "benchmark_version": "m11-second-voxelization-benchmark-1",
+      "algorithm_version": "m11-second-voxelization-1",
+      "geometry_kernel_version": "analytic-circle-convex-polygon-1",
+      "source_geometry": "synthetic contained horizontal disks; radius=0.1m; 100x100x10 unit grid",
+      "generated_at": "2026-08-31T14:04:04.647630+00:00",
+      "python": "3.14.5",
+      "numpy": "2.5.1",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "logical_cpu_count": 20,
+      "cases": [
+        {
+          "fracture_count": 10000,
+          "worker_count": 4,
+          "elapsed_seconds": 3.2461180998943746,
+          "fractures_per_second": 3080.6026436084967,
+          "average_system_cpu_percent": 11.404561824729893,
+          "rss_before_bytes": 143577088,
+          "rss_after_bytes": 160309248,
+          "parent_peak_working_set_bytes": 160309248,
+          "result_array_bytes": 5530816,
+          "sparse_bytes": 230816,
+          "candidate_pairs": 14427,
+          "positive_pairs": 14426,
+          "candidate_rejection_ratio": 6.931447979482915e-05,
+          "dfnproj_save_seconds": 0.04435810004360974,
+          "dfnproj_reopen_seconds": 0.0165671999566257,
+          "dfnproj_bytes": 753771,
+          "conservation_absolute_error": 0.0
+        }
+      ]
+    }
+  },
+  "completed_scope": [
+    "Analytic circular disk-voxel exact area intersection",
+    "Exact second voxelization",
+    "P32_explicit_intersection + P32_subgrid",
+    "Per-joint-set and all-set results",
+    "Sparse persistence, reopen, and invalidation management",
+    "M11 cloud, orthogonal/arbitrary sections, plane cutaway, and box cutaway",
+    "M11 layer and scalar-bar lifecycle",
+    "Chinese and English interface",
+    "M10 configuration save validation and recovery protection",
+    "M9/M11 opaque finite-value occlusion fixes",
+    "Cooperative fast cancellation",
+    "Windows Python 3.12/3.13 CI and Linux Mesa/Xvfb real VTK rendering tests"
+  ],
+  "not_implemented_scope": [
+    "Fracture-fracture intersection graph",
+    "Connected clusters and boundary-spanning paths",
+    "Flow/percolation and preferential channels",
+    "Block cutting and fragmentation statistics",
+    "Mechanical properties",
+    "Formal 3DEC/PFC export",
+    "Kriging interpolation"
+  ],
+  "scope_warning": "M11.1 is ready for release; its tag and GitHub Release do not yet exist, and the complete M11 milestone is not complete.",
+  "known_issues": [
+    "Historical repository Ruff F/E9 baseline contains 132 findings; it is not newly passing."
+  ],
+  "source_package_directories": {
+    "required": [
+      "src",
+      "tests",
+      "scripts",
+      "benchmarks",
+      "docs",
+      "examples",
+      ".github/workflows"
+    ],
+    "included_optional": [
+      "resources",
+      "sample_data"
+    ],
+    "omitted_optional": []
+  },
+  "changed_files": [
+    ".github/workflows/milestone-review.yml",
+    "CHANGELOG.md",
+    "PROJECT_PLAN.md",
+    "README.md",
+    "ROADMAP.md",
+    "SCIENTIFIC_SPEC.md",
+    "benchmarks/m11_cancellation.json",
+    "benchmarks/m11_cancellation.md",
+    "benchmarks/m11_cloud_visualization.json",
+    "benchmarks/m11_cloud_visualization.md",
+    "benchmarks/m11_second_voxelization.json",
+    "benchmarks/m11_second_voxelization.md",
+    "benchmarks/m11_second_voxelization_cancel_fix.json",
+    "benchmarks/m11_second_voxelization_cancel_fix.md",
+    "docs/USER_MANUAL.md",
+    "docs/index.html",
+    "docs/review/v0.10.1-M10/MILESTONE_REPORT.md",
+    "docs/review/v0.10.1-M10/REVIEW_MANIFEST.json",
+    "docs/review/v0.10.1-M10/TEST_SUMMARY.json",
+    "docs/review/v0.10.1-M10/benchmarks/m10_multiscale_closure_2026-08-27.json",
+    "docs/review/v0.10.1-M10/benchmarks/m10_multiscale_closure_2026-08-27.md",
+    "docs/review/v0.10.1-M10/coverage.xml",
+    "docs/review/v0.10.1-M10/index.html",
+    "docs/review/v0.10.1-M10/junit-core.xml",
+    "docs/review/v0.10.1-M10/junit-gui.xml",
+    "docs/review/v0.10.1-M10/test_results_core.json",
+    "docs/review/v0.10.1-M10/test_results_gui.json",
+    "pyproject.toml",
+    "scripts/benchmark_m11_cancellation.py",
+    "scripts/benchmark_m11_cloud_visualization.py",
+    "scripts/benchmark_m11_second_voxelization.py",
+    "scripts/compile_translations.py",
+    "scripts/extract_translations.py",
+    "scripts/recover_m10_config.py",
+    "src/dfn_cave_studio/__init__.py",
+    "src/dfn_cave_studio/app/__init__.py",
+    "src/dfn_cave_studio/geometry/disk_box.py",
+    "src/dfn_cave_studio/models/m10.py",
+    "src/dfn_cave_studio/models/m11.py",
+    "src/dfn_cave_studio/models/project.py",
+    "src/dfn_cave_studio/persistence/project_store.py",
+    "src/dfn_cave_studio/persistence/zip_project_store.py",
+    "src/dfn_cave_studio/resources/i18n/dfn_cave_studio_zh_CN.qm",
+    "src/dfn_cave_studio/resources/i18n/dfn_cave_studio_zh_CN.ts",
+    "src/dfn_cave_studio/services/m10_config_recovery.py",
+    "src/dfn_cave_studio/services/m10_service.py",
+    "src/dfn_cave_studio/services/m11_service.py",
+    "src/dfn_cave_studio/services/workflow_controller.py",
+    "src/dfn_cave_studio/ui/dialog_geometry.py",
+    "src/dfn_cave_studio/ui/dialogs/joint_set_dialog.py",
+    "src/dfn_cave_studio/ui/dialogs/m10_dialog.py",
+    "src/dfn_cave_studio/ui/dialogs/m11_dialog.py",
+    "src/dfn_cave_studio/ui/dialogs/m7_holdout_dialog.py",
+    "src/dfn_cave_studio/ui/dialogs/m8_spatial_grid_dialog.py",
+    "src/dfn_cave_studio/ui/dialogs/m9_dialogs.py",
+    "src/dfn_cave_studio/ui/i18n.py",
+    "src/dfn_cave_studio/ui/main_window.py",
+    "src/dfn_cave_studio/ui/panels/m11_visualization_panel.py",
+    "src/dfn_cave_studio/ui/panels/m7_workflow_panel.py",
+    "src/dfn_cave_studio/ui/qt_adapter.py",
+    "src/dfn_cave_studio/visualization/m11_layer_manager.py",
+    "src/dfn_cave_studio/visualization/m11_voxel_renderer.py",
+    "src/dfn_cave_studio/visualization/m9_layer_manager.py",
+    "src/dfn_cave_studio/visualization/parameter_field_renderer.py",
+    "src/dfn_cave_studio/visualization/scalar_lut.py",
+    "src/dfn_cave_studio/voxel/second_voxelization.py",
+    "src/dfn_cave_studio/workers/m11_worker.py",
+    "tests/gui/conftest.py",
+    "tests/gui/test_i18n.py",
+    "tests/gui/test_m10_config_validation.py",
+    "tests/gui/test_m11_dialog.py",
+    "tests/gui/test_m11_visualization_panel.py",
+    "tests/gui/test_m9_layer_management.py",
+    "tests/gui/test_m9_release_corrections.py",
+    "tests/gui/test_responsive_m10_m11_dialogs.py",
+    "tests/integration/test_m10_config_integrity.py",
+    "tests/integration/test_m10_persistence_export.py",
+    "tests/integration/test_m11_second_voxelization.py",
+    "tests/integration/test_m9_persistence.py",
+    "tests/scientific/test_m11_opacity_rendering.py",
+    "tests/scientific/test_m11_second_voxelization.py",
+    "tests/scientific/test_m9_opacity_rendering.py",
+    "tests/unit/test_dialog_geometry.py",
+    "tests/unit/test_m10_workflow.py",
+    "tests/unit/test_m11_cancellation.py",
+    "tests/unit/test_m11_cloud_renderer.py",
+    "tests/unit/test_m11_disk_box.py",
+    "tests/unit/test_m11_layer_manager.py",
+    "tests/unit/test_m11_persistence.py",
+    "tests/unit/test_m9_layer_manager.py"
+  ],
+  "source_archive": "dfn-cave-studio-v0.11.0-M11.1-source.zip",
+  "review_archive": "dfn-cave-studio-v0.11.0-M11.1-review.zip"
+}

@@ -1,0 +1,22 @@
+{
+  "benchmark": "m11-interactive-cloud-cpu-no-opengl-2",
+  "python": "3.14.5",
+  "numpy": "2.5.1",
+  "voxel_shape": [69, 50, 47],
+  "voxel_count": 162150,
+  "cases": {
+    "outer_surface_exact": {"seconds": 0.047226, "cells": 18086, "points": 18088, "array_and_point_bytes": 578792},
+    "outer_surface_smooth": {"seconds": 0.039777, "cells": 18086, "points": 18088, "array_and_point_bytes": 578800},
+    "section_x": {"seconds": 0.027041, "cells": 2350, "points": 2448, "array_and_point_bytes": 38776},
+    "section_y": {"seconds": 0.030123, "cells": 3243, "points": 3360, "array_and_point_bytes": 53292},
+    "section_z": {"seconds": 0.030575, "cells": 3450, "points": 3570, "array_and_point_bytes": 56640},
+    "arbitrary_plane": {"seconds": 0.038875, "cells": 4308, "points": 2400, "array_and_point_bytes": 46032},
+    "clipped_outer_surface": {"seconds": 0.054346, "cells": 18474, "points": 9626, "array_and_point_bytes": 337200}
+  },
+  "first_actor_render_seconds": 0.032135,
+  "ten_interactive_updates_seconds": 0.189102,
+  "actor_count_after_repeat": 1,
+  "scalar_bar_count_after_repeat": 1,
+  "active_widget_count_after_repeat": 1,
+  "note": "CPU-side VTK geometry and actor registration only; real OpenGL remains for manual acceptance."
+}

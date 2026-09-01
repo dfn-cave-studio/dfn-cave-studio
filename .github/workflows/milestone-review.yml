@@ -164,14 +164,26 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: test-results-3.12
-          path: .
+          path: ci-results/python-3.12
+
+      - name: Download validated Python 3.13 test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-3.13
+          path: ci-results/python-3.13
+
+      - name: Download validated Linux real-VTK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-real-vtk
+          path: ci-results/real-vtk
 
       - name: Generate review and source packages
         shell: pwsh
         env:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: python scripts/build_review_package.py
+        run: python scripts/build_review_package.py --results-dir ci-results
 
       - name: Verify package outputs
         shell: pwsh

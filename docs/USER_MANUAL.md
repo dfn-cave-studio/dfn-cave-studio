@@ -1,4 +1,12 @@
-# DFN Cave Studio v0.10.1-M10 使用说明书
+# DFN Cave Studio v0.11.0-M11.1 使用说明书
+
+## M11.1 精确第二次体素化（步骤13）
+
+完成并保存M10显式DFN后，打开`M11.1 Exact Second Voxelization`，选择实现并开始计算。软件使用解析圆盘—体素面积求交生成稀疏`fracture_ordinal / voxel_flat_index / intersection_area`记录，并输出全部节理组及单组的`P32_explicit_intersection`、`P32_subgrid`和`P32_total`。取消不会提交部分结果；保存`.dfnproj`后，稀疏结果、数组、守恒诊断和失效状态可重开恢复。
+
+`M11 Visualization`支持体素云图、正交与任意剖面、Plane Cutaway和Box Cutaway。Exact Cell Colours是权威审计显示；Smooth Display仅为显示插值，不修改科学数组。显示图层、色标和交互控件属于session-only状态，不写入项目。
+
+> M11.1当前已准备发布，仅包含精确第二次体素化及其可视化；Tag和GitHub Release尚未创建。裂隙—裂隙求交图、连通簇、边界贯通、渗流通道、块体切割、力学属性、正式3DEC/PFC导出和Kriging尚未实现。
 
 ## M10 显式DFN操作（步骤12）
 
@@ -27,7 +35,7 @@ M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、V
 
 `.dfnproj` 保存 M9 设置、P10/P32、尺寸模型、压缩参数场数组、Validation结果，以及M10配置、实现质量报告和压缩显式裂隙几何。
 
-> 适用版本：v0.10.1-M10（M10发布打包补丁、等待发布）
+> 适用版本：v0.11.0-M11.1（M11.1 Exact Second Voxelization）
 > 文档语言：简体中文
 > 适用平台：当前以 Windows 源代码运行环境为主
 
@@ -35,7 +43,7 @@ M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、V
 
 DFN Cave Studio 是面向地下矿山与岩体裂隙研究的离散裂隙网络（DFN）建模软件。
 
-当前 v0.10.1-M10 包含完整 M8/M9 基础、裂隙方位角缺失时的科学降级处理，以及可复现的条件显式DFN生成、管理、保存和基础导出：
+当前 v0.11.0-M11.1 包含完整 M8/M9/M10 基础，以及解析圆盘—体素求交、第二次体素化、稀疏保存、P32云图/剖面/Cutaway、快速取消和中英文界面。它不代表完整M11已经完成：
 
 ## 裂隙方向完整性
 
