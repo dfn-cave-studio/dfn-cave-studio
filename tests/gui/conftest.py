@@ -11,7 +11,7 @@ import os
 
 def pytest_configure(config):
     """Force offscreen rendering for all GUI tests."""
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     import sys
     from pathlib import Path
     src_dir = str(Path(__file__).parent.parent.parent / "src")

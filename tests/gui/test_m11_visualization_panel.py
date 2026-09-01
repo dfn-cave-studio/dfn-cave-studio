@@ -347,6 +347,7 @@ def test_reset_box_to_authoritative_domain_ten_times_keeps_one_synchronized_live
     assert store.is_dirty is dirty_before
 
 
+@pytest.mark.real_vtk_render
 def test_real_vtk_box_events_preview_continuously_then_snap_on_end(qtbot) -> None:
     """Exercise real vtkBoxWidget events; mouse picking remains manual QA."""
     project, workflow = _project_and_workflow()

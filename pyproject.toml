@@ -79,6 +79,7 @@ markers = [
     "slow: Slow tests (>5s)",
     "performance: Performance benchmarks",
     "vtk_render: Tests that require real VTK/OpenGL rendering (not run on headless CI)",
+    "real_vtk_render: Real VTK/OpenGL pixel or widget rendering tests; run under Linux Mesa/Xvfb CI",
 ]
 
 [tool.coverage.run]

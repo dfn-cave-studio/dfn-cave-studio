@@ -17,6 +17,8 @@ from dfn_cave_studio.visualization.m11_voxel_renderer import M11DisplayConfig, M
 from dfn_cave_studio.visualization.parameter_field_renderer import ParameterFieldRenderer
 from dfn_cave_studio.voxel.parameter_field import CELL_STATE_CODES
 
+pytestmark = pytest.mark.real_vtk_render
+
 
 def _metadata(z: float) -> ParameterFieldMetadata:
     return ParameterFieldMetadata(

@@ -46,6 +46,7 @@ jobs:
           PYTHONPATH: src
         run: |
           pytest tests/unit/ tests/integration/ tests/scientific/ tests/end_to_end/ `
+            -m "not real_vtk_render" `
             -v --tb=short `
             --json-report --json-report-file=test_results_core.json `
             --cov=src/dfn_cave_studio `
@@ -60,6 +61,7 @@ jobs:
           PYTHONPATH: src
         run: |
           pytest tests/gui/ `
+            -m "not real_vtk_render" `
             -v --tb=short `
             --json-report --json-report-file=test_results_gui.json `
             --cov=src/dfn_cave_studio `
@@ -89,10 +91,64 @@ jobs:
             test_results_*.json
             junit-*.xml
 
+  real-vtk-render:
+    name: Real VTK rendering (Linux Mesa/Xvfb)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Mesa, Xvfb, and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            xvfb \
+            xauth \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            libegl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            mesa-utils
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov pytest-json-report pytest-qt pytest-timeout
+
+      - name: Run real VTK pixel and widget tests with software OpenGL
+        env:
+          PYTHONPATH: src
+          PYVISTA_OFF_SCREEN: 'true'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: xcb
+        run: |
+          xvfb-run -a -s "-screen 0 1280x1024x24" \
+            pytest tests/ \
+              -m real_vtk_render \
+              -v --tb=short \
+              --timeout=180 \
+              --json-report --json-report-file=test_results_real_vtk.json \
+              --junitxml=junit-real-vtk.xml
+
+      - name: Upload real VTK test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-real-vtk
+          path: |
+            test_results_real_vtk.json
+            junit-real-vtk.xml
+
   review-package:
     name: Build Review Package
     runs-on: windows-latest
-    needs: [test]
+    needs: [test, real-vtk-render]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
