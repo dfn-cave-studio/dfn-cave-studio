@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from PySide6.QtWidgets import QApplication
+    from dfn_cave_studio.ui.qt_adapter import QApplication
 
 
 def setup_environment() -> None:
@@ -22,12 +22,11 @@ def main() -> None:
     """Main entry point for DFN Cave Studio."""
     setup_environment()
 
-    from PySide6.QtWidgets import QApplication
-    from PySide6.QtCore import Qt, QCoreApplication
+    from dfn_cave_studio.ui.qt_adapter import QApplication, QCoreApplication, Qt
 
     # Application metadata
     QCoreApplication.setApplicationName("DFN Cave Studio")
-    QCoreApplication.setApplicationVersion("0.10.1")
+    QCoreApplication.setApplicationVersion("0.11.0")
     QCoreApplication.setOrganizationName("DFNCaveStudio")
 
     # High DPI support
@@ -36,6 +35,10 @@ def main() -> None:
     )
 
     app = QApplication(sys.argv)
+
+    from dfn_cave_studio.ui.i18n import install_language_manager
+
+    install_language_manager(app)
 
     # Apply stylesheet
     _apply_stylesheet(app)

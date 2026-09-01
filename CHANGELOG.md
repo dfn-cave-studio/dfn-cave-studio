@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0-M11] — Unreleased (M11.1 development)
+
+- Added exact analytic circular disk/AABB intersection areas without fixed-sided disk approximation.
+- Added deterministic sparse second voxelization and intersection-derived per-set/aggregate P32.
+- Preserved `P32_subgrid` in `P32_total` while keeping unresolved-orientation P32 separate.
+- Added half-open shared-face ownership, conservation diagnostics, background cancellation, persistence, and P32 slice/voxel inspection.
+- Fracture-fracture connectivity, percolation, block analysis, mechanics, and external simulator export are not implemented in M11.1.
+
 ## [0.10.1-M10] — 2026-08-28
 
 This is the formally published M10 release.

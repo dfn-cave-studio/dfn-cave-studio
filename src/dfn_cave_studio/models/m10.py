@@ -55,12 +55,18 @@ class M10GenerationConfig(BaseModel):
         """Validate resolution thresholds without silently changing user input."""
         if self.size_threshold_mode == "auto":
             if not 0.0 < self.small_area_share < self.medium_large_cumulative_share < 1.0:
-                raise ValueError("Auto shares require 0 < small share < cumulative medium/large share < 1")
+                raise ValueError(
+                    "Auto shares require 0 < small_area_share < "
+                    "medium_large_cumulative_share < 1"
+                )
         elif not (
             self.manual_small_medium_radius >= 0.0
             and self.manual_small_medium_radius < self.manual_medium_large_radius
         ):
-            raise ValueError("Manual thresholds require 0 <= r_sm < r_ml")
+            raise ValueError(
+                "Manual thresholds require 0 <= manual_small_medium_radius < "
+                "manual_medium_large_radius"
+            )
         if len(set(self.enabled_size_classes)) != len(self.enabled_size_classes):
             raise ValueError("enabled_size_classes must not contain duplicates")
         return self

@@ -1,7 +1,7 @@
 """Unit regressions for the session-only M9 slice registry."""
 
-from dfn_cave_studio.visualization.m9_layer_manager import M9LayerManager
 from dfn_cave_studio.models.m9 import DensityMethod, ParameterFieldMetadata
+from dfn_cave_studio.visualization.m9_layer_manager import M9LayerManager
 from dfn_cave_studio.visualization.parameter_field_renderer import ParameterFieldRenderer
 
 
@@ -18,6 +18,7 @@ class _Actor:
         self.name = name
         self.visible = True
         self.property = _Property()
+        self.mapper = object()
 
     def SetVisibility(self, visible: bool) -> None:
         self.visible = visible
@@ -26,9 +27,22 @@ class _Actor:
         return self.property
 
 
+class _ScalarBar:
+    def __init__(self) -> None:
+        self.visible = True
+        self.title = ""
+
+    def SetVisibility(self, visible: bool) -> None:
+        self.visible = bool(visible)
+
+    def SetTitle(self, title: str) -> None:
+        self.title = str(title)
+
+
 class _Plotter:
     def __init__(self) -> None:
         self.actors: list[_Actor] = []
+        self.scalar_bars: dict[str, _ScalarBar] = {}
         self.render_count = 0
 
     def remove_actor(self, actor: _Actor, render: bool = True) -> None:
@@ -39,6 +53,16 @@ class _Plotter:
 
     def render(self) -> None:
         self.render_count += 1
+
+    def add_scalar_bar(self, *, title, mapper, render=False):
+        del mapper, render
+        actor = _ScalarBar()
+        self.scalar_bars[title] = actor
+        return actor
+
+    def remove_scalar_bar(self, *, title, render=False) -> None:
+        del render
+        self.scalar_bars.pop(title, None)
 
 
 def _add(manager: M9LayerManager, layer_id: str, actor: _Actor, opacity: float = 0.8) -> None:
@@ -125,3 +149,38 @@ def test_slice_location_and_actor_name_are_stable() -> None:
     )
     assert ParameterFieldRenderer.slice_location(metadata, "z", 0.5) == (2, 40.0)
     assert ParameterFieldRenderer.layer_id("p32_set_1", "z", 2) == "m9_slice:p32_set_1:z:2"
+
+
+def test_shared_m9_scalar_bar_is_removed_only_after_last_layer() -> None:
+    plotter = _Plotter()
+    manager = M9LayerManager(plotter)
+    scalar_bar_id = manager.scalar_bar_id("p32_total")
+    first = _Actor("first")
+    second = _Actor("second")
+    scalar_bar = manager.create_or_get_scalar_bar(scalar_bar_id, "P32 total", first)
+    for layer_id, actor, index in (
+        ("m9_slice:p32_total:z:0", first, 0),
+        ("m9_slice:p32_total:z:1", second, 1),
+    ):
+        plotter.actors.append(actor)
+        manager.add_or_replace(
+            layer_id,
+            actor,
+            field_name="p32_total",
+            axis="z",
+            slice_index=index,
+            coordinate=float(index),
+            opacity=1.0,
+            scalar_bar_id=scalar_bar_id,
+            scalar_bar_actor=scalar_bar,
+        )
+    assert manager.set_visible("m9_slice:p32_total:z:0", False)
+    assert scalar_bar.visible
+    assert manager.set_visible("m9_slice:p32_total:z:1", False)
+    assert not scalar_bar.visible
+    assert manager.set_visible("m9_slice:p32_total:z:0", True)
+    assert scalar_bar.visible
+    assert manager.remove("m9_slice:p32_total:z:0")
+    assert scalar_bar_id in plotter.scalar_bars
+    assert manager.remove("m9_slice:p32_total:z:1")
+    assert scalar_bar_id not in plotter.scalar_bars

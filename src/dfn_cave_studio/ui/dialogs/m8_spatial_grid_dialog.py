@@ -94,7 +94,8 @@ class M8SpatialGridDialog(QDialog):
         self._opacity.setSingleStep(0.05)
         form.addRow("Grid-line opacity:", self._opacity)
         self._slice_axis = QComboBox()
-        self._slice_axis.addItems(["x", "y", "z"])
+        for axis in "xyz":
+            self._slice_axis.addItem(axis.upper(), axis)
         self._slice_axis.setCurrentText("z")
         form.addRow("Preview slice axis:", self._slice_axis)
         self._slice_percent = QSpinBox()
@@ -150,7 +151,7 @@ class M8SpatialGridDialog(QDialog):
             self._slice_percent.setValue(round(config.preview_slice_fraction * 100))
         self._loaded_preview_values = (
             self._opacity.value(),
-            self._slice_axis.currentText(),
+            self._slice_axis.currentData(),
             self._slice_percent.value() / 100.0,
         )
         self._loaded_preview_persisted = (
@@ -237,7 +238,7 @@ class M8SpatialGridDialog(QDialog):
             self._project.borehole_collection,
             opacity=self._opacity.value(),
             show_sampled_wireframe=self._wireframe.isChecked(),
-            slice_axis=self._slice_axis.currentText(),
+            slice_axis=self._slice_axis.currentData(),
             slice_fraction=self._slice_percent.value() / 100.0,
         )
 
@@ -269,7 +270,7 @@ class M8SpatialGridDialog(QDialog):
             )
             preview_values = (
                 self._opacity.value(),
-                self._slice_axis.currentText(),
+                self._slice_axis.currentData(),
                 self._slice_percent.value() / 100.0,
             )
             if preview_values == self._loaded_preview_values:

@@ -91,6 +91,12 @@ spanning paths; independently validate on held-out holes, quantify multi-realiza
 uncertainty, assign mechanical properties, and export 3DEC, PFC, VTK, CSV, and
 ML-ready voxel input/output datasets with full provenance.
 
+M11.1 implements only the first work package: analytic circular disk/AABB
+intersection area, sparse fracture-voxel pairs, intersection-derived explicit
+P32, combination with M10 subgrid P32, conservation diagnostics, background
+execution, persistence, and slice inspection. Connectivity and every later M11
+work package remain explicitly unimplemented.
+
 ## M12 — v1.0.0-M12
 
 Implement explicit block cutting, block statistics and D20/D50/D80 curves,

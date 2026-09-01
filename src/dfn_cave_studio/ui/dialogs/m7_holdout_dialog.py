@@ -48,7 +48,9 @@ class M7HoldoutDialog(QDialog):
         method_group = QGroupBox("Selection Method")
         mf = QFormLayout(method_group)
         self._method_combo = QComboBox()
-        self._method_combo.addItems(["Manual selection", "Random (fixed seed)", "Stratified by domain"])
+        self._method_combo.addItem("Manual selection", "manual")
+        self._method_combo.addItem("Random (fixed seed)", "random")
+        self._method_combo.addItem("Stratified by domain", "stratified")
         self._method_combo.currentIndexChanged.connect(self._on_method_changed)
         mf.addRow("Method:", self._method_combo)
 
@@ -114,15 +116,16 @@ class M7HoldoutDialog(QDialog):
             self._bh_list.addItem(item)
 
     def _on_method_changed(self, idx):
-        if idx == 0:  # Manual
+        method = self._method_combo.itemData(idx)
+        if method == "manual":
             self._fraction_spin.setEnabled(False)
             self._seed_spin.setEnabled(False)
         else:
             self._fraction_spin.setEnabled(True)
             self._seed_spin.setEnabled(True)
-            if idx == 1:  # Random
+            if method == "random":
                 self._apply_random()
-            elif idx == 2:  # Stratified
+            elif method == "stratified":
                 self._apply_stratified()
 
     def _mark_selected(self, role: HoldoutRole):
@@ -174,11 +177,11 @@ class M7HoldoutDialog(QDialog):
             self._seed_spin.setValue(cfg.random_seed)
         self._fraction_spin.setValue(cfg.validation_fraction)
         # Restore method without re-running a selection algorithm.
-        method_map = {"manual": 0, "random": 1, "stratified": 2}
         self._method_combo.blockSignals(True)
-        self._method_combo.setCurrentIndex(method_map.get(cfg.method, 0))
+        restored_index = self._method_combo.findData(cfg.method)
+        self._method_combo.setCurrentIndex(restored_index if restored_index >= 0 else 0)
         self._method_combo.blockSignals(False)
-        is_manual = self._method_combo.currentIndex() == 0
+        is_manual = self._method_combo.currentData() == "manual"
         self._fraction_spin.setEnabled(not is_manual)
         self._seed_spin.setEnabled(not is_manual)
         # Restore locked state

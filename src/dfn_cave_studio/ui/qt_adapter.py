@@ -9,6 +9,9 @@ Usage:
     from dfn_cave_studio.ui.qt_adapter import QtWidgets, QtCore, QtGui
 """
 
+# The adapter intentionally re-exports a broad Qt surface for UI modules.
+# ruff: noqa: F401
+
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import (
     Qt,
@@ -28,6 +31,11 @@ from PySide6.QtCore import (
     QAbstractTableModel,
     QAbstractListModel,
     QSettings,
+    QCoreApplication,
+    QTranslator,
+    QLocale,
+    QLibraryInfo,
+    QEvent,
     QDir,
     QFile,
     QFileInfo,
@@ -37,6 +45,7 @@ from PySide6.QtCore import (
     QTime,
     QProcess,
     Property,
+    QSignalBlocker,
 )
 
 from PySide6.QtGui import (
@@ -119,7 +128,6 @@ from PySide6.QtWidgets import (
     QWizard,
     QWizardPage,
     QSystemTrayIcon,
-    QMenu,
     QDialogButtonBox,
 )
 
@@ -146,12 +154,18 @@ __all__ = [
     "QMutex",
     "QWaitCondition",
     "QSize",
+    "QSignalBlocker",
     "QPoint",
     "QRect",
     "QModelIndex",
     "QAbstractTableModel",
     "QAbstractListModel",
     "QSettings",
+    "QCoreApplication",
+    "QTranslator",
+    "QLocale",
+    "QLibraryInfo",
+    "QEvent",
     "QDir",
     "QFile",
     "QFileInfo",
@@ -181,6 +195,7 @@ __all__ = [
     "QCheckBox",
     "QSpinBox",
     "QDoubleSpinBox",
+    "QSlider",
     "QTabWidget",
     "QStackedWidget",
     "QDockWidget",

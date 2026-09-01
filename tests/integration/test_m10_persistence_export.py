@@ -222,7 +222,7 @@ def test_v091_project_schema_migrates_to_empty_m10_state():
     old["schema_version"] = 3
     old.pop("m10_state", None)
     migrated = Project.from_dict(old)
-    assert migrated.schema_version == 4
+    assert migrated.schema_version == 5
     assert migrated.m10_state.realizations == []
 
 

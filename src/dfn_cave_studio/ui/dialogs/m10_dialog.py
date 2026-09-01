@@ -6,11 +6,11 @@ from pathlib import Path
 
 from dfn_cave_studio.models.m10 import M10FractureSource, M10GenerationConfig
 from dfn_cave_studio.services.m10_service import M10Service
+from dfn_cave_studio.ui.dialog_geometry import fit_dialog_to_screen
 from dfn_cave_studio.ui.qt_adapter import (
-    Qt,
     QCheckBox,
-    QComboBox,
     QColorDialog,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -22,14 +22,39 @@ from dfn_cave_studio.ui.qt_adapter import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
+    QSize,
     QSpinBox,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QThreadPool,
     QTimer,
     QVBoxLayout,
+    QWidget,
 )
 from dfn_cave_studio.workers.m10_worker import M10GenerationWorker
+
+
+class _NoWheelSpinBox(QSpinBox):
+    """Keep scroll-wheel gestures available to the containing scroll area."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+class _NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """Prevent accidental scientific-parameter changes while scrolling."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+class _NoWheelComboBox(QComboBox):
+    """Prevent wheel-only changes to stable business values."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 class M10ExplicitDFNDialog(QDialog):
@@ -48,15 +73,22 @@ class M10ExplicitDFNDialog(QDialog):
         self._layer_color = "#1976d2"
         self._hidden_size_classes: set[int] = set()
         self.setWindowTitle("M10 Explicit DFN Generation")
-        self.resize(1050, 720)
         self._build_ui()
+        self.setMinimumSize(620, 420)
+        fit_dialog_to_screen(self, QSize(1050, 720))
         self._restore_config()
         self._refresh_realizations()
         self._refresh_layers()
         self._refresh_estimate()
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        layout = QVBoxLayout(scroll_content)
+        scroll.setWidget(scroll_content)
+        outer.addWidget(scroll, 1)
         notice = QLabel(
             "Generates explicit fracture geometry from the M9 target parameter field. "
             "Size thresholds are numerical modelling resolution recommendations, not fixed geological standards. "
@@ -69,32 +101,34 @@ class M10ExplicitDFNDialog(QDialog):
 
         config_group = QGroupBox("Generation Configuration")
         form = QFormLayout(config_group)
-        self.base_seed = QSpinBox()
+        self.base_seed = _NoWheelSpinBox()
         self.base_seed.setRange(-2_147_483_648, 2_147_483_647)
-        self.realization_count = QSpinBox()
+        self.realization_count = _NoWheelSpinBox()
         self.realization_count.setRange(1, 100)
-        self.worker_count = QComboBox()
-        self.worker_count.addItems(["1", "2", "4", "8"])
+        self.worker_count = _NoWheelComboBox()
+        for worker_count in (1, 2, 4, 8):
+            self.worker_count.addItem(str(worker_count), worker_count)
         self.condition_observations = QCheckBox("Condition Calibration FULL_ORIENTATION observations")
         self.deterministic_budget = QCheckBox("Deduct deterministic structures from random P32 budget when set_id is supplied")
         self.retain_outside_deterministic = QCheckBox("Still retain deterministic discs fully outside Generation Domain")
         self.experimental_confirmed = QCheckBox("I confirm use of EXPERIMENTAL size models")
         self.validation_ack = QCheckBox("I acknowledge Validation warnings and choose to continue")
-        self.threshold_mode = QComboBox()
-        self.threshold_mode.addItems(["Auto", "Manual"])
+        self.threshold_mode = _NoWheelComboBox()
+        self.threshold_mode.addItem("Auto", "auto")
+        self.threshold_mode.addItem("Manual", "manual")
         self.generate_large = QCheckBox("Generate LARGE")
         self.generate_medium = QCheckBox("Generate MEDIUM")
         self.generate_small = QCheckBox("Generate SMALL")
-        self.small_area_share = QDoubleSpinBox()
+        self.small_area_share = _NoWheelDoubleSpinBox()
         self.small_area_share.setRange(0.001, 0.998)
         self.small_area_share.setDecimals(3)
-        self.medium_large_share = QDoubleSpinBox()
+        self.medium_large_share = _NoWheelDoubleSpinBox()
         self.medium_large_share.setRange(0.002, 0.999)
         self.medium_large_share.setDecimals(3)
-        self.manual_sm = QDoubleSpinBox()
+        self.manual_sm = _NoWheelDoubleSpinBox()
         self.manual_sm.setRange(0.0, 1e9)
         self.manual_sm.setSuffix(" m")
-        self.manual_ml = QDoubleSpinBox()
+        self.manual_ml = _NoWheelDoubleSpinBox()
         self.manual_ml.setRange(0.001, 1e9)
         self.manual_ml.setSuffix(" m")
         self.restore_threshold_defaults = QPushButton("Restore Recommended Defaults")
@@ -129,14 +163,11 @@ class M10ExplicitDFNDialog(QDialog):
         estimate_row.addWidget(self.estimate_label, 1)
         estimate_row.addWidget(self.estimate_button)
         estimate_row.addWidget(self.import_structures_button)
-        estimate_row.addWidget(self.generate_button)
         layout.addLayout(estimate_row)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         self.status_label = QLabel("")
-        layout.addWidget(self.progress)
-        layout.addWidget(self.status_label)
 
         self.realizations_table = QTableWidget(0, 10)
         self.realizations_table.setHorizontalHeaderLabels(
@@ -147,10 +178,15 @@ class M10ExplicitDFNDialog(QDialog):
 
         realization_actions = QHBoxLayout()
         self.render_all_button = QPushButton("All Fractures – LOD")
-        self.color_by = QComboBox()
-        self.color_by.addItems(["Joint Set", "Domain", "Source", "Size Class"])
-        self.display_size_class = QComboBox()
-        self.display_size_class.addItems(["SMALL", "MEDIUM", "LARGE"])
+        self.color_by = _NoWheelComboBox()
+        self.color_by.addItem("Joint Set", "joint_set")
+        self.color_by.addItem("Domain", "domain")
+        self.color_by.addItem("Source", "source")
+        self.color_by.addItem("Size Class", "size_class")
+        self.display_size_class = _NoWheelComboBox()
+        self.display_size_class.addItem("SMALL", 1)
+        self.display_size_class.addItem("MEDIUM", 2)
+        self.display_size_class.addItem("LARGE", 3)
         self.toggle_size_class_button = QPushButton("Show/Hide Size Class")
         self.render_exact_button = QPushButton("Exact Geometry (selected, max 100k)")
         self.render_set_button = QPushButton("Render Selected by Set")
@@ -179,7 +215,7 @@ class M10ExplicitDFNDialog(QDialog):
         layout.addWidget(self.legend_label)
         layer_actions = QHBoxLayout()
         self.toggle_button = QPushButton("Show/Hide Selected")
-        self.opacity = QDoubleSpinBox()
+        self.opacity = _NoWheelDoubleSpinBox()
         self.opacity.setRange(0.0, 1.0)
         self.opacity.setSingleStep(0.1)
         self.opacity.setValue(0.7)
@@ -193,7 +229,16 @@ class M10ExplicitDFNDialog(QDialog):
         layout.addLayout(layer_actions)
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        layout.addWidget(self.buttons)
+        fixed_status = QVBoxLayout()
+        fixed_status.addWidget(self.progress)
+        self.status_label.setWordWrap(True)
+        fixed_status.addWidget(self.status_label)
+        fixed_actions = QHBoxLayout()
+        fixed_actions.addStretch(1)
+        fixed_actions.addWidget(self.generate_button)
+        fixed_actions.addWidget(self.buttons)
+        fixed_status.addLayout(fixed_actions)
+        outer.addLayout(fixed_status)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         self.estimate_button.clicked.connect(self._refresh_estimate)
@@ -232,13 +277,13 @@ class M10ExplicitDFNDialog(QDialog):
         config = self.project.m10_state.config
         self.base_seed.setValue(config.base_seed)
         self.realization_count.setValue(config.realization_count)
-        self.worker_count.setCurrentText(str(config.worker_count))
+        self.worker_count.setCurrentIndex(self.worker_count.findData(config.worker_count))
         self.condition_observations.setChecked(config.condition_calibration_observations)
         self.deterministic_budget.setChecked(config.deterministic_structures_reduce_budget)
         self.retain_outside_deterministic.setChecked(config.retain_outside_deterministic)
         self.experimental_confirmed.setChecked(config.experimental_size_models_confirmed)
         self.validation_ack.setChecked(config.validation_warning_acknowledged)
-        self.threshold_mode.setCurrentText(config.size_threshold_mode.title())
+        self.threshold_mode.setCurrentIndex(self.threshold_mode.findData(config.size_threshold_mode))
         self.small_area_share.setValue(config.small_area_share)
         self.medium_large_share.setValue(config.medium_large_cumulative_share)
         self.manual_sm.setValue(config.manual_small_medium_radius)
@@ -251,17 +296,18 @@ class M10ExplicitDFNDialog(QDialog):
 
     def _config(self) -> M10GenerationConfig:
         old = self.project.m10_state.config
-        return old.model_copy(
-            update={
+        candidate = old.model_dump(mode="python")
+        candidate.update(
+            {
                 "base_seed": self.base_seed.value(),
                 "realization_count": self.realization_count.value(),
-                "worker_count": int(self.worker_count.currentText()),
+                "worker_count": int(self.worker_count.currentData()),
                 "condition_calibration_observations": self.condition_observations.isChecked(),
                 "deterministic_structures_reduce_budget": self.deterministic_budget.isChecked(),
                 "retain_outside_deterministic": self.retain_outside_deterministic.isChecked(),
                 "experimental_size_models_confirmed": self.experimental_confirmed.isChecked(),
                 "validation_warning_acknowledged": self.validation_ack.isChecked(),
-                "size_threshold_mode": self.threshold_mode.currentText().lower(),
+                "size_threshold_mode": str(self.threshold_mode.currentData()),
                 "small_area_share": self.small_area_share.value(),
                 "medium_large_cumulative_share": self.medium_large_share.value(),
                 "manual_small_medium_radius": self.manual_sm.value(),
@@ -272,9 +318,10 @@ class M10ExplicitDFNDialog(QDialog):
                 ],
             }
         )
+        return M10GenerationConfig.model_validate(candidate)
 
     def _restore_threshold_recommendations(self) -> None:
-        self.threshold_mode.setCurrentText("Auto")
+        self.threshold_mode.setCurrentIndex(self.threshold_mode.findData("auto"))
         self.small_area_share.setValue(0.10)
         self.medium_large_share.setValue(0.70)
         self.generate_small.setChecked(False)
@@ -284,7 +331,7 @@ class M10ExplicitDFNDialog(QDialog):
         self._estimate_timer.start()
 
     def _update_threshold_controls(self) -> None:
-        auto = self.threshold_mode.currentText() == "Auto"
+        auto = self.threshold_mode.currentData() == "auto"
         self.small_area_share.setEnabled(auto)
         self.medium_large_share.setEnabled(auto)
         self.manual_sm.setEnabled(not auto)
@@ -349,7 +396,12 @@ class M10ExplicitDFNDialog(QDialog):
     def _generate(self) -> None:
         if self._worker is not None:
             return
-        config = self._config()
+        try:
+            config = self._config()
+        except Exception as exc:
+            QMessageBox.warning(self, self.tr("Invalid M10 Configuration"), str(exc))
+            self.status_label.setText(self.tr("Configuration is invalid; project settings were not changed."))
+            return
         old = self.project.m10_state.deterministic_structures
         self.project.m10_state.deterministic_structures = self._pending_structures
         errors = self.service.validate_readiness(config)
@@ -379,6 +431,9 @@ class M10ExplicitDFNDialog(QDialog):
         QThreadPool.globalInstance().start(self._worker)
 
     def _set_running(self, running: bool) -> None:
+        from dfn_cave_studio.ui.i18n import language_manager
+
+        language_manager().set_busy(f"m10-generation-{id(self)}", running)
         self.progress.setVisible(running)
         self.generate_button.setEnabled(not running)
         self.import_structures_button.setEnabled(not running)
@@ -434,7 +489,12 @@ class M10ExplicitDFNDialog(QDialog):
         if realization is None or self.layer_manager is None:
             return
         try:
-            mode = self.color_by.currentText()
+            mode = {
+                "joint_set": "Joint Set",
+                "domain": "Domain",
+                "source": "Source",
+                "size_class": "Size Class",
+            }[self.color_by.currentData()]
             self.layer_manager.clear_realization(realization.realization_id)
             self.layer_manager.render_realization(
                 realization, opacity=self.opacity.value(), color=self._layer_color,
@@ -486,7 +546,7 @@ class M10ExplicitDFNDialog(QDialog):
         self._refresh_layers()
 
     def _toggle_size_class(self) -> None:
-        code = {"SMALL": 1, "MEDIUM": 2, "LARGE": 3}[self.display_size_class.currentText()]
+        code = int(self.display_size_class.currentData())
         if code in self._hidden_size_classes:
             self._hidden_size_classes.remove(code)
         else:
@@ -595,7 +655,12 @@ class M10ExplicitDFNDialog(QDialog):
     def accept(self) -> None:
         if self._worker is not None:
             return
-        config = self._config()
+        try:
+            config = self._config()
+        except Exception as exc:
+            QMessageBox.warning(self, self.tr("Invalid M10 Configuration"), str(exc))
+            self.status_label.setText(self.tr("Configuration is invalid; project settings were not changed."))
+            return
         config_changed = config != self.project.m10_state.config
         changed = (
             self._pending_realizations is not None
@@ -607,7 +672,7 @@ class M10ExplicitDFNDialog(QDialog):
             self.service.commit_realizations(config, self._pending_realizations, replace=True)
         elif self._pending_structures != self.project.m10_state.deterministic_structures or config_changed:
             self.project.m10_state.deterministic_structures = list(self._pending_structures)
-            self.project.m10_state.config = config
+            self.service.commit_config(config)
         self.committed_changes = changed
         if self.project.m10_state.realizations:
             self.workflow.complete_step("explicit_dfn")

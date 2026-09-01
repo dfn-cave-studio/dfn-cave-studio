@@ -59,8 +59,9 @@ def _install_fake_slice_render(monkeypatch) -> None:
         opacity=1.0,
         cmap="viridis",
         actor_name=None,
+        show_scalar_bar=True,
     ):
-        del self, metadata, arrays, field_name, axis, fraction, cmap
+        del self, metadata, arrays, field_name, axis, fraction, cmap, show_scalar_bar
         return plotter.add_mesh(object(), name=actor_name, opacity=opacity)
 
     monkeypatch.setattr(ParameterFieldRenderer, "render_slice", render_slice)

@@ -9,22 +9,22 @@ import numpy as np
 from dfn_cave_studio.models.m9 import DensityMethod, DensitySettings
 from dfn_cave_studio.services.m9_service import M9Service
 from dfn_cave_studio.ui.qt_adapter import (
-    Qt,
-    QComboBox,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
-    QHeaderView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QSpinBox,
+    Qt,
     QTableWidget,
     QTableWidgetItem,
     QThreadPool,
@@ -72,18 +72,20 @@ class M9DensityDialog(_M9Dialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.interval_mode = QComboBox()
-        self.interval_mode.addItems(["fixed", "domain"])
+        self.interval_mode.addItem("Fixed length", "fixed")
+        self.interval_mode.addItem("Domain intervals", "domain")
         self.interval_length = QDoubleSpinBox()
         self.interval_length.setRange(0.1, 10000)
         self.interval_length.setValue(project.m9_state.density_settings.interval_length)
         self.method = QComboBox()
-        self.method.addItems([DensityMethod.GLOBAL_CONSTANT.value, DensityMethod.IDW.value])
+        self.method.addItem("Global constant", DensityMethod.GLOBAL_CONSTANT.value)
+        self.method.addItem("IDW", DensityMethod.IDW.value)
         self.seed = QSpinBox()
         self.seed.setRange(0, 2_147_483_647)
         self.seed.setValue(project.m9_state.random_seed)
         current = project.m9_state.density_settings
-        self.interval_mode.setCurrentText(current.interval_mode)
-        self.method.setCurrentText(current.method.value)
+        self.interval_mode.setCurrentIndex(self.interval_mode.findData(current.interval_mode))
+        self.method.setCurrentIndex(self.method.findData(current.method.value))
         self.power = QDoubleSpinBox(); self.power.setRange(0.1, 10); self.power.setValue(current.power)
         self.radius = QDoubleSpinBox(); self.radius.setRange(0, 1e9); self.radius.setSpecialValueText("Unlimited"); self.radius.setValue(current.search_radius or 0)
         self.min_neighbors = QSpinBox(); self.min_neighbors.setRange(1, 1000); self.min_neighbors.setValue(current.min_neighbors)
@@ -144,9 +146,9 @@ class M9DensityDialog(_M9Dialog):
     def _calculate(self) -> None:
         try:
             settings = DensitySettings(
-                interval_mode=self.interval_mode.currentText(),
+                interval_mode=self.interval_mode.currentData(),
                 interval_length=self.interval_length.value(),
-                method=self.method.currentText(),
+                method=self.method.currentData(),
                 power=self.power.value(),
                 search_radius=self.radius.value() or None,
                 min_neighbors=self.min_neighbors.value(),
@@ -241,17 +243,22 @@ class M9SizeDialog(_M9Dialog):
         limitation.setWordWrap(True)
         layout.addWidget(limitation)
         fit_row = QHBoxLayout()
-        self.measurement_field = QComboBox(); self.measurement_field.addItems(["radius", "diameter", "trace_length", "mapped_length"])
+        self.measurement_field = QComboBox()
+        for value in ("radius", "diameter", "trace_length", "mapped_length"):
+            self.measurement_field.addItem(value, value)
         self.fit_button = QPushButton("Fit real calibration measurements")
         self.fit_button.clicked.connect(self._fit)
         fit_row.addWidget(self.measurement_field); fit_row.addWidget(self.fit_button)
         layout.addLayout(fit_row)
         row = QHBoxLayout()
         self.distribution = QComboBox()
-        self.distribution.addItems(["fixed", "uniform", "truncated_lognormal", "truncated_power_law", "truncated_exponential"])
+        for value in ("fixed", "uniform", "truncated_lognormal", "truncated_power_law", "truncated_exponential"):
+            self.distribution.addItem(value, value)
         self.lower = QDoubleSpinBox(); self.lower.setRange(0.0001, 1e6); self.lower.setValue(1.0)
         self.upper = QDoubleSpinBox(); self.upper.setRange(0.0001, 1e6); self.upper.setValue(5.0)
-        self.manual_source = QComboBox(); self.manual_source.addItems(["user_defined", "assumed"])
+        self.manual_source = QComboBox()
+        self.manual_source.addItem("User defined", "user_defined")
+        self.manual_source.addItem("Assumed", "assumed")
         row.addWidget(self.distribution); row.addWidget(self.lower); row.addWidget(self.upper); row.addWidget(self.manual_source)
         layout.addLayout(row)
         self.apply_button = QPushButton("Apply user-defined size model")
@@ -263,7 +270,7 @@ class M9SizeDialog(_M9Dialog):
         self._refresh()
 
     def _apply(self) -> None:
-        dtype = self.distribution.currentText()
+        dtype = self.distribution.currentData()
         lower, upper = self.lower.value(), self.upper.value()
         if upper <= lower:
             self._fail("Maximum radius must be greater than minimum radius")
@@ -281,7 +288,7 @@ class M9SizeDialog(_M9Dialog):
                 parameters,
                 lower,
                 upper,
-                user_defined=self.manual_source.currentText() == "user_defined",
+                user_defined=self.manual_source.currentData() == "user_defined",
             )
             self.committed_changes = True
             self._refresh()
@@ -290,7 +297,7 @@ class M9SizeDialog(_M9Dialog):
 
     def _fit(self) -> None:
         try:
-            self.service.fit_sizes(self.measurement_field.currentText())
+            self.service.fit_sizes(self.measurement_field.currentData())
             self.committed_changes = True
             self._refresh()
         except Exception as exc:
@@ -326,7 +333,9 @@ class M9ParameterFieldDialog(_M9Dialog):
         self.field.currentTextChanged.connect(self._refresh_slice)
         layout.addWidget(self.field)
         controls = QHBoxLayout()
-        self.axis = QComboBox(); self.axis.addItems(["x", "y", "z"])
+        self.axis = QComboBox()
+        for axis in "xyz":
+            self.axis.addItem(axis.upper(), axis)
         self.slice_fraction = QDoubleSpinBox(); self.slice_fraction.setRange(0, 1); self.slice_fraction.setSingleStep(0.05); self.slice_fraction.setValue(0.5)
         self.opacity = QDoubleSpinBox(); self.opacity.setRange(0, 1); self.opacity.setSingleStep(0.05); self.opacity.setValue(0.85)
         self.show_boreholes = QCheckBox("Show boreholes"); self.show_boreholes.setChecked(True)
@@ -486,7 +495,7 @@ class M9ParameterFieldDialog(_M9Dialog):
             from dfn_cave_studio.visualization.parameter_field_renderer import ParameterFieldRenderer
 
             renderer = ParameterFieldRenderer()
-            axis = self.axis.currentText()
+            axis = self.axis.currentData()
             field_name = self.field.currentText()
             slice_index, coordinate = renderer.slice_location(metadata, axis, self.slice_fraction.value())
             layer_id = renderer.layer_id(field_name, axis, slice_index)
@@ -499,6 +508,11 @@ class M9ParameterFieldDialog(_M9Dialog):
                 self.slice_fraction.value(),
                 opacity=self.opacity.value(),
                 actor_name=layer_id,
+                show_scalar_bar=False,
+            )
+            scalar_bar_id = self._layer_manager.scalar_bar_id(field_name)
+            scalar_bar_actor = self._layer_manager.create_or_get_scalar_bar(
+                scalar_bar_id, self.tr(f"{field_name} (m^-1)"), actor
             )
             self._layer_manager.add_or_replace(
                 layer_id,
@@ -508,6 +522,8 @@ class M9ParameterFieldDialog(_M9Dialog):
                 slice_index=slice_index,
                 coordinate=coordinate,
                 opacity=self.opacity.value(),
+                scalar_bar_id=scalar_bar_id if scalar_bar_actor is not None else "",
+                scalar_bar_actor=scalar_bar_actor,
             )
             if self.show_boreholes.isChecked():
                 from dfn_cave_studio.services.m7_state import get_holdout
@@ -517,9 +533,9 @@ class M9ParameterFieldDialog(_M9Dialog):
             self._refresh_layers_table(select_layer_id=layer_id)
         except Exception as exc:
             if actor is not None and layer_id and not self._layer_manager.contains(layer_id):
-                remover = getattr(plotter, "remove_actor", None)
-                if remover is not None:
-                    remover(actor, render=False)
+                self._layer_manager.discard_unregistered(
+                    actor, scalar_bar_id if "scalar_bar_id" in locals() else ""
+                )
             self._fail(str(exc))
 
     def _current_layer_id(self) -> str | None:
@@ -530,10 +546,10 @@ class M9ParameterFieldDialog(_M9Dialog):
 
         slice_index, _ = ParameterFieldRenderer.slice_location(
             metadata,
-            self.axis.currentText(),
+            self.axis.currentData(),
             self.slice_fraction.value(),
         )
-        return ParameterFieldRenderer.layer_id(self.field.currentText(), self.axis.currentText(), slice_index)
+        return ParameterFieldRenderer.layer_id(self.field.currentText(), self.axis.currentData(), slice_index)
 
     def _selected_layer_id(self) -> str | None:
         row = self.layers_table.currentRow()
