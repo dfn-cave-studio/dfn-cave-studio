@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
+from shiboken6 import delete, isValid
+
 from dfn_cave_studio.services.workflow_controller import WorkflowController
 from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
 from dfn_cave_studio.ui.dialogs.m10_dialog import M10ExplicitDFNDialog
@@ -16,9 +18,10 @@ from dfn_cave_studio.ui.i18n import (
     language_manager,
     system_default_language,
     translation_directory,
+    retranslate_widget_tree,
 )
 from dfn_cave_studio.ui.main_window import MainWindow
-from dfn_cave_studio.ui.qt_adapter import QApplication, QLabel, QLocale, QSettings
+from dfn_cave_studio.ui.qt_adapter import QApplication, QEvent, QLabel, QLocale, QMenu, QSettings, QWidget
 from tests.integration.test_m10_persistence_export import make_m10_project
 
 
@@ -172,6 +175,97 @@ def test_translation_resources_are_packaged() -> None:
     directory = translation_directory()
     assert (directory / "dfn_cave_studio_zh_CN.ts").is_file()
     assert (directory / "dfn_cave_studio_zh_CN.qm").is_file()
+
+
+def test_main_window_construction_does_not_retranslate_unrelated_windows(monkeypatch, qtbot) -> None:
+    manager = language_manager()
+    global_scans: list[str | None] = []
+    monkeypatch.setattr(manager, "retranslate_open_windows", lambda language=None: global_scans.append(language))
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert global_scans == []
+
+
+def test_retranslate_tree_skips_destroyed_child_wrapper(qtbot) -> None:
+    stale_menu = QMenu("Stale")
+    delete(stale_menu)
+    assert not isValid(stale_menu)
+
+    class RootWithStaleChild(QWidget):
+        def findChildren(self, *args, **kwargs):  # noqa: N802 - Qt API
+            del args, kwargs
+            return [stale_menu]
+
+    root = RootWithStaleChild()
+    qtbot.addWidget(root)
+    retranslate_widget_tree(root, LANGUAGE_ENGLISH)
+    assert root.windowTitle() == ""
+
+
+def test_closed_window_is_skipped_but_visible_window_is_retranslated(qtbot) -> None:
+    manager = language_manager()
+    original_language = manager.language
+    visible = QLabel("Ready")
+    closed = QLabel("Closed sentinel")
+    qtbot.addWidget(visible)
+    qtbot.addWidget(closed)
+    visible.show()
+    closed.show()
+    QApplication.processEvents()
+    closed.close()
+    QApplication.processEvents()
+    closed.setText("Closed sentinel")
+    try:
+        assert manager.set_language(LANGUAGE_CHINESE, persist=False, force=True)
+        assert visible.text() != "Ready"
+        assert closed.text() == "Closed sentinel"
+    finally:
+        _restore_language(manager, original_language)
+
+
+def test_language_switch_skips_window_queued_for_deferred_deletion(qtbot) -> None:
+    manager = language_manager()
+    original_language = manager.language
+    pending = QLabel("Pending deletion")
+    qtbot.addWidget(pending)
+    pending.show()
+    QApplication.processEvents()
+    pending.close()
+    pending.deleteLater()
+    try:
+        assert manager.set_language(LANGUAGE_CHINESE, persist=False, force=True)
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QApplication.processEvents()
+        assert not isValid(pending)
+    finally:
+        _restore_language(manager, original_language)
+
+
+def test_repeated_window_lifecycle_and_language_switching_is_stable(qtbot) -> None:
+    manager = language_manager()
+    original_language = manager.language
+    try:
+        for _ in range(50):
+            window = MainWindow()
+            window.show()
+            QApplication.processEvents()
+            window.close()
+            window.deleteLater()
+            QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            QApplication.processEvents()
+
+        live = MainWindow()
+        qtbot.addWidget(live)
+        live.show()
+        for index in range(50):
+            language = LANGUAGE_CHINESE if index % 2 == 0 else LANGUAGE_ENGLISH
+            assert manager.set_language(language, persist=False, force=True)
+            QApplication.processEvents()
+        assert isValid(live)
+    finally:
+        _restore_language(manager, original_language)
 
 
 def test_language_is_not_serialized_and_save_reopen_is_identical(qtbot, tmp_path: Path) -> None:

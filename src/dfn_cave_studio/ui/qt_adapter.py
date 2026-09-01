@@ -13,6 +13,7 @@ Usage:
 # ruff: noqa: F401
 
 from PySide6 import QtCore, QtGui, QtWidgets
+from shiboken6 import isValid as _shiboken_is_valid
 from PySide6.QtCore import (
     Qt,
     QObject,
@@ -138,6 +139,12 @@ try:
 except ImportError:
     HAS_PYVISTAQT = False
 
+
+def is_valid_qobject(obj: object) -> bool:
+    """Return whether *obj* still owns a live Qt C++ object."""
+    return isinstance(obj, QObject) and _shiboken_is_valid(obj)
+
+
 __all__ = [
     "QtCore",
     "QtGui",
@@ -155,6 +162,7 @@ __all__ = [
     "QWaitCondition",
     "QSize",
     "QSignalBlocker",
+    "is_valid_qobject",
     "QPoint",
     "QRect",
     "QModelIndex",

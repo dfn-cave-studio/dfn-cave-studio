@@ -368,13 +368,16 @@ class MainWindow(QMainWindow):
 
     def _init_language_state(self) -> None:
         """Bind language preference UI without touching project state."""
-        from dfn_cave_studio.ui.i18n import language_manager
+        from dfn_cave_studio.ui.i18n import language_manager, retranslate_widget_tree
 
         manager = language_manager()
         manager.language_changed.connect(self._language_state_changed)
         manager.switching_enabled_changed.connect(self._language_state_changed)
         self._refresh_language_actions()
-        manager.retranslate_open_windows()
+        # Construction must not rescan unrelated top-level windows.  At this
+        # point this MainWindow's UI is complete, so translate only this tree;
+        # the global path is reserved for an explicit user language change.
+        retranslate_widget_tree(self, manager.language)
 
     def _language_state_changed(self, _value) -> None:
         """Refresh language actions; direct QObject binding auto-disconnects on close."""
