@@ -4,8 +4,9 @@
   "tag": "v0.11.0-M11.1",
   "milestone": "M11.1",
   "phase_name": "M11.1 Exact Second Voxelization",
-  "planned_tag": "v0.11.0-M11.1",
-  "release_status": "ready_for_release",
+  "release_status": "published",
+  "release_commit": "ff76b3e",
+  "release_url": "https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.11.0-M11.1",
   "commit_sha": "e066e6cedb05cac2b01caea1464ba86b6a29f930",
   "baseline_commits": {
     "main_baseline": "e066e6cedb05cac2b01caea1464ba86b6a29f930",
@@ -299,7 +300,7 @@
     "Formal 3DEC/PFC export",
     "Kriging interpolation"
   ],
-  "scope_warning": "M11.1 is ready for release; its tag and GitHub Release do not yet exist, and the complete M11 milestone is not complete.",
+  "scope_warning": "M11.1 is published as a bounded phase; the complete M11 milestone is not complete.",
   "known_issues": [
     "Historical repository Ruff F/E9 baseline contains 132 findings; it is not newly passing."
   ],

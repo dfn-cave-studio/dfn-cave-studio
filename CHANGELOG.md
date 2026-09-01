@@ -1,8 +1,10 @@
 # Changelog
 
-## [0.11.0-M11.1] — Unreleased (ready for release)
+## [0.11.0-M11.1] — 2026-09-01
 
-This release candidate contains the bounded **M11.1 Exact Second Voxelization** phase. The planned tag and GitHub Release have not been created, and the complete M11 milestone is not marked as finished.
+This is the formally published bounded **M11.1 Exact Second Voxelization** release. It does not mark the complete M11 milestone as finished.
+
+[Tag](https://github.com/dfn-cave-studio/dfn-cave-studio/tree/v0.11.0-M11.1) · [GitHub Release](https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.11.0-M11.1) · [Review](docs/review/v0.11.0-M11.1/)
 
 ### Added
 

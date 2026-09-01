@@ -62,7 +62,7 @@ and uncertainty.
 ## M11.1 — Exact Second Voxelization
 
 **Version:** `v0.11.0-M11.1`
-**Status:** READY FOR RELEASE
+**Status:** PUBLISHED
 
 - Compute exact circular-fracture/voxel intersection areas and intersection-derived P32 using sparse deterministic indexing.
 - Persist per-set/all-set sparse results, `P32_explicit_intersection + P32_subgrid`, diagnostics, provenance, and invalidation state.
@@ -100,4 +100,4 @@ connectivity, percolation, block cutting, mechanics, formal simulator export, or
 
 **Exit condition:** installable, usable, validated, and exportable v1.0.0.
 
-Published baselines extend through `v0.10.1-M10`; `v0.11.0-M11.1` is ready for release, while later M11 work and M12 remain planned as described above.
+Published baselines extend through `v0.11.0-M11.1`; later M11 work and M12 remain planned as described above.
