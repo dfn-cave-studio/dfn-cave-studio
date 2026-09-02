@@ -1,699 +1,357 @@
-# DFN Cave Studio v0.11.0-M11.1 使用说明书
+# DFN Cave Studio v0.11.0-M11.1 中文使用说明书
 
-## M11.1 精确第二次体素化（步骤13）
+> 中文为说明主体，界面控件保留英文原名，便于按界面查找。适用版本：已发布的 `v0.11.0-M11.1`（M11.1 Exact Second Voxelization）。
 
-完成并保存M10显式DFN后，打开`M11.1 Exact Second Voxelization`，选择实现并开始计算。软件使用解析圆盘—体素面积求交生成稀疏`fracture_ordinal / voxel_flat_index / intersection_area`记录，并输出全部节理组及单组的`P32_explicit_intersection`、`P32_subgrid`和`P32_total`。取消不会提交部分结果；保存`.dfnproj`后，稀疏结果、数组、守恒诊断和失效状态可重开恢复。
+## 1. 软件用途与版本边界
 
-`M11 Visualization`支持体素云图、正交与任意剖面、Plane Cutaway和Box Cutaway。Exact Cell Colours是权威审计显示；Smooth Display仅为显示插值，不修改科学数组。显示图层、色标和交互控件属于session-only状态，不写入项目。
+DFN Cave Studio 用于从钻孔数据库建立可审计、可复现的离散裂隙网络（DFN）模型。当前版本支持：钻孔数据维护与清洗、Calibration/Validation 留出、结构域与节理组、M9 输入参数体素场、M10 多尺度显式 DFN、M11.1 精确圆盘—体素面积求交和三维 P32 显示。
 
-> M11.1已正式发布，仅包含精确第二次体素化及其可视化。裂隙—裂隙求交图、连通簇、边界贯通、渗流通道、块体切割、力学属性、正式3DEC/PFC导出和Kriging尚未实现。
+当前版本**尚不支持**裂隙—裂隙求交图、连通簇、边界贯通、渗流、块体切割/块度、力学分析、Kriging 或正式 3DEC/PFC 导出。菜单中出现历史或未来入口，不等于相应科学功能已经完成。
 
-## M10 显式DFN操作（步骤12）
+## 2. 安装、启动与语言
 
-完成M9 Density、Size、First Voxel Parameter Field并确认Voxel Grid和DFN Generation Domain后，点击左侧工作流的`12. Explicit DFN Generation`，或选择`DFN → Explicit DFN Generation`。
+在项目根目录创建 Python 3.12+ 环境并安装依赖：
 
-1. 查看预计裂隙数和内存；设置`base seed`与1–5个小型实现。实现种子为`base_seed + realization_index`。
-2. 如尺寸模型为EXPERIMENTAL，勾选明确确认；较差Validation只形成警告，用户确认后仍可继续，软件不会声称模型可靠。
-3. 可导入参数化确定性圆盘CSV。必需字段为`structure_id, center_x, center_y, center_z, dip_direction, dip, radius, structure_type, domain_id`；可选`set_id`用于明确面积预算扣减。STL/OBJ复杂曲面尚不支持。
-4. 点击`Generate Batch`。计算在后台执行，可显示进度并取消；取消或失败不会留下半成品。生成完成后点击OK才提交到项目，Cancel完整回滚。
-5. 在实现列表中选择一个实现，可整体、按节理组、按条件裂隙或确定性结构面渲染。图层支持显示/隐藏、透明度、颜色、删除当前实现或清除全部DFN图层。清除不会删除钻孔、边界、坐标轴或M9切片。
-6. 点击`Export Selected`导出`fractures.csv`、质量摘要JSON/CSV、完整NPZ、VTP以及单独的条件/确定性CSV。这些是通用审计格式，不是正式3DEC/PFC输入。
-7. 保存`.dfnproj`后关闭并重开，M10配置、质量报告和完整几何数组会恢复；渲染图层属于session-only显示状态，需要重新渲染。
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:PYTHONPATH = "src"
+python -m dfn_cave_studio.app
+```
 
-多尺度设置中，`Auto`默认使SMALL/MEDIUM/LARGE约占目标P32的10%/60%/30%（连续分布），默认只显式生成MEDIUM和LARGE。未生成的SMALL不会被丢弃，而是作为逐体素、逐节理组`P32_subgrid`保存。`Manual`模式使用`R < r_sm`、`r_sm ≤ R < r_ml`和`R ≥ r_ml`。阈值是数值建模分辨率建议，不是固定地质分类标准。`Color By`可按Joint Set、Domain、Source或Size Class切换，仅影响当前会话显示。
+也可安装包后运行 `dfn-cave-studio`。首次启动时，中文系统默认简体中文，其他系统默认 English。通过 `Settings → Language → 简体中文 / English` 切换；偏好保存于 QSettings，不写入 `.dfnproj`。计算或保存期间语言切换会被暂时禁用。切换语言不重算模型、不改变项目 dirty 状态，也不改变内部字段名、图层 ID、随机种子或科学数组。
 
-M10按每个体素、每个节理组使用`N~Poisson(P32·V/(πE[R²]))`。Calibration FULL_ORIENTATION可生成经过观测点的条件裂隙；Validation不参与条件化，DIP_ONLY只作为密度证据且不伪造方位角。质量报告中的局部值仅为`CENTER_ASSIGNED_PRELIMINARY`，真实裂隙—体素裁剪面积回算留到M11。
+## 3. 主窗口
 
-## M9 新增操作（步骤 8–11）
+- `File`：`New Project`、`Open Project…`、`Save Project`、`Save Project As…`、`Recent Projects`。
+- `Data → Borehole Database…`：项目级钻孔数据库。
+- `Voxel → Voxel Settings…`：体素网格设置入口。
+- `DFN → Joint Set Manager…`、`Explicit DFN Generation…`。
+- `Visualization`：重置及标准相机方向。
+- 左侧 `Project` 与工作流：按 1–13 步显示依赖状态。
+- 中央 3D 视窗：钻孔、边界、M9/M10/M11 session 图层。
+- 右侧 `Properties` 或 `M11 Visualization`；底部 `Log` 和进度。
 
-M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、Validation Holdout 已锁定、Formal 裂隙/结构域/节理组可用，且 Voxel Analysis Domain 与 dx/dy/dz 已确认。Validation 孔只用于最后评价。
+图层、色标、交互平面和 Box Widget 是会话显示状态；保存项目不会序列化 VTK Actor，也不会保存相机状态。
 
-1. `Fracture Density Model`：选择固定长度或结构域区间、GLOBAL_CONSTANT/IDW 和随机种子，点击 `Calculate P10 / P32`。半开区间避免边界重复计数；低可观测性不输出不稳定 P32。
-2. `Fracture Size Distribution`：只有真实 radius/diameter/trace_length/mapped_length 才允许自动拟合；否则设置 FIXED、UNIFORM 或三种截断分布并保留 ASSUMED/USER_DEFINED 来源。当前自动截断分布拟合必须视为 EXPERIMENTAL：截断边界使用样本极值，截断对数正态尚非完整截断似然优化。界面和项目文件保存收敛状态、优化器消息和样本量。演示固定半径 2 m 始终标记为 ASSUMED。不会从 aperture、RQD 或 set_id 推导尺寸。
-3. `First Voxel Parameter Field`：后台按块生成，可显示进度并取消。NO_DATA、TRUE_ZERO、OUTSIDE_MODEL 和 MODELED_VALUE 独立保存；本步骤不生成显式裂隙面。
-4. `Validation`：从参数场提取预测 P32，按留出孔真实局部轨迹换算预测 P10，报告 MAE、RMSE、Bias、可用时的 R²/相关系数；样本不足显示 INSUFFICIENT_VALIDATION。
-
-`.dfnproj` 保存 M9 设置、P10/P32、尺寸模型、压缩参数场数组、Validation结果，以及M10配置、实现质量报告和压缩显式裂隙几何。
-
-> 适用版本：v0.11.0-M11.1（M11.1 Exact Second Voxelization）
-> 文档语言：简体中文
-> 适用平台：当前以 Windows 源代码运行环境为主
-
-## 1. 软件用途与当前范围
-
-DFN Cave Studio 是面向地下矿山与岩体裂隙研究的离散裂隙网络（DFN）建模软件。
-
-当前 v0.11.0-M11.1 包含完整 M8/M9/M10 基础，以及解析圆盘—体素求交、第二次体素化、稀疏保存、P32云图/剖面/Cutaway、快速取消和中英文界面。它不代表完整M11已经完成：
-
-## 裂隙方向完整性
-
-裂隙导入仅要求钻孔编号、深度和倾角。`dip_direction` 可以整列缺失或部分为空：
-
-- **Full orientation**：倾角和方位角都存在，可用于三维法向量、Fisher统计、球面K-Means和方向修正P32。
-- **Dip only**：只有倾角，仍作为Formal有效裂隙保留，可用于倾角统计和有明确`set_id`时的P10计数，但不会伪造方位角或进入三维方向拟合。
-- 空白、`NA`、`N/A`、`null`和`None`按缺失方向保存为JSON `null`；数值`0`是有效正北方向。
-- `360`可在数据质量界面审计并自动规范化为`0`，修改历史会保留原值和修正来源。
-
-数据库和数据质量界面可按 **All orientation records / Full orientation / Dip only** 查看记录。若某个结构域/节理组没有至少三个完整方向样本，方向修正P32会明确显示`INSUFFICIENT_ORIENTATION_DATA`，参数体素场的相关方向字段保持No Data。
-
-1. 建立可持续维护的项目级钻孔数据库；
-2. 对钻孔数据进行质量检查、修正、排除和审计；
-3. 留出独立的 Validation 钻孔；
-4. 维护钻孔结构域区间并识别节理组；
-5. 定义体素分析域和 DFN 生成域；
-6. 检查完整钻孔轨迹和观测点是否越界；
-7. 设置体素尺寸、查看网格数量与内存估算，并进行轻量三维预览；
-8. 将数据库、质量问题、工作流和空间设置保存到 `.dfnproj` 项目文件。
-9. 计算 Calibration 钻孔的区间 P10 和方向修正 P32；
-10. 拟合真实裂隙尺寸或维护明确标注的先验尺寸模型；
-11. 生成 GLOBAL_CONSTANT 或 IDW 的第一次体素化输入参数场；
-12. 使用留出的 Validation 钻孔进行独立误差评价并导出 M9 结果。
-
-M9 **不包含**以下 M10 及后续功能：条件显式 DFN、第二次体素化、正式 3DEC/PFC 输出、机器学习训练和块度分析。RQD 不会被直接换算为 P10 或 P32。
-
-主菜单中可能仍显示部分历史功能或后续功能入口。这些入口不代表 M10—M12 科学流程已经完成；用户应以左侧 11 步工作流为主。
-
-## 2. 坐标和单位约定
-
-软件内部采用 SI 单位和右手坐标系：
+## 4. 坐标、单位和角度
 
 | 项目 | 约定 |
 |---|---|
-| X | Easting，向东为正 |
-| Y | Northing，向北为正 |
-| Z | Elevation，向上为正 |
-| 长度、深度、体素尺寸 | 米（m） |
-| 输入/界面角度 | 度（°） |
-| 方位角或倾向 | 从北顺时针，范围 `[0, 360)` |
-| 测斜倾角 | 范围 `[-90, 90]` |
-| 裂隙倾角 | 从水平面量起，范围 `[0, 90]` |
+| 坐标系 | 右手系；X=Easting，Y=Northing，Z=Elevation（向上） |
+| 长度/深度/半径/体素尺寸 | m |
+| 面积 | m² |
+| P10、P32 | m⁻¹；P32 的维度为 m²/m³ |
+| UI/导入导出角度 | degree（°）；内部三角函数使用 radian |
+| dip direction | 从北顺时针，`0 ≤ dip_direction < 360` |
+| fracture dip | 从水平面量起，`0 ≤ dip ≤ 90` |
+| survey dip | 钻孔轨迹倾角，允许 `[-90, 90]`；负值通常表示向下 |
 
-导入前应确认所有文件采用同一坐标参考和同一长度单位。当前 M8 不自动进行坐标系转换。
+所有输入文件必须使用同一坐标参考和长度单位；当前版本不自动执行坐标系或单位换算。
 
-## 3. 启动软件
+## 5. 项目生命周期
 
-在项目根目录打开 PowerShell，执行：
+1. `File → New Project` 建立空项目。
+2. 首次点击 `Save Project` 会进入 `Save Project As…`；推荐扩展名 `.dfnproj`。
+3. 保存采用原子替换；验证失败时原文件保持不变，项目仍为 dirty。
+4. Autosave 每 60 秒检查一次；大型生成、渲染或保存期间会避免并发保存。
+5. `Open Project…` 与 `Recent Projects` 使用同一加载流程，恢复数据库、workflow、M9/M10/M11 科学状态和空间配置。
+6. New/Open 会清除旧项目的 session-only M9/M10/M11 Actor、色标和 Widget。
 
-```powershell
-.\.venv\Scripts\python.exe -m dfn_cave_studio.app
-```
+上游数据或科学配置改变时，只将真实依赖的步骤标为 `STALE`。仅改变透明度、切片、颜色等显示参数不会使结果失效。
 
-如果尚未创建虚拟环境，可按项目 `README.md` 安装依赖后启动。
+## 6. 准备输入数据
 
-启动后主要界面包括：
+支持 CSV、XLSX 和 XLS。五类钻孔数据可独立、任意顺序、分批导入：Collars、Surveys、Fractures、RQD、Domain intervals。推荐用 UTF-8 CSV，首行是唯一表头，一行一个记录；不要混合单位、坐标系或多个孔号拼写。
 
-- 左侧 `M9 Workflow`：M8 基础七步和 M9 四步工作流导航；
-- `Project Explorer`：当前项目、钻孔、边界和体素摘要；
-- `Borehole Database / 钻孔数据库`：数据库查看和维护面板；
-- 中央三维视图：钻孔、边界和网格预览；
-- 底部日志区：显示加载、保存和操作信息。
+详细字段、别名和校验见 [数据字典与术语](DATA_DICTIONARY_AND_GLOSSARY.md)。可直接练习 `examples/m7_demo/`；M10 确定性结构面示例位于 `examples/m10_demo/deterministic_structures.csv`。`examples/m10_demo/` 不是完整 M7–M11 项目，完整流程仍需先导入五类钻孔数据并完成 M9。
 
-## 4. 项目文件
+### 6.1 Collars
 
-### 4.1 新建项目
+最少提供孔号、X/Y/Z 和终孔深度。常用映射是 `hole_id/easting/northing/elevation/total_depth`，也支持 `HoleName/East/North/RL/HoleLength` 和标准字段 `borehole_id/collar_x/collar_y/collar_z/final_depth`。普通 `depth` 不会自动映射为 `final_depth`。
 
-选择 `File → New Project`，或按 `Ctrl+N`。
+### 6.2 Surveys
 
-新项目尚无保存路径。第一次选择 `Save Project` 或按 `Ctrl+S` 时，软件会自动进入 `Save As`。
+每行是一个测斜站：孔号、`measured_depth`、`azimuth`、`dip`。未知 Collar 的记录进入 Pending，后续导入 Collar 后自动关联。轨迹按深度排序，缺少 0 m 测站时使用 Collar 方位补起点，使用 Minimum Curvature 方法插值；尾部缺站时沿最后测站方向延伸到终孔深度。
 
-### 4.2 保存项目
+### 6.3 Fractures
 
-推荐保存为：
+最少提供孔号、测深和倾角。`dip_direction` 可为空：
+
+- Full orientation：有 `dip_direction + dip`，可进入法向量、Fisher 和球面聚类。
+- Dip only：只保留 dip，不伪造方位；仍是 Formal 密度证据，在有明确 `set_id` 时可参与相应 P10 计数，但不参与三维方向拟合或条件化。
+
+`set_id`、aperture、filling、fracture_type、confidence 为可选信息。Aperture 不是裂隙半径，不能用于尺寸模型。
+
+### 6.4 RQD
+
+每行是 `[from_depth, to_depth]` 区间及 0–100 的 RQD。软件检查区间、孔深和重叠。RQD 只是辅助数据；不会直接换算为 P10、P32、RMR 或裂隙半径。
+
+### 6.5 Domain intervals
+
+每行给出孔号、起止测深和 `domain_id`，可选 `domain_name`。同孔区间重叠会被报告。内部公共边界采用半开区间 `[from_depth, to_depth)`，钻孔最后区间允许包含终点，以避免边界裂隙重复归属。
+
+### 6.6 Deterministic structures
+
+在 M10 对话框使用 `Import Deterministic CSV`。字段包括 `structure_id, center_x, center_y, center_z, dip_direction, dip, radius, structure_type`，`domain_id` 和 `set_id` 可选。它表示参数化圆盘，不是 STL/OBJ 曲面。完全域外结构面会明确警告，默认不参与当前模型显示与统计但保留导入记录；相交圆盘按 Generation Domain 裁剪，软件不会移动中心或修改半径。
+
+## 7. 导入、预览和字段映射
+
+1. 打开 `Borehole Database / 钻孔数据库`，点击 `Import / Append…`。
+2. 选择 Data Type 和文件，点击 `Preview`。
+3. 在 Mapping 表检查 `Source Field` 与 `Standard Field`。自动识别忽略大小写、首尾空格、UTF-8 BOM，并把空格/连字符规范为下划线。
+4. 每个 `Standard Field` 下拉框仍可手动调整。一个源列匹配多个标准字段，或一个标准字段有多个候选列时，必须人工解决冲突。
+5. 选择 `Append`、`Replace` 或 Cancel。Cancel 不修改项目；有实际提交才标记 dirty。
+
+Preview 和 Import 使用同一映射。每条记录保存 `record_id`、原表头、规范化表头、字段映射、源文件、源行、导入时间、原值和修改历史。重复文件不会静默追加相同记录。
+
+## 8. 钻孔数据库与数据质量
+
+`Borehole Database` 可按数据类型、孔号及 Raw/Formal/Excluded/Pending 查看、搜索、排序、编辑、软删除和追加。四个状态含义：
+
+- Raw：所有原始导入审计记录；原值不可静默改写。
+- Formal：下游计算使用的清洗值。
+- Excluded：有明确原因的排除记录，仍保留审计链。
+- Pending：尚未关联 Collar 等暂不能正式分类的记录。
+
+点击工作流 `2. 数据质量` 打开 `M8 Data Quality / 数据质量`：
+
+1. `Re-run checks` 运行完整质量检查。
+2. 按类型、Severity、Status 筛选 issue。
+3. `Accept selected auto-fix` 或 `Accept all auto-fixes` 接受建议修正；不会未经同意修改 Formal 值。
+4. 必要时 `Manual edit record…`，或 `Exclude record…` 并填写原因。
+5. `Retry / reclassify` 尝试恢复 Pending/Excluded。
+6. `Confirm all documented exclusions` 确认有明确原因的排除记录。
+7. `Export JSON…` / `Export CSV…` 导出质量报告。
+8. 只有 `Pending=0` 且 unresolved ERROR=0 时，`Confirm data quality complete` 才可完成。
+
+自动建议包括 Survey azimuth `% 360`、Survey dip 限制到 `[-90,90]`，以及 fracture direction `360→0`。每个接受操作写入 ModificationEvent（before、after、issue_id、source、时间）。已确认 Excluded 是处理结果，不会永久阻止工作流。
+
+## 9. Validation Holdout
+
+打开 `3. Validation Holdout`：可用 `Manual`、`Random fixed seed` 或 `Stratified` 分配孔；也可用 `Mark as Calibration` / `Mark as Validation`。检查后点击 `Lock Holdout Split`。
+
+Calibration 用于拟合方向、密度、尺寸和条件 DFN；Validation 只用于独立验证，不参与拟合或 M10 条件化。解锁或改变划分会按依赖规则使下游结果失效。
+
+## 10. 结构域与节理组
+
+### 10.1 Structural Domain Editor
+
+在 `4. 钻孔结构域` 查看或维护区间。Domain 是地质结构域；不要与 `Voxel Analysis Domain` 或 `DFN Generation Domain` 的空间边界混淆。
+
+### 10.2 Joint Set Identification
+
+在 `5. 节理组` 选择：
+
+- `Mode A: Use imported set_id`：按 Formal `set_id` 统计。
+- `Mode B: Auto-identify (spherical K-Means)`：对 Calibration 的 Full orientation 法向量进行轴向球面 K-Means++；`n` 与 `−n` 等价，固定 seed 可复现，空簇确定性重新初始化。请求 K 组必须产生 K 个非空组；不同轴向方向不足时会明确拒绝。
+
+Validation 和 Dip-only 记录不进入球面拟合。所有参与的 Calibration Full orientation 只分配一次；Count 总和应等于参与聚类的样本数。可在 `Joint Set Manager…` 检查/维护名称、颜色和模型参数。
+
+## 11. 模型边界与体素网格
+
+### 11.1 Model Boundary
+
+打开 `6. 模型边界`。Automatic 根据完整钻孔轨迹、Survey station 和有效观测点范围加外扩距离；Manual 输入 XYZ min/max。`Check Coverage` 报告越界孔、轨迹点、观测点、各方向最大超距和受影响孔。边界确认只完成 `bounds`。
+
+### 11.2 Voxel Grid Preview and Confirmation
+
+打开 `7. 体素网格预览与确认`，设置独立 `dx/dy/dz`。软件按 `ceil(extent/spacing)` 计算 `nx/ny/nz`，确保完整覆盖；同时估算体素数和内存。确认后才完成 `voxel_grid`。
+
+必须满足 `DFN Generation Domain ⊇ Voxel Analysis Domain`。Generation Domain 缓冲用于 M10 生成和裁剪；只改变它不会清空 M9 密度/尺寸。透明度、切片方向和切片位置只是预览设置。
+
+## 12. M9 Fracture Density Model
+
+打开 `8. Fracture Density Model`：
+
+1. `Interval mode` 选 `Fixed length` 或 `Domain intervals`。固定区间在结构域边界处分割，每个输出区间只属于一个域，采样总长度守恒。
+2. `Spatial model` 选 `Global constant` 或 `IDW`。
+3. IDW 可设 `IDW power`、`Search radius`、`Min/Max neighbours`、`Distance scale X/Y/Z` 和 `Use labelled domain-global fallback`。
+4. 设 `Random seed`、`Fisher Monte Carlo samples` 和低可观测阈值，点击 `Calculate P10 / P32`。
+
+区间 P10 为裂隙计数除以有效轨迹长度。方向修正 P32 使用 Calibration 数据的 Poisson-MLE 和 Fisher 方向曝光；低可观测或方向不足会给出明确状态，不输出伪可靠值。Validation 区间会计算观测量，但不进入拟合。
+
+## 13. M9 Fracture Size Distribution
+
+打开 `9. Fracture Size Distribution`。只有真实 `radius`、`diameter`、`trace_length`、`mapped_length` 可以点击 `Fit real calibration measurements`；diameter 会换算为半径。没有尺寸观测时使用 `Apply user-defined size model`，选择 fixed、uniform、truncated lognormal/power law/exponential，并标为 `ASSUMED` 或 `USER_DEFINED`。
+
+当前自动截断分布拟合是 `EXPERIMENTAL`，不是严格已验证 MLE；项目保存收敛状态、优化器消息和样本量。固定半径示例应保持 `ASSUMED`。
+
+## 14. M9 First Voxel Parameter Field
+
+打开 `10. First Voxel Parameter Field`，点击 `Generate parameter field`。每个体素保存 Domain、方向、Kappa、组概率和 P32 等输入参数。`Global constant` 在域内使用常量；`IDW` 采用各向异性距离、邻域数量和搜索半径。关闭 fallback 且范围内无邻居时结果为 NO_DATA，不会伪造为 0。
+
+Cell state：
+
+- `OUTSIDE_MODEL`：模型外。
+- `NO_DATA`：没有足够信息。
+- `TRUE_ZERO`：有支持证据且真实值为 0，必须与 No Data 区分。
+- `MODELED_VALUE`：有建模值。
+- `EXCAVATION`：开挖/掩膜外。
+
+### M9 显示和导出
+
+选择 Field、Axis、Slice 和 Opacity 后点击 `Render slice`。`Rendered Layers / 已渲染图层` 支持 Show/Hide、Remove、Clear Current Slice 和 Clear All M9 Layers；同一配置会替换，不会叠加。无效单元不生成显示几何，TRUE_ZERO 保留；opacity=1 时有限区域应完全遮挡后方。
+
+`Export M9 package` 输出 P10/P32 CSV、密度和尺寸 JSON、Validation CSV/JSON，以及存在参数场时的 NPZ 与 VTI。`Save PNG` 仅保存当前截图。
+
+## 15. M9 Validation
+
+打开 `11. Validation`，将留出孔的观测 P10 与参数场预测比较，报告可用的 MAE、RMSE、Bias、R²/相关性；样本不足时显示 `INSUFFICIENT_VALIDATION`。这一步不得反向调整拟合。
+
+## 16. M10 Explicit DFN Generation
+
+打开 `12. Explicit DFN Generation` 或 `DFN → Explicit DFN Generation…`。
+
+### 16.1 生成设置
+
+- `Base seed`、Realizations、`CPU workers`：同一输入和 seed 可复现；实现 seed 按保存的派生策略生成。
+- `Condition Calibration FULL_ORIENTATION observations`：保留穿过 Calibration 观测点的条件裂隙；Validation 和 Dip-only 不条件化。
+- `Import Deterministic CSV`：加入确定性圆盘。
+- `Generate Batch`：后台批量生成；Cancel 协作停止且不提交部分结果。
+
+随机裂隙在 MODELED_VALUE 体素内按 Domain/Set 的 P32、Fisher 方向和尺寸分布生成。每体素每组的期望数为：
 
 ```text
-项目名称.dfnproj
+λ = P32 × V / (π E[R²])
+N ~ Poisson(λ)
 ```
 
-`.dfnproj` 会保存：
+必须使用 `πE[R²]`，不能使用 `π(E[R])²`。权威几何为 `center + normal + radius`；边界裁剪多边形仅为实际裁剪裂隙保存。
 
-- Raw、Formal、Excluded、Pending 数据；
-- 来源文件、来源行号和导入时间；
-- 数据质量问题及其处理状态；
-- 修改历史和排除原因；
-- Formal 钻孔投影；
-- Validation Holdout；
-- 结构域区间和节理组；
-- 工作流状态；
-- 模型边界、体素设置和 DFN 生成域。
+### 16.2 多尺度设置
 
-普通保存会在覆盖原文件前保留 `.bak` 备份。已经保存过且存在未保存修改的项目可按配置自动保存；从未选择过保存路径的新项目不会自动保存。
+尺寸类互斥：SMALL `R < r_sm`，MEDIUM `r_sm ≤ R < r_ml`，LARGE `R ≥ r_ml`。
 
-### 4.3 打开项目
+- `Threshold Mode: Auto`：用尺寸分布的面积加权 CDF；默认目标贡献约 10%/60%/30%。这是数值分辨率建议，不是地质分类标准。
+- `Manual`：用户给定两个半径阈值，必须 `0 ≤ r_sm < r_ml`。
+- 默认 Generate MEDIUM/LARGE，SMALL 不显式生成。未显式生成的可建模贡献进入逐体素逐组 `P32_subgrid`，不会被删除。
+- 方向无效的目标进入 `p32_unresolved_orientation`，不伪装为显式或 subgrid。
 
-选择 `File → Open Project` 或按 `Ctrl+O`。支持：
+目标预算满足：
 
-- `.dfnproj`：当前推荐的 ZIP 项目格式；
-- `.dfncs`：历史 JSON 项目格式。
+```text
+P32_target = P32_explicit_target + P32_subgrid + P32_unresolved_orientation
+```
 
-也可从 `File → Recent Projects` 打开最近项目。v0.7.0-M7 项目在打开时会迁移到 M8 数据仓库；建议迁移后另存为 `.dfnproj`。
+Poisson 单次实现会波动；软件不通过修改最后一条裂隙强行等于目标。
 
-### 4.4 关闭软件
+### 16.3 显示与导出
 
-存在未保存修改时，关闭窗口会询问：
+`All Fractures – LOD` 使用 GPU glyph/LOD 显示全部显式裂隙而非科学抽样；`Exact Geometry` 只适合选定范围或较小数量。`Color By` 支持 Joint Set、Domain、Source、Size Class；类别显隐只影响显示。DFN 图层清理不会删除钻孔、边界或 M9 图层。
 
-- `Save`：保存后关闭；
-- `Discard`：放弃未保存修改并关闭；
-- `Cancel`：返回软件。
+选择 realization 后点击 `Export Selected`，输出：
 
-## 5. M8 七步工作流
+- `fractures.csv`、`conditioned_fractures.csv`、`deterministic_structures.csv`；
+- `realization_summary.json`、`realization_summary.csv`；
+- `fractures.npz`；
+- `fractures.vtp`。
 
-左侧工作流包含：
+这些是通用审计格式，不是正式 3DEC/PFC 文件。
 
-1. 钻孔数据库；
-2. 数据质量；
-3. Validation Holdout；
-4. 钻孔结构域；
-5. 节理组；
-6. 模型边界；
-7. 体素网格预览与确认。
+仓库审计基准曾在特定机器、固定项目与配置下测得约 721,786 条裂隙的生成、保存、重开和 LOD 数据；这些数值只用于版本审计，不是对其他硬件、网格、尺寸分布或项目的性能保证。实际运行前始终以对话框的当前 Expected Count、final/peak memory、render buffer 和 save temporary space 估算为准。
 
-单击工作流条目即可打开相应功能。
+## 17. M11.1 Exact Second Voxelization
 
-状态含义：
+打开 `13. Exact Second Voxelization`，选择 M10 realization 并启动计算。算法对参数化圆盘与候选体素 AABB 求真实面积交；点接触和线接触面积为 0。内部共享面采用半开所有权，外边界包含，避免重复归属。结果以稀疏三列保存：`fracture_ordinal`、`voxel_flat_index`、`intersection_area`。
 
-| 状态 | 含义 |
+```text
+P32_explicit_intersection = Σ(圆盘与体素真实相交面积) / 体素体积
+P32_total = P32_explicit_intersection + P32_subgrid
+```
+
+`p32_unresolved_orientation` 单独保留，**不**混入 `P32_total`。M9 的 P32 是输入参数场/中心归属预估；M11.1 是几何相交回算，两者含义不可互换。Cancel 只取消当前任务，不提交半成品，不覆盖已有有效结果。
+
+## 18. M11 Visualization
+
+右侧 `M11 Visualization` 支持 Field：`P32 explicit intersection`、`P32 subgrid`、`P32 total`；可选 All Joint Sets 或单组。
+
+### 18.1 显示模式
+
+- `Voxel Cells`：一个有效体素一个颜色，是默认审计视图。
+- `Outer Surface Cloud`：从有效体素体积提取真实外围面，不是包围盒。
+- `Orthogonal Sections`：X/Y/Z 固定法向切片，滑块、数值框和 3D 手柄双向同步。
+- `Arbitrary Section`：输入 Origin 和归一化 Normal；拒绝零向量/非有限值，可平移旋转。
+- `Plane Cutaway`：保留平面一侧，`Flip Side` 切换；从有效体积裁剪后提取外围和新暴露内部面。
+- `Display Clipping Box — retains box interior`：保留 Box 内有效体积。`Reset to Model Bounds` 使用权威体素 edge；`Snap Box to Voxel Faces` 默认开启；Box Widget 与六个数值框双向同步。
+
+Box/Cutaway 只是显示裁剪，不改变科学计算范围。NO_DATA、OUTSIDE_MODEL、EXCAVATION 和非有限字段不生成几何；TRUE_ZERO 是有效科学值，必须显示。
+
+### 18.2 Exact、Smooth、色标和网格
+
+- `Exact Cell Colours`：直接使用 cell scalar，是权威体素显示。
+- `Smooth Display`：先应用有效 mask，再把 cell scalar 转为 point scalar；仅为视觉插值，不修改结果，不是 Kriging。
+- `Global Range` 在同字段/同组的不同图层间复用全局范围；`Manual Range` 必须 min < max。
+- `Continuous Gradient` 或 `Discrete Bands`；非有限值通过不生成几何保持空白。
+- `Show Grid Lines` 仅影响显示；关闭时不把 VTK 裁剪三角线当作体素网格。
+
+### 18.3 图层管理
+
+`M11 Rendered Layers` 支持 Visible、Opacity、Show/Hide、Remove、`Clear Current View`、`Clear All M11`（计算对话框中的同类按钮标为 `Clear All M11 Layers`）。实时 Slice/Cutaway/Box 使用固定 slot 替换；`Keep Snapshot` 才新增快照。同一配置重复渲染不会累积 Actor 或色标。删除最后一个共享色标的可见图层后，相应 M11 色标才删除；其他模块的 Actor/色标不受影响。
+
+仓库中的 162,150 体素云图数据是 CPU-side VTK geometry/no-op plotter 基准，不代表真实 OpenGL 帧率。显卡驱动、屏幕分辨率、可见图层和网格线都会影响交互体验。
+
+## 19. 保存、重开和结果失效
+
+`.dfnproj` 保存数据库 Raw/Formal/Excluded/Pending、provenance、holdout、workflow、空间设置、M9 参数与数组、M10 columnar 几何和质量预算、M11 稀疏求交及 P32 数组。保存前会验证 M10 嵌套配置；非法 Auto share 不会覆盖旧项目文件。
+
+以下是典型失效关系：
+
+- 仅重新打开并原样确认 Voxel Grid：不失效 M9。
+- 改 Analysis Domain、dx/dy/dz 或 mask：Parameter Field 和 Validation 变 STALE；不清空 P10/P32 密度拟合或尺寸模型。
+- 只改 Generation Domain：影响未来 M10/M11，不清空 M9。
+- 重新生成 M10：旧 M11 结果和 M11 session 图层失效。
+- 改透明度、颜色、切片、语言：不使科学结果失效，不设置 dirty。
+
+## 20. 从原始数据到 M11.1 的完整操作示例
+
+1. New Project，先导入 `examples/m7_demo/surveys.csv`，确认 Pending 可见。
+2. 导入 `collars.csv`，确认 Pending 自动关联；再独立导入 `fractures.csv`、`rqd.csv`、`domain_intervals.csv`。
+3. 打开 Data Quality，运行检查，接受安全自动修正，确认有原因的 Excluded，完成质量确认。
+4. 建立并锁定 Validation Holdout。
+5. 检查 Domain intervals；用 Mode A 或 Mode B 识别 Joint Sets。
+6. 确认 Model Boundary 和 Voxel Grid；先使用较粗网格估算内存。
+7. 计算 M9 Density；建立 Size Distribution；生成 First Voxel Parameter Field；运行 Validation。
+8. 在 M10 选择 seed、workers、多尺度阈值；可导入 `examples/m10_demo/deterministic_structures.csv`；检查预计数量/内存后 Generate Batch。
+9. 保存 `.dfnproj` 并重开，核对 realization、数组和 workflow。
+10. 运行 M11.1 Exact Second Voxelization，检查 conservation 和 per-set/aggregate P32。
+11. 在 M11 Visualization 检查 Voxel Cells、Surface、Sections、Cutaway 和 Box Cutaway。
+12. 保存项目；如需交换数据，使用 M9 package 和 M10 `Export Selected`。当前没有 M11 独立文件导出器。
+
+演示文件用于操作验证，不代表真实地质参数，也不能直接作为生产模型结论。
+
+## 21. 常见问题
+
+| 现象 | 检查与处理 |
 |---|---|
-| `NOT_STARTED` | 尚未开始 |
-| `READY` | 依赖已满足，可以执行 |
-| `HAS_ISSUES` | 存在 Pending 或尚未解决的 ERROR |
-| `COMPLETED` | 已完成并确认 |
-| `STALE` | 上游数据已改变，需要重新检查或计算 |
-
-已排除且具有明确原因、并经过确认的历史记录属于已处理审计结果，不会永久阻止工作流。
-
-## 6. 第一步：钻孔数据库
-
-### 6.1 打开数据库
-
-可通过以下任一入口打开：
-
-- 单击工作流 `1. 钻孔数据库`；
-- 选择 `Data → Borehole Database`。
-
-数据库面板支持：
-
-- 按钻孔查看；
-- 按数据类型筛选；
-- 按 Raw、Formal、Excluded、Pending 状态查看；
-- 关键词搜索；
-- 表格排序；
-- 查看原始来源、来源行号、当前值和排除原因；
-- 独立导入、编辑和软删除记录。
-
-### 6.2 四种数据状态
-
-| 状态 | 说明 |
-|---|---|
-| Raw | 所有成功进入数据库的原始记录；原始值不静默修改 |
-| Formal | 已关联且满足正式使用条件的记录；下游计算只使用这部分数据 |
-| Excluded | 因无效、冲突或人工决定而排除，但仍完整保留供审计 |
-| Pending | 当前找不到对应 collar 等，暂时无法关联；补充数据后可重新分类 |
-
-`project.borehole_collection` 是 Formal 数据的下游投影，不是第二份原始数据库。
-
-### 6.3 支持的数据表
-
-五类数据可以独立、任意顺序、分批和多次导入，不要求一次提供全部文件。
-
-| 数据类型 | 推荐标准字段 | 常用兼容字段 |
-|---|---|---|
-| `collars` | `borehole_id, collar_x, collar_y, collar_z, final_depth` | `hole_id, easting, northing, elevation, total_depth` |
-| `surveys` | `hole_id, measured_depth, azimuth, dip` | `borehole_id, depth` |
-| `fractures` | `hole_id, depth, dip_direction, dip, set_id` | `borehole_id, measured_depth` |
-| `rqd` | `hole_id, from_depth, to_depth, rqd` | `borehole_id, rqd_value` |
-| `domain_intervals` | `hole_id, from_depth, to_depth, domain_id` | `borehole_id` |
-
-`set_id` 可为空；非空时必须能解释为整数。文件支持 CSV、XLSX 和 XLS。
-
-### 6.4 独立导入操作
-
-1. 在数据库面板点击 `Import / Append…`；
-2. 选择 `Data type`；
-3. 选择提交方式：
-   - `Append`：追加新记录，完全相同的重复记录跳过；
-   - `Replace formal table`：替换该类正式表，同时保留审计历史；
-4. 选择数据文件；
-5. 点击 `Preview`，核对前 100 行；
-6. 在 `Field mapping` 中将源字段名改成标准字段名；
-7. 点击 `Stage This Import`；
-8. 查看 raw、formal、excluded、pending 和 duplicates 统计；
-9. 可以继续暂存其他文件；
-10. 点击 `OK` 提交全部暂存操作，或点击 `Cancel` 完整回滚本次对话框中的修改。
-
-如果先导入 surveys、fractures、RQD 或 domain intervals，而对应 collar 尚不存在，记录会进入 Pending。以后导入对应 collar 后，数据库会自动尝试重新关联。
-
-### 6.5 编辑与删除
-
-编辑记录：
-
-1. 在表格中选中记录；
-2. 点击 `Edit selected…`；
-3. 编辑 JSON 形式的当前值；
-4. 确认后保存。
-
-编辑只改变清洗后的当前值，原始值和修改历史仍保留。
-
-删除记录采用软删除：选中记录后点击 `Delete selected…`，记录转入 Excluded，不会从 Raw 审计层消失。
-
-## 7. 第二步：数据质量
-
-### 7.1 打开和查看问题
-
-单击工作流 `2. 数据质量`。窗口顶部可以按以下条件筛选：
-
-- 数据类型；
-- 严重程度；
-- 问题状态。
-
-问题表包含：钻孔编号、来源文件、来源行、字段、原值、当前值、建议值和原因。底部摘要显示：
-
-```text
-Raw | Formal | Excluded | Pending | Unresolved ERROR | Quality confirmed
-```
-
-### 7.2 自动检查范围
-
-当前会检查：
-
-- collars：必填字段、坐标、终孔深度；
-- surveys：深度、数字类型、方位角、倾角和重复测点；
-- fractures：深度、倾向、倾角和 `set_id`；
-- RQD：值域、区间顺序、孔深范围及同孔重叠；
-- domain intervals：深度、`domain_id`、孔深范围及同孔重叠；
-- 非 collar 记录引用未知钻孔；
-- Excluded 记录是否具有明确原因并得到确认。
-
-### 7.3 自动修正
-
-当前只有两类问题允许安全自动修正：
-
-- survey 方位角修正为 `azimuth % 360`，使其进入 `[0, 360)`；
-- survey 倾角限制到 `[-90, 90]`。
-
-操作方式：
-
-- 选中问题后点击 `Accept selected auto-fix`；
-- 或点击 `Accept all auto-fixes` 一次性应用所有可自动修正项。
-
-同一测站的多个字段会合并处理。每个字段都会写入包含修正前值、修正后值、问题编号、来源和时间的修改历史。重复运行检查或重复点击不会重复应用同一修正。
-
-### 7.4 人工处理
-
-- `Manual edit record…`：修改一条记录的当前值；
-- `Exclude record…`：排除无法修正的记录，必须填写原因；
-- `Retry / reclassify`：修正关联条件后尝试恢复 Excluded 或 Pending；
-- `Confirm selected exclusions`：确认选中的有理由排除记录；
-- `Confirm all documented exclusions`：确认全部已有明确原因的排除记录；
-- `Re-run checks`：重新执行全部质量检查；
-- `Export JSON…` / `Export CSV…`：导出质量报告。
-
-### 7.5 完成数据质量
-
-只有同时满足以下条件，才能点击 `Confirm data quality complete`：
-
-```text
-Raw > 0
-Pending = 0
-Unresolved ERROR = 0
-```
-
-已确认且原因明确的 Excluded 记录可以保留，不阻止完成。完成后：
-
-```text
-clean = COMPLETED
-holdout = READY
-```
-
-点击质量窗口的 `OK` 只保存当前对话框操作并关闭，不会自动打开 Validation Holdout。点击 `Cancel` 会将本次对话框中的数据库、问题和工作流修改全部回滚。
-
-## 8. 第三步：Validation Holdout
-
-Validation Holdout 用于将钻孔划分为：
-
-- Calibration：用于节理组识别及后续拟合；
-- Validation：独立保留，不参与拟合。
-
-操作步骤：
-
-1. 单击工作流 `3. Validation Holdout`；
-2. 选择方法：
-   - `Manual selection`：手动选择；
-   - `Random (fixed seed)`：按固定种子随机选择；
-   - `Stratified by domain`：当前界面会提示结构域条件，并暂用随机选择；
-3. 手动模式下选择钻孔，点击 `Mark as Calibration` 或 `Mark as Validation`；
-4. 随机模式下设置 Validation 比例和随机种子；
-5. 检查 Calibration、Validation 和 Total 数量；
-6. 点击 `Lock Holdout Split`；
-7. 点击 `OK` 提交。
-
-节理组识别前必须锁定 Holdout。修改上游钻孔数据后，应重新检查拆分是否仍然有效。
-
-## 9. 第四步：钻孔结构域
-
-单击工作流 `4. 钻孔结构域` 打开编辑器。
-
-可以：
-
-- 新增或删除结构域；
-- 设置结构域名称、ID、颜色和备注；
-- 将某钻孔的深度区间分配给结构域；
-- 删除已分配区间；
-- 查看各结构域的钻孔区间。
-
-区间必须满足：
-
-```text
-0 <= from_depth < to_depth <= borehole final_depth
-```
-
-同一钻孔的结构域区间不得重叠。M8 只维护钻孔区间约束，不生成三维结构域体。
-
-如果项目没有 domain interval 数据，本步骤不是使用数据库、清洗或设置边界的前置条件。
-
-## 10. 第五步：节理组识别
-
-单击工作流 `5. 节理组`。
-
-前提条件：
-
-- 存在有效 Formal fractures；
-- Validation Holdout 已锁定；
-- 至少存在一个 Calibration 钻孔。
-
-支持两种模式：
-
-- `Mode A: Use imported set_id from CSV`：使用导入的 `set_id`；
-- `Mode B: Auto-identify`：使用球面 K-Means 自动识别。
-
-自动模式需设置节理组数量和固定随机种子。结果表显示：
-
-- Set ID 和名称；
-- 平均倾向、平均倾角；
-- Fisher Kappa；
-- Count；
-- 来源。
-
-结果摘要会分别显示 Calibration fractures used 和 Validation fractures excluded。Validation 裂隙不得参与聚类。点击 `OK` 后才将结果写入项目。
-
-## 11. 第六步：模型边界
-
-单击工作流 `6. 模型边界`。本步骤只确认 Voxel Analysis Domain，不同时完成体素网格步骤。
-
-### 11.1 自动边界
-
-选择 `Automatic from full trajectories and observations`，设置 `Automatic outward margin`。系统根据完整钻孔轨迹和有效观测点范围计算边界，再向外扩展指定距离。
-
-### 11.2 手动边界
-
-选择 `Manual`，输入：
-
-```text
-X min / X max
-Y min / Y max
-Z min / Z max
-```
-
-点击 `Check Coverage` 可查看：
-
-- 超界钻孔数量；
-- 超界轨迹点数量；
-- 超界观测点数量；
-- 各方向最大超出距离；
-- 受影响钻孔；
-- 推荐扩展范围。
-
-如果边界不足，软件会建议扩展到推荐边界。若确实需要保留不足边界，必须勾选明确允许裁剪；系统不会静默删除或裁剪数据库记录。
-
-点击 `OK` 后只有：
-
-```text
-bounds = COMPLETED
-voxel_grid = READY
-```
-
-## 12. 第七步：体素网格预览与确认
-
-完成模型边界后，单击工作流 `7. 体素网格预览与确认`。
-
-### 12.1 体素尺寸
-
-分别设置：
-
-- `dx`：X 方向尺寸；
-- `dy`：Y 方向尺寸；
-- `dz`：Z 方向尺寸。
-
-三者可以不同。系统使用 `ceil` 计算 `nx、ny、nz`，保证体素网格完整覆盖分析域。
-
-摘要显示：
-
-- `nx × ny × nz`；
-- 总体素数量；
-- 有 mask 时的有效体素数量；
-- 主要字段内存估算；
-- 大网格警告；
-- DFN Generation Domain 范围。
-
-体素状态区分：无数据、真实零值和模型外空间。
-
-### 12.2 DFN 生成域缓冲
-
-设置：
-
-- `Voxel buffer layers`；
-- `Maximum fracture radius`。
-
-每个方向的默认缓冲依据为：
-
-```text
-max(最大裂隙半径, 缓冲层数 × 对应方向体素尺寸)
-```
-
-系统保证：
-
-```text
-DFN Generation Domain 包含 Voxel Analysis Domain
-```
-
-M8 只计算、显示并保存这个范围，不在此步骤生成条件 DFN。
-
-### 12.3 三维预览
-
-可设置：
-
-- 是否显示抽样网格线框；
-- 网格线透明度；
-- X/Y/Z 切片方向；
-- 切片位置百分比。
-
-点击 `3D Preview` 后显示：
-
-- Voxel Analysis Domain 外框；
-- DFN Generation Domain 外框；
-- 完整钻孔轨迹；
-- 裂隙观测点；
-- 坐标轴；
-- 抽样网格线和切片；
-- 醒目标记的超界数据。
-
-预览不会创建或绘制大型网格的每一个体素边框。点击 `OK` 后才令 `voxel_grid = COMPLETED`。
-
-## 13. 推荐的完整操作流程
-
-```text
-New Project
-→ 打开钻孔数据库
-→ 分批导入 collars / surveys / fractures / rqd / domain_intervals
-→ 检查 Raw / Formal / Excluded / Pending
-→ 打开数据质量
-→ 接受安全自动修正
-→ 人工处理其余 ERROR 和 Pending
-→ 确认有明确原因的 Excluded
-→ Confirm data quality complete
-→ 设置并锁定 Validation Holdout
-→ 检查或编辑钻孔结构域
-→ 识别节理组
-→ 确认模型边界
-→ 设置并预览体素网格和 DFN 生成域
-→ 保存为 .dfnproj
-→ 关闭并重新打开，复核数量与工作流状态
-```
-
-建议每完成一个重要步骤后保存项目。
-
-## 14. 演示数据
-
-仓库中的示例文件位于：
-
-```text
-examples/m7_demo/
-```
-
-包含 collars、surveys、fractures、rqd 和 domain intervals 五类文件，可用于熟悉独立导入和数据质量流程。
-
-当前演示数据导入后的审计基线为：
-
-```text
-Raw = 284
-Formal = 272
-Excluded = 12
-Pending = 0
-```
-
-其中 fractures：
-
-```text
-Raw = 83
-Formal = 80
-Excluded = 3
-```
-
-接受安全测斜自动修正后，Formal survey stations 为 148，所有正式测站满足：
-
-```text
-0 <= azimuth < 360
--90 <= dip <= 90
-```
-
-这些数量仅是演示数据验收结果，生产代码不会依赖或硬编码这些数值。
-
-## 15. 数据追溯原则
-
-每条数据库记录均保留：
-
-- 唯一 `record_id`；
-- `source_file`；
-- `source_row`；
-- `imported_at`；
-- `original_values`；
-- 当前清洗值；
-- Raw/Formal/Excluded/Pending 状态；
-- 排除原因；
-- 修改来源和修改历史。
-
-请勿通过编辑原始 CSV 后覆盖项目的方式隐藏问题。推荐追加新批次或使用有审计记录的编辑、排除和恢复操作。
-
-## 16. 常见问题
-
-### 16.1 只导入 surveys 后为什么都是 Pending？
-
-survey 需要通过 `hole_id` 关联 collar。先导入 survey 是允许的；之后导入相应 collars，系统会自动尝试关联。
-
-### 16.2 为什么 Excluded 不会从 Raw 中消失？
-
-Raw 是不可静默修改的审计层。Excluded 表示不参与正式计算，不表示删除原始记录。
-
-### 16.3 为什么确认了 Excluded，数量仍然存在？
-
-确认只表示该排除记录已有明确原因并完成审阅。它仍必须保留用于审计，但不再计入未解决 ERROR。
-
-### 16.4 为什么不能完成数据质量？
-
-检查底部摘要。必须满足 Pending 为 0 且 Unresolved ERROR 为 0。WARNING 不一定阻止完成，但应由用户检查其科学影响。
-
-### 16.5 为什么节理组按钮不能得到结果？
-
-应先锁定 Validation Holdout，并确认至少有一个 Calibration 钻孔和有效 Formal fractures。
-
-### 16.6 修改数据库后为什么后续步骤变成 STALE？
-
-这表示上游数据变化使已有结果可能失效。重新进入受影响步骤并确认即可。软件只应使真正依赖该数据的步骤失效。
-
-### 16.7 为什么体素数非常大？
-
-体素总数约为 `nx × ny × nz`。减小体素尺寸会按三个方向共同放大数量和内存需求。应先查看摘要和警告，再确认网格。
-
-### 16.8 为什么第一次按 Ctrl+S 会弹出保存位置？
-
-新项目尚无路径，因此普通保存会自动转入 Save As。这是正常行为。
-
-## 17. 使用限制与科学注意事项
-
-- Validation 钻孔必须完全排除在节理组拟合和未来 M9 参数拟合之外；
-- 不应将 RQD 直接等同于 P10 或 P32；
-- 高裂隙密度不等于必然可崩；
-- 相邻体素存在裂隙不等于裂隙网络真实贯通；
-- M8 网格预览不是显式 DFN 生成结果；
-- 自动修正仅应用于明确、安全且可追溯的字段转换；
-- 任何自动或人工修改都应在质量报告和项目修改历史中可追溯；
-- 正式研究前应保存、重开并复核数据库计数、Holdout、节理组和空间设置。
-
-## 18. 故障排查建议
-
-遇到问题时依次检查：
-
-1. 底部日志区是否有错误信息；
-2. 数据库 Raw/Formal/Excluded/Pending 数量；
-3. 数据质量中的 Unresolved ERROR；
-4. 字段映射和数值单位是否正确；
-5. `hole_id` 是否与 collars 完全一致；
-6. 工作流是否显示 STALE；
-7. 手动边界是否覆盖完整轨迹；
-8. 项目是否已保存为 `.dfnproj`；
-9. 重启软件并重新打开项目后问题是否仍然存在。
-
-报告问题时建议同时提供：软件版本、项目文件格式、操作步骤、日志信息、相关来源文件名和 `source_row`。不要发送无法脱敏的敏感工程数据。
-## M11 三维 P32 云图与交互侧栏
-
-完成 M11.1 精确第二次体素化后，在 `M11.1 Exact Second Voxelization` 窗口的三维显示区域选择字段、节理组和显示方式，然后点击 `Render Cloud`。
-
-支持四种显示方式：
-
-1. `Voxel Cells`：按原始体素逐格赋色，是默认的科学审计视图；
-2. `Outer Surface Cloud`：提取有效模型体素的真实外围表面；
-3. `Orthogonal Section`：选择 X、Y 或 Z，并通过位置控件设置剖面；界面显示实际坐标和体素索引；
-4. `Arbitrary Plane`：输入平面原点和法向量，可选交互式平面控件。零法向量会被拒绝。
-
-显示插值选项：
-
-- `Exact Cell Colours`：直接显示权威 cell scalar，一个体素一个数值；
-- `Smooth Display`：仅用于视觉平滑。系统先删除 `OUTSIDE_MODEL`、`NO_DATA` 和 `EXCAVATION` 单元，再将有效 cell scalar 转换为临时 point scalar。
-
-界面提示 `Display interpolation only — scientific voxel values unchanged`。Smooth Display 不是 Kriging，不会生成新的科学参数场，也不会覆盖或保存 M11 P32 数组。
-
-完成并提交 M11.1 后，从 `Visualization > M11 Visualization` 打开非模态侧栏。侧栏可停靠、浮动、关闭和重新打开；关闭侧栏只关闭交互手柄，已经保留的云图仍显示。没有有效的已提交 M11 结果、或其来源 M10/参数场已经失效时，侧栏会禁用操作并说明原因。
-
-正交剖面的 X、Y、Z 可同时启用。每个法向固定为对应坐标轴，只能沿自身法向平移，不能旋转。滑块、实际坐标输入和三维平面手柄双向同步；只有剖面恰好位于体素中心时才显示体素索引。拖动使用固定交互槽位更新原图层，`Keep Snapshot` 才会保留一个独立历史剖面。
-
-任意剖面可以平移和旋转。原点 X/Y/Z、法向 Nx/Ny/Nz 与三维控件双向同步；法向在显示计算内部归一化，不改写用户输入或科学数组。零向量和非有限输入会被拒绝。`Reset` 恢复模型中心和 Z 朝向，X/Y/Z 按钮提供常用朝向。
-
-`Cutaway / Clip Plane` 对有效体素场执行平面裁剪，再提取保留侧的外围及新暴露内部 P32 表面；`Flip Side` 切换保留侧。它不同于二维 Slice，也不同于只裁剪既有外围壳的显示技巧。Cutaway 支持 Exact/Smooth、实时手柄和快照，但始终只是 session 显示状态，不改变科学计算范围、稀疏求交或 P32 数组。
-
-`Display Clipping Box — retains box interior` 是体积优先的 Box Cutaway。它先按 cell state 和所选字段有限性筛选有效体素，再用六个轴向平面保留盒内体积，最后提取外围面和新暴露的内部 P32 面；不再裁剪已经生成的外围空壳。`TRUE_ZERO` 保留，`OUTSIDE_MODEL`、`NO_DATA`、`EXCAVATION` 和非有限值不生成显示几何，因此盒子经过无数据孔洞或模型外部时不会伪造规则六面体表面。
-
-`Snap Box to Voxel Faces` 默认开启：六个边界吸附到真实体素面，Exact 模式保留完整来源体素及其原始 cell scalar，网格线显示来源体素的真实表面边界。关闭 Snap 后可以连续移动裁剪面，但这是显示几何裁切，不产生新的科学体素值；为避免误导，连续裁剪产生的内部三角剖分线不会作为体素网格线显示。Smooth 模式同样先应用有效体素 mask，再生成临时 point scalars，只用于视觉插值。
-
-数值框和三维 Box Handle 双向同步。`Reset to Model Bounds` 恢复有效模型范围，`Reset to Centre` 取模型中央范围；实时移动始终替换同一个 `box_cutaway` 槽位，只有 `Keep Snapshot` 才保留独立快照。所有 Box 图层、控件和色标都是 session-only 显示状态，不写入项目，也不改变 P32、workflow 或 dirty 状态。
-
-请区分：
-
-- **Slice**：用一个平面查看体数据截面；
-- **Plane Cutaway**：用一个任意平面保留有效体积的一侧，并显示新暴露内部面；
-- **Box Cutaway**：用六个轴向平面保留盒内有效体积，并显示实际存在的外围面和内部面；
-- **Clip**：只隐藏所选 M11 显示对象的一部分；
-- **Analysis / Generation Domain**：科学计算使用的持久化范围。
-
-Clip、Show/Hide、Opacity 和清除图层都只改变 session 显示状态，不删除体素或裂隙，不重算 P32，不改变项目 dirty 状态，也不会裁剪 M9、M10、钻孔、边界或坐标轴。隐藏图层不等于删除科学数据，云图配置和 VTK 缓存不写入 `.dfnproj`。
-
-颜色范围默认使用所选字段在整个有效模型中的全局范围，保证不同切片可比较。也可以设置合法的手动最小值和最大值。颜色可选择连续渐变或 5～30 级分级色带。`Show Grid Lines` 只改变显示边线。
-
-所有云图进入 `Rendered Layers`：可显示/隐藏、调整透明度、删除当前图层或清除全部 M11 图层。M11 图层和色卡使用独立命名空间，不会删除 M9、M10、钻孔、边界、网格或坐标轴。关闭窗口会移除交互式平面控件；云图、色卡和缓存均为 session-only，不写入 `.dfnproj`。
-
-必须注意：云图不会改变 `p32_total = p32_explicit_intersection + p32_subgrid`，也不会改变稀疏求交、面积守恒或工作流状态。当前版本未实现 Kriging、连通性、贯通、块度或 Volume Rendering。
-
-## 界面语言 / Interface language
-
-从主窗口选择 `Settings / 设置 → Language / 语言`，可在 `简体中文` 和 `English` 之间切换。语言偏好以稳定代码 `zh_CN` 或 `en` 保存到用户级 `QSettings`，不写入 `.dfnproj`，因此不会改变项目 dirty 状态、工作流、随机种子或任何科学结果。中文操作系统首次启动默认简体中文，其他系统默认英文；以后启动使用上次选择。
-
-语言切换会立即刷新已支持的菜单、工具栏、工作流、钻孔数据库以及 M7–M11 对话框。运行计算、DFN生成或项目保存时语言菜单暂时禁用，任务结束后自动恢复。若中文翻译文件缺失或损坏，程序安全回退英文。P10、P32、RQD、坐标轴、单位、字段键、ID、用户名称和路径保持原样。
-
-### 维护翻译
-
-翻译源文件位于 `src/dfn_cave_studio/resources/i18n/dfn_cave_studio_zh_CN.ts`。先提取新增的Qt界面英文原文，再修改新增的 `type="unfinished"` 翻译，最后编译：
-
-```powershell
-.venv\Scripts\python.exe scripts\extract_translations.py
-.venv\Scripts\python.exe scripts\compile_translations.py
-```
-
-该脚本从当前 PySide6 安装中定位 `lrelease`，生成同目录的 `.qm` 文件，不依赖系统 PATH。新增用户可见文字时，将英文原文加入 TS 的 `DFNCaveStudio` context，编译后运行中英文 GUI 测试。业务枚举、JSON/NPZ键、CSV标准列名、actor/scalar-bar/widget ID及config hash输入不得加入翻译替换流程。
+| 导入提示 Missing required fields | 在 Preview 检查 Mapping；确认没有把普通 depth 当 final_depth；解决候选冲突。 |
+| Survey 是 Pending | 先或随后导入同孔 Collar；再 Retry/reclassify。 |
+| Data Quality 无法完成 | 必须 Pending=0 且 unresolved ERROR=0；有原因且已确认的 Excluded 不阻止。 |
+| Joint Set 少于请求 K | 有效且不同的 Full orientation 轴向数量必须至少为 K；Dip-only 不参与聚类。 |
+| P32 为 NO_DATA | 检查方向模型、Calibration 支持、IDW 半径/邻居、Domain 和 cell state。不要把 NO_DATA 当 0。 |
+| M10 数量或内存很大 | 检查 P32、体素体积、E[R²]、显式尺寸类、realizations/workers；先用估算表。 |
+| M10 Auto share 报错 | 必须 `0 < small share < cumulative medium/large share < 1`；Manual 模式检查半径阈值。 |
+| Cancel 后正在停止 | 后台与子进程在安全批次边界协作退出；确认结束前不能再次计算。 |
+| opacity=1 仍有空洞 | 仅 NO_DATA/模型外/非有限区应透出；TRUE_ZERO 应遮挡。确认选中的实际图层。 |
+| Box Reset 报越界 | 当前版本应精确使用 Analysis Domain 的体素 edge；若仍出现，请记录项目和边界值，不要向内缩小代替修复。 |
+| 保存后图层消失 | 正常：图层和 Widget 是 session-only；科学数组和设置应恢复。 |
+
+## 22. 科学解释限制
+
+- P10 是线密度，P32 是面密度；二者不能按固定常数互换。
+- RQD、RMR、joint spacing、P10、P32 是不同概念；本版本不计算 RMR，也不从 RQD 直接推导 P32。
+- M9 P32 是基于钻孔、方向修正和空间模型的输入场；M11.1 P32 是显式圆盘真实相交面积回算。
+- `P32_subgrid` 是未显式生成但保留的可建模小尺度目标；`p32_unresolved_orientation` 是方向未知预算，不能相加冒充 `P32_total`。
+- 相邻体素都有裂隙不代表裂隙网络连通；高 P32 不代表必然可崩。
+- Smooth Display、IDW 和未来 Kriging 含义不同；当前没有 Kriging。
+- 单次 Poisson realization 的 realized P32 会围绕 target P32 波动；固定 seed 只保证复现，不消除不确定性。
+- 输出必须结合数据覆盖、量测偏差、结构域假设、尺寸来源和 Validation 结果解释。
+
+## 23. 相关文档
+
+- [数据处理流程](DATA_PROCESSING_WORKFLOW.md)
+- [数据字典与术语](DATA_DICTIONARY_AND_GLOSSARY.md)
+- [科学规范](../SCIENTIFIC_SPEC.md)
+- [M11.1 审查材料](review/v0.11.0-M11.1/)
+- [GitHub Release](https://github.com/dfn-cave-studio/dfn-cave-studio/releases/tag/v0.11.0-M11.1)

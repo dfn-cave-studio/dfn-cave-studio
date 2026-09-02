@@ -28,6 +28,9 @@
   a:hover { text-decoration: underline; }
   .repo-link { font-size: 0.85rem; color: var(--muted); margin-bottom: 1.5rem; }
   .repo-link a { color: var(--blue); }
+  .docs-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .docs-nav a { display: block; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; font-weight: 600; }
+  .docs-nav small { display: block; color: var(--muted); font-weight: normal; margin-top: 0.25rem; }
   .footer { margin-top: 2rem; font-size: 0.8rem; color: var(--muted); text-align: center; }
 </style>
 </head>
@@ -47,6 +50,13 @@
   <div class="stat"><div class="value">710 + 155</div><div class="label">Core + GUI / Windows Job</div></div>
   <div class="stat"><div class="value">—</div><div class="label">Scientific Validations</div></div>
   <div class="stat"><div class="value">3.12 / 3.13</div><div class="label">Python CI</div></div>
+</div>
+
+<h2 style="color: var(--text); margin-bottom: 1rem;">Documentation / 文档</h2>
+<div class="docs-nav">
+  <a href="USER_MANUAL.md">User Manual / 用户手册<small>从原始数据到 M11.1 的中文操作说明（保留英文控件名）</small></a>
+  <a href="DATA_PROCESSING_WORKFLOW.md">Data Processing Workflow / 数据处理流程<small>M7/M8 数据准备、M9 参数场、M10 DFN 与 M11.1 精确求交</small></a>
+  <a href="DATA_DICTIONARY_AND_GLOSSARY.md">Data Dictionary and Glossary / 数据字典与术语<small>字段、别名、单位、校验规则及科学术语</small></a>
 </div>
 
 <h2 style="color: var(--text); margin-bottom: 1rem;">Milestone Status</h2>

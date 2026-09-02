@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="title desc">
+  <title id="title">DFN Cave Studio v0.11.0-M11.1 完整工作流</title>
+  <desc id="desc">从五类钻孔数据及确定性结构面到M9参数场、M10显式DFN和M11.1精确第二次体素化的流程。</desc>
+  <defs>
+    <style>
+      text{font-family:"Segoe UI","Microsoft YaHei",sans-serif;fill:#1f2937}.title{font-size:26px;font-weight:700}.sub{font-size:14px;fill:#4b5563}.h{font-size:16px;font-weight:700}.b{font-size:13px}.input{fill:#e8f1ff;stroke:#2563eb}.process{fill:#ecfdf5;stroke:#059669}.science{fill:#fff7ed;stroke:#ea580c}.store{fill:#f5f3ff;stroke:#7c3aed}.view{fill:#fdf2f8;stroke:#db2777}.future{fill:#f3f4f6;stroke:#9ca3af;stroke-dasharray:6 5}.box{stroke-width:2;rx:12}.arrow{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#a)}
+    </style>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="1400" height="720" fill="#ffffff"/>
+  <text x="40" y="45" class="title">DFN Cave Studio 完整数据—建模工作流</text>
+  <text x="40" y="70" class="sub">v0.11.0-M11.1｜蓝=用户输入　绿=处理　橙=科学计算　紫=持久化结果　粉=显示　灰=未实现</text>
+
+  <rect class="box input" x="40" y="110" width="210" height="190"/>
+  <text x="145" y="140" class="h" text-anchor="middle">钻孔与结构输入</text>
+  <text x="60" y="170" class="b">• Collars</text><text x="60" y="195" class="b">• Surveys</text>
+  <text x="60" y="220" class="b">• Fractures</text><text x="60" y="245" class="b">• RQD</text>
+  <text x="60" y="270" class="b">• Domain intervals</text>
+
+  <rect class="box process" x="300" y="110" width="220" height="190"/>
+  <text x="410" y="140" class="h" text-anchor="middle">M7/M8 数据准备</text>
+  <text x="320" y="170" class="b">字段映射与审计数据库</text>
+  <text x="320" y="195" class="b">Data Quality / Formal 投影</text>
+  <text x="320" y="220" class="b">Minimum Curvature 轨迹</text>
+  <text x="320" y="245" class="b">Calibration / Validation</text>
+  <text x="320" y="270" class="b">Domain / Joint Set</text>
+
+  <rect class="box science" x="570" y="110" width="220" height="190"/>
+  <text x="680" y="140" class="h" text-anchor="middle">M9 参数模型</text>
+  <text x="590" y="170" class="b">P10 区间与 Fisher P32</text>
+  <text x="590" y="195" class="b">方向 / Kappa / Set 概率</text>
+  <text x="590" y="220" class="b">尺寸分布与 E[R²]</text>
+  <text x="590" y="245" class="b">GLOBAL_CONSTANT / IDW</text>
+  <text x="590" y="270" class="b">第一次体素参数场</text>
+
+  <rect class="box science" x="840" y="110" width="220" height="190"/>
+  <text x="950" y="140" class="h" text-anchor="middle">M10 显式 DFN</text>
+  <text x="860" y="170" class="b">Poisson + Fisher + Size</text>
+  <text x="860" y="195" class="b">随机 / 条件 / 确定性</text>
+  <text x="860" y="220" class="b">SMALL / MEDIUM / LARGE</text>
+  <text x="860" y="245" class="b">P32_subgrid / unresolved</text>
+  <text x="860" y="270" class="b">Columnar center-normal-radius</text>
+
+  <rect class="box science" x="1110" y="110" width="250" height="190"/>
+  <text x="1235" y="140" class="h" text-anchor="middle">M11.1 精确第二次体素化</text>
+  <text x="1130" y="170" class="b">解析 disk–voxel 面积求交</text>
+  <text x="1130" y="195" class="b">稀疏 ordinal / voxel / area</text>
+  <text x="1130" y="220" class="b">P32 explicit intersection</text>
+  <text x="1130" y="245" class="b">+ P32_subgrid = P32_total</text>
+  <text x="1130" y="270" class="b">逐组与全部集合</text>
+
+  <path class="arrow" d="M250 205 H295"/><path class="arrow" d="M520 205 H565"/><path class="arrow" d="M790 205 H835"/><path class="arrow" d="M1060 205 H1105"/>
+
+  <rect class="box input" x="840" y="340" width="220" height="90"/>
+  <text x="950" y="370" class="h" text-anchor="middle">可选确定性结构面 CSV</text>
+  <text x="860" y="400" class="b">参数化圆盘；不是 STL/OBJ</text>
+  <path class="arrow" d="M950 340 V305"/>
+
+  <rect class="box store" x="300" y="480" width="490" height="110"/>
+  <text x="545" y="512" class="h" text-anchor="middle">可审计项目与通用导出</text>
+  <text x="325" y="542" class="b">.dfnproj：数据库、workflow、M9/M10/M11 科学状态</text>
+  <text x="325" y="568" class="b">M9：CSV / JSON / NPZ / VTI　　M10：CSV / JSON / NPZ / VTP</text>
+  <path class="arrow" d="M680 300 V475"/>
+
+  <rect class="box view" x="840" y="480" width="520" height="110"/>
+  <text x="1100" y="512" class="h" text-anchor="middle">Session-only 三维显示</text>
+  <text x="865" y="542" class="b">M9 slices｜M10 LOD / Exact｜M11 cloud / sections / cutaway / box</text>
+  <text x="865" y="568" class="b">Actor、色标、Widget、相机不写入项目；显示不改变科学数组</text>
+  <path class="arrow" d="M1235 300 V475"/>
+
+  <rect class="box future" x="840" y="630" width="520" height="62"/>
+  <text x="1100" y="655" class="h" text-anchor="middle">后续计划：连通图、贯通/渗流、块体、力学、正式 3DEC/PFC、Kriging</text>
+  <text x="1100" y="678" class="b" text-anchor="middle">v0.11.0-M11.1 不包含这些能力</text>
+</svg>
