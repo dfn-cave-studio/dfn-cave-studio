@@ -134,3 +134,19 @@ def test_fixed_p10_multiple_domain_splits_conserve_trajectory_length():
     assert np.isclose(sum(row.sample_length for row in rows), 40.0)
     assert sum(row.observation_count for row in rows) == 5
     assert all(row.role == "validation" for row in rows)
+
+
+def test_authoritative_joint_set_ids_keep_zero_observation_groups_visible():
+    """M9 intervals retain configured and non-contiguous groups with true zeros."""
+    hole = _vertical_hole()
+    rows = build_p10_intervals(
+        BoreholeCollection(boreholes=[hole]),
+        {"BH-1": "calibration"},
+        [],
+        interval_length=20,
+        set_ids=[1, 2, 4, 7],
+    )
+
+    assert {row.set_id for row in rows} == {1, 2, 4, 7}
+    assert all(row.observation_count == 0 for row in rows if row.set_id in {2, 4, 7})
+    assert all(row.data_state == "true_zero" for row in rows if row.set_id in {2, 4, 7})

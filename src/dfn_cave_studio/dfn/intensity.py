@@ -96,6 +96,7 @@ def build_p10_intervals(
     *,
     interval_length: float = 10.0,
     interval_mode: str = "fixed",
+    set_ids: Iterable[int] | None = None,
 ) -> list[P10Interval]:
     """Compute P10 intervals from Formal fracture observations only.
 
@@ -106,9 +107,16 @@ def build_p10_intervals(
     if interval_length <= 0:
         raise ValueError("interval_length must be positive")
     domains = list(domain_intervals)
-    set_ids = sorted(
-        {int(obs.set_id) for hole in collection.boreholes for obs in hole.fracture_observations if obs.set_id is not None}
-    )
+    observed_set_ids = {
+        int(obs.set_id)
+        for hole in collection.boreholes
+        for obs in hole.fracture_observations
+        if obs.set_id is not None
+    }
+    authoritative_set_ids = {int(value) for value in set_ids} if set_ids is not None else observed_set_ids
+    if any(value <= 0 for value in authoritative_set_ids):
+        raise ValueError("set_ids must contain positive identifiers")
+    ordered_set_ids = sorted(authoritative_set_ids)
     output: list[P10Interval] = []
     for hole in collection.boreholes:
         if interval_mode == "domain":
@@ -131,7 +139,7 @@ def build_p10_intervals(
             segment_directions = _trajectory_segments(hole, start, end)
             physical_length = sum(item[3] for item in segment_directions)
             center = _point_at_depth(hole, (start + end) / 2.0)
-            for set_id in set_ids:
+            for set_id in ordered_set_ids:
                 selected = [
                     obs
                     for obs in hole.fracture_observations

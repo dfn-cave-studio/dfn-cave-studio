@@ -87,3 +87,40 @@ def test_idw_without_fallback_returns_no_data_outside_search_radius():
     assert result.value is None
     assert result.state == VoxelCellState.NO_DATA
     assert result.provenance == "no_data"
+
+
+def test_parameter_field_builds_all_seven_and_non_contiguous_joint_sets():
+    """M9 array creation derives names from actual IDs rather than three slots."""
+    set_ids = [1, 2, 4, 7, 9, 12, 15]
+    estimates = [
+        P32Estimate(
+            domain_id=1,
+            set_id=set_id,
+            fracture_count=4,
+            raw_sample_length=10,
+            effective_sample_length=8,
+            mean_exposure=0.8,
+            p32=0.01 * set_id,
+            observability="adequate",
+            random_seed=42,
+        )
+        for set_id in set_ids
+    ]
+    metadata, arrays = ParameterFieldBuilder().build(
+        ModelBounds(x_min=0, x_max=1, y_min=0, y_max=1, z_min=0, z_max=1),
+        VoxelConfig(),
+        DensitySettings(method=DensityMethod.GLOBAL_CONSTANT),
+        [],
+        estimates,
+        [JointSetConfig(set_id=set_id) for set_id in set_ids],
+        [SizeModel(domain_id=1, set_id=set_id) for set_id in set_ids],
+        random_seed=42,
+        domain_at_point=lambda _point: 1,
+    )
+
+    assert metadata.set_ids == set_ids
+    assert all(f"set_{set_id}_p32" in arrays for set_id in set_ids)
+    assert all(arrays[f"set_{set_id}_p32"][0, 0, 0] > 0.0 for set_id in set_ids)
+    assert arrays["p32_total"][0, 0, 0] == sum(
+        arrays[f"set_{set_id}_p32"][0, 0, 0] for set_id in set_ids
+    )

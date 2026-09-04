@@ -45,7 +45,10 @@ class JointSetIdentificationResult:
     def __init__(self, domain_id: int):
         self.domain_id = domain_id
         self.sets: Dict[int, JointSetConfig] = {}  # set_id → config
-        self.assignments: Dict[str, int] = {}  # record_id → set_id
+        # Keys are stable within the Formal projection: ``hole_id:observation_index``.
+        # The repository resolves them back to canonical fracture record IDs on commit.
+        self.assignments: Dict[str, int] = {}
+        self.validation_assignments: Dict[str, int] = {}
         self.mode: str = "imported"  # imported | automatic
         self.calibration_count: int = 0
         self.validation_count: int = 0
@@ -56,6 +59,7 @@ class JointSetIdentificationResult:
         self.validation_full_orientation_count: int = 0
         self.validation_dip_only_count: int = 0
         self.set_counts: Dict[int, Dict[str, int]] = {}
+        self.validation_set_counts: Dict[int, Dict[str, int]] = {}
         self.created_at: datetime = datetime.now(timezone.utc)
 
 
@@ -109,6 +113,7 @@ class JointSetService:
                     else:
                         cal_dip_only[obs.set_id].append(obs)
                 else:
+                    result.validation_assignments[f"{bh.borehole_id}:{obs_index}"] = obs.set_id
                     if obs.has_full_orientation:
                         val_normals[obs.set_id].append(dip_dir_dip_to_normal(obs.dip_direction, obs.dip))
                     else:
@@ -121,6 +126,11 @@ class JointSetService:
                 "total": len(cal_normals[set_id]) + len(cal_dip_only[set_id]),
                 "full_orientation": len(cal_normals[set_id]),
                 "dip_only": len(cal_dip_only[set_id]),
+            }
+            result.validation_set_counts[set_id] = {
+                "total": len(val_normals[set_id]) + len(val_dip_only[set_id]),
+                "full_orientation": len(val_normals[set_id]),
+                "dip_only": len(val_dip_only[set_id]),
             }
             if len(normals) < 3:
                 continue
@@ -144,6 +154,22 @@ class JointSetService:
                 },
             )
             result.sets[set_id] = js
+
+        for set_id in sorted(set(val_normals) | set(val_dip_only)):
+            result.validation_set_counts.setdefault(
+                set_id,
+                {
+                    "total": len(val_normals[set_id]) + len(val_dip_only[set_id]),
+                    "full_orientation": len(val_normals[set_id]),
+                    "dip_only": len(val_dip_only[set_id]),
+                },
+            )
+            if set_id not in result.set_counts:
+                result.set_counts[set_id] = {
+                    "total": 0,
+                    "full_orientation": 0,
+                    "dip_only": 0,
+                }
 
         result.full_orientation_count = sum(len(v) for v in cal_normals.values())
         result.dip_only_count = sum(len(v) for v in cal_dip_only.values())
@@ -266,6 +292,37 @@ class JointSetService:
         # Final labels
         final_labels = self._assign_nonempty(cal_normals, centroids)
 
+        for cluster_index in range(n_clusters):
+            count = int(np.count_nonzero(final_labels == cluster_index))
+            result.set_counts[cluster_index + 1] = {
+                "total": count,
+                "full_orientation": count,
+                "dip_only": 0,
+            }
+            result.validation_set_counts[cluster_index + 1] = {
+                "total": 0,
+                "full_orientation": 0,
+                "dip_only": 0,
+            }
+
+        # Validation observations never affect initialization or centroids.  Full
+        # orientations are classified only after fitting so that validation can
+        # be reported against the same K sets without leaking into the fit.
+        for borehole in collection:
+            if borehole.borehole_id not in validation_holes:
+                continue
+            for observation_index, observation in enumerate(borehole.fracture_observations):
+                if not observation.has_full_orientation:
+                    result.validation_dip_only_count += 1
+                    continue
+                normal = dip_dir_dip_to_normal(observation.dip_direction, observation.dip)
+                cluster_index = int(np.argmax(np.abs(centroids @ normal)))
+                set_id = cluster_index + 1
+                result.validation_assignments[f"{borehole.borehole_id}:{observation_index}"] = set_id
+                counts = result.validation_set_counts[set_id]
+                counts["total"] += 1
+                counts["full_orientation"] += 1
+
         # ── Build joint set configs ────────────────────────────────────────
         for k in range(n_clusters):
             mask = final_labels == k
@@ -283,6 +340,13 @@ class JointSetService:
                 ),
                 provenance={"orientation": "automatic", "size": "user", "p32": "user"},
             )
+            js.provenance.update(
+                {
+                    "requested_number_of_sets": n_clusters,
+                    "random_seed": seed,
+                    "calibration_only_fit": True,
+                }
+            )
             result.sets[set_id] = js
 
             # Assign labels back to observations
@@ -293,12 +357,8 @@ class JointSetService:
 
         result.calibration_count = n_cal
         result.full_orientation_count = n_cal
-        # Count validation observations
-        for bh in collection:
-            if bh.borehole_id in validation_holes:
-                result.validation_count += len(bh.fracture_observations)
-                result.validation_full_orientation_count += sum(obs.has_full_orientation for obs in bh.fracture_observations)
-                result.validation_dip_only_count += sum(not obs.has_full_orientation for obs in bh.fracture_observations)
+        result.validation_full_orientation_count = len(result.validation_assignments)
+        result.validation_count = result.validation_full_orientation_count + result.validation_dip_only_count
 
         # ── Deterministic reordering ─────────────────────────────────────
         # Assign stable set_ids by sorting clusters by mean dip_direction
@@ -378,6 +438,18 @@ class JointSetService:
         for rec_id, old_id in result.assignments.items():
             new_assignments[rec_id] = remap.get(old_id, old_id)
         result.assignments = new_assignments
+        result.validation_assignments = {
+            rec_id: remap.get(old_id, old_id)
+            for rec_id, old_id in result.validation_assignments.items()
+        }
+        result.set_counts = {
+            remap.get(old_id, old_id): counts
+            for old_id, counts in result.set_counts.items()
+        }
+        result.validation_set_counts = {
+            remap.get(old_id, old_id): counts
+            for old_id, counts in result.validation_set_counts.items()
+        }
 
     # ── Query ─────────────────────────────────────────────────────────────
 

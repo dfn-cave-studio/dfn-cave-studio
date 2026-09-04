@@ -6,7 +6,9 @@ from pathlib import Path
 
 from dfn_cave_studio.models.m10 import M10FractureSource, M10GenerationConfig
 from dfn_cave_studio.services.m10_service import M10Service
+from dfn_cave_studio.visualization.dfn_layer_manager import stable_category_hex
 from dfn_cave_studio.ui.dialog_geometry import fit_dialog_to_screen
+from dfn_cave_studio.ui.i18n import language_manager, tr
 from dfn_cave_studio.ui.qt_adapter import (
     QCheckBox,
     QColorDialog,
@@ -80,6 +82,7 @@ class M10ExplicitDFNDialog(QDialog):
         self._refresh_realizations()
         self._refresh_layers()
         self._refresh_estimate()
+        language_manager().language_changed.connect(self._retranslate_dynamic_content)
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -154,6 +157,22 @@ class M10ExplicitDFNDialog(QDialog):
             ["Size Class", "Radius Range", "Generate", "Expected Count", "Target P32", "P32 Share", "Estimated Memory"]
         )
         layout.addWidget(self.size_estimate_table)
+
+        self.group_summary_table = QTableWidget(0, 8)
+        self.group_summary_table.setHorizontalHeaderLabels(
+            [
+                "Domain",
+                "Set ID",
+                "Observations",
+                "Orientation Status",
+                "P32 Target",
+                "Expected",
+                "Actual",
+                "Unresolved Reason",
+            ]
+        )
+        layout.addWidget(QLabel("Domain / Joint Set generation summary"))
+        layout.addWidget(self.group_summary_table)
 
         estimate_row = QHBoxLayout()
         self.estimate_label = QLabel()
@@ -261,6 +280,7 @@ class M10ExplicitDFNDialog(QDialog):
         self.remove_button.clicked.connect(self._remove_selected_layer)
         self.clear_current_button.clicked.connect(self._clear_current)
         self.clear_all_button.clicked.connect(self._clear_all)
+        self.realizations_table.itemSelectionChanged.connect(self._refresh_group_summary)
         self._estimate_timer = QTimer(self)
         self._estimate_timer.setSingleShot(True)
         self._estimate_timer.setInterval(180)
@@ -362,8 +382,10 @@ class M10ExplicitDFNDialog(QDialog):
                 )
                 for column, value in enumerate(values):
                     self.size_estimate_table.setItem(row, column, QTableWidgetItem(str(value)))
+            self._refresh_group_summary(details=details)
         except Exception as exc:
             self.estimate_label.setText(f"Estimate unavailable: {exc}")
+            self._refresh_group_summary()
         finally:
             self.project.m10_state.deterministic_structures = old
 
@@ -431,8 +453,6 @@ class M10ExplicitDFNDialog(QDialog):
         QThreadPool.globalInstance().start(self._worker)
 
     def _set_running(self, running: bool) -> None:
-        from dfn_cave_studio.ui.i18n import language_manager
-
         language_manager().set_busy(f"m10-generation-{id(self)}", running)
         self.progress.setVisible(running)
         self.generate_button.setEnabled(not running)
@@ -478,6 +498,95 @@ class M10ExplicitDFNDialog(QDialog):
             )
             for column, value in enumerate(values):
                 self.realizations_table.setItem(row, column, QTableWidgetItem(str(value)))
+        if rows and self.realizations_table.currentRow() < 0:
+            self.realizations_table.selectRow(0)
+        self._refresh_group_summary()
+
+    def _refresh_group_summary(self, *, details=None) -> None:
+        """Show all configured groups, including zero and unresolved outputs."""
+        realization = self._selected_realization()
+        try:
+            rows = self.service.joint_set_diagnostics(
+                self._config(), realization, estimate_details=details
+            )
+        except (KeyError, RuntimeError, TypeError, ValueError):
+            rows = []
+        self.group_summary_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            observations = (
+                f"{row['observations']} (cal={row['calibration_observations']}, "
+                f"val={row['validation_observations']}, full={row['full_orientation']}, "
+                f"dip-only={row['dip_only']})"
+            )
+            target = row["target_p32"]
+            target_text = f"{target:.6g}" if isinstance(target, (int, float)) and target == target else "NO_DATA"
+            actual = (
+                f"{row['actual']} (random={row['random']}, conditioned={row['conditioned']}, "
+                f"deterministic={row['deterministic']})"
+            )
+            values = (
+                row["domain_id"] if row["domain_id"] is not None else "None",
+                row["set_id"],
+                observations,
+                self._orientation_status_text(row["orientation_status"]),
+                target_text,
+                f"{row['expected']:,.1f}",
+                actual,
+                self._unresolved_reason_text(row["unresolved_reason"]),
+            )
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if column == 3:
+                    item.setData(Qt.ItemDataRole.UserRole, row["orientation_status"])
+                elif column == 7:
+                    item.setData(Qt.ItemDataRole.UserRole, row["unresolved_reason"])
+                self.group_summary_table.setItem(row_index, column, item)
+
+    @staticmethod
+    def _orientation_status_text(status: str) -> str:
+        """Translate a stable orientation status for display without changing its code."""
+        return {
+            "valid": tr("Valid"),
+            "invalid": tr("Invalid"),
+            "not_applicable": tr("Not Applicable"),
+        }.get(status, status)
+
+    @staticmethod
+    def _unresolved_reason_text(reason: str) -> str:
+        """Translate a stable generation reason for display without changing its code."""
+        return {
+            "": "-",
+            "NO_DATA": tr("No Data"),
+            "TARGET_P32_ZERO": tr("Target P32 Zero"),
+            "MISSING_SIZE_MODEL": tr("Missing Size Model"),
+            "INSUFFICIENT_ORIENTATION_DATA": tr("Insufficient Orientation Data"),
+        }.get(reason, reason)
+
+    def _retranslate_dynamic_content(self, _language: str) -> None:
+        """Refresh translated table values and legends without recomputing science."""
+        for row in range(self.group_summary_table.rowCount()):
+            orientation_item = self.group_summary_table.item(row, 3)
+            if orientation_item is not None:
+                code = orientation_item.data(Qt.ItemDataRole.UserRole)
+                if code is not None:
+                    orientation_item.setText(self._orientation_status_text(str(code)))
+            reason_item = self.group_summary_table.item(row, 7)
+            if reason_item is not None:
+                code = reason_item.data(Qt.ItemDataRole.UserRole)
+                if code is not None:
+                    reason_item.setText(self._unresolved_reason_text(str(code)))
+        legend_set_ids = self.legend_label.property("joint_set_ids")
+        if isinstance(legend_set_ids, list):
+            self._set_joint_set_legend([int(value) for value in legend_set_ids])
+
+    def _set_joint_set_legend(self, set_ids: list[int]) -> None:
+        """Display a translated legend while retaining stable numeric set IDs."""
+        self.legend_label.setProperty("joint_set_ids", list(set_ids))
+        labels = [
+            tr("Joint Set {set_id}").format(set_id=set_id) + f" {stable_category_hex(set_id)}"
+            for set_id in set_ids
+        ]
+        self.legend_label.setText(tr("Legend") + ": " + " | ".join(labels))
 
     def _selected_realization(self):
         row = self.realizations_table.currentRow()
@@ -501,7 +610,12 @@ class M10ExplicitDFNDialog(QDialog):
                 color_by=mode, category="all", excluded_size_classes=self._hidden_size_classes,
             )
             labels = self._legend_categories(realization, mode)
-            self.legend_label.setText("Legend: " + " | ".join(labels))
+            if mode == "Joint Set":
+                set_ids = sorted(set(map(int, realization.geometry_arrays["set_id"])))
+                self._set_joint_set_legend(set_ids)
+            else:
+                self.legend_label.setProperty("joint_set_ids", None)
+                self.legend_label.setText(tr("Legend") + ": " + " | ".join(labels))
             self.status_label.setText(f"LOD color legend: {mode}; colors are stable categorical mappings.")
             self._refresh_layers()
         except Exception as exc:
@@ -527,11 +641,13 @@ class M10ExplicitDFNDialog(QDialog):
         if realization is None or self.layer_manager is None:
             return
         self.layer_manager.clear_realization(realization.realization_id)
-        for set_id in sorted(set(int(value) for value in realization.geometry_arrays["set_id"] if int(value) > 0)):
+        set_ids = sorted(set(int(value) for value in realization.geometry_arrays["set_id"] if int(value) > 0))
+        for set_id in set_ids:
             self.layer_manager.render_realization(
                 realization, set_id=set_id, opacity=self.opacity.value(), color=self._layer_color,
                 excluded_size_classes=self._hidden_size_classes,
             )
+        self._set_joint_set_legend(set_ids)
         self._refresh_layers()
 
     def _render_source(self, source: str) -> None:
@@ -556,8 +672,10 @@ class M10ExplicitDFNDialog(QDialog):
     def _legend_categories(self, realization, mode: str) -> list[str]:
         arrays = realization.geometry_arrays
         if mode == "Joint Set":
-            palette = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f")
-            return [f"Joint Set {value} {palette[abs(value) % len(palette)]}" for value in sorted(set(map(int, arrays["set_id"])))]
+            return [
+                tr("Joint Set {set_id}").format(set_id=value) + f" {stable_category_hex(value)}"
+                for value in sorted(set(map(int, arrays["set_id"])))
+            ]
         if mode == "Domain":
             palette = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f")
             return [f"Domain {value} {palette[abs(value) % len(palette)]}" for value in sorted(set(map(int, arrays["domain_id"])))]

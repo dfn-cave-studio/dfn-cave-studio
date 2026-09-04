@@ -7,9 +7,11 @@ from unittest.mock import MagicMock
 
 from dfn_cave_studio.services.workflow_controller import StepStatus, WorkflowController
 from dfn_cave_studio.ui.dialogs.m10_dialog import M10ExplicitDFNDialog
-from dfn_cave_studio.ui.qt_adapter import QFileDialog, QDialogButtonBox, QMessageBox, Qt, QThreadPool
+from dfn_cave_studio.ui.i18n import LANGUAGE_CHINESE, LANGUAGE_ENGLISH, language_manager
+from dfn_cave_studio.ui.qt_adapter import QApplication, QFileDialog, QDialogButtonBox, QMessageBox, Qt, QThreadPool
 from dfn_cave_studio.visualization.dfn_layer_manager import DFNLayerManager
 from tests.integration.test_m10_persistence_export import make_m10_project
+from tests.integration.test_joint_set_seven_propagation import _generate, _seven_set_project
 
 
 class FakePlotter:
@@ -176,3 +178,55 @@ def test_render_modes_rebuild_without_duplicate_actors_or_visible_counts(qtbot, 
     assert len(manager.list_layers()) == len(plotter.actors) == 1
     visible = int(dialog.visible_count_label.text().split()[1].replace(",", ""))
     assert visible <= realization.fracture_count
+
+
+def test_seven_set_summary_and_real_render_button_show_all_groups(qtbot):
+    """The production summary and Render by Set button expose all seven groups."""
+    project = _seven_set_project()
+    realization = _generate(project)
+    plotter = FakePlotter()
+    manager = DFNLayerManager(plotter)
+    dialog = M10ExplicitDFNDialog(project, _workflow(), manager)
+    qtbot.addWidget(dialog)
+    dialog.realizations_table.selectRow(0)
+
+    assert dialog.group_summary_table.rowCount() == 7
+    assert [int(dialog.group_summary_table.item(row, 1).text()) for row in range(7)] == list(range(1, 8))
+    qtbot.mouseClick(dialog.render_set_button, Qt.MouseButton.LeftButton)
+
+    assert len(manager.list_layers()) == len(plotter.actors) == 7
+    assert all(layer.fracture_count > 0 for layer in manager.list_layers())
+    assert all(f"Joint Set {set_id}" in dialog.legend_label.text() for set_id in range(1, 8))
+    assert realization.fracture_count >= sum(layer.fracture_count for layer in manager.list_layers())
+
+
+def test_seven_set_summary_translation_preserves_codes_and_science(qtbot):
+    """Chinese presentation never changes stable statuses, set IDs, or generated arrays."""
+    manager = language_manager()
+    original_language = manager.language
+    manager.set_language(LANGUAGE_ENGLISH, persist=False, force=True)
+    project = _seven_set_project()
+    realization = _generate(project)
+    workflow = _workflow()
+    dialog = M10ExplicitDFNDialog(project, workflow, DFNLayerManager(FakePlotter()))
+    qtbot.addWidget(dialog)
+    dialog.show()
+    arrays_before = {name: value.copy() for name, value in realization.geometry_arrays.items()}
+    workflow_before = workflow.to_dict()
+    try:
+        assert dialog.group_summary_table.horizontalHeaderItem(3).text() == "Orientation Status"
+        assert manager.set_language(LANGUAGE_CHINESE, persist=False, force=True)
+        QApplication.processEvents()
+        assert dialog.group_summary_table.horizontalHeaderItem(3).text() == "方向状态"
+        assert dialog.group_summary_table.item(0, 3).text() == "有效"
+        assert dialog.group_summary_table.item(0, 3).data(Qt.ItemDataRole.UserRole) == "valid"
+        assert [dialog.group_summary_table.item(row, 1).text() for row in range(7)] == [str(value) for value in range(1, 8)]
+        assert workflow.to_dict() == workflow_before
+        for name, expected in arrays_before.items():
+            assert (realization.geometry_arrays[name] == expected).all()
+        assert manager.set_language(LANGUAGE_ENGLISH, persist=False, force=True)
+        QApplication.processEvents()
+        assert dialog.group_summary_table.horizontalHeaderItem(3).text() == "Orientation Status"
+        assert dialog.group_summary_table.item(0, 3).text() == "Valid"
+    finally:
+        manager.set_language(original_language, persist=False, force=True)
