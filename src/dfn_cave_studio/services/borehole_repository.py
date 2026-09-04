@@ -273,6 +273,80 @@ class BoreholeRepository:
         self._mark_quality_stale()
         return record
 
+    def apply_joint_set_assignments(
+        self,
+        assignments: Mapping[str, int],
+        *,
+        modification_source: str = "m8_joint_set:auto_assignment",
+    ) -> int:
+        """Commit Formal-fracture joint-set assignments in one audited batch.
+
+        Assignment keys use the ``hole_id:observation_index`` references
+        produced from the current Formal ``BoreholeCollection``.  They are
+        resolved to canonical ``BoreholeRecord`` instances before any record
+        is mutated, then the Formal projection is rebuilt exactly once.
+
+        Args:
+            assignments: Formal observation reference to positive set ID.
+            modification_source: Audit source stored in ModificationEvent.
+
+        Returns:
+            Number of fracture records whose cleaned ``set_id`` changed.
+        """
+        if not assignments:
+            return 0
+        by_hole: dict[str, list[BoreholeRecord]] = {}
+        for record in self.query(BoreholeDataType.FRACTURES, RecordState.FORMAL):
+            by_hole.setdefault(record.hole_id, []).append(record)
+
+        resolved: list[tuple[BoreholeRecord, int]] = []
+        seen_records: set[str] = set()
+        for reference, raw_set_id in assignments.items():
+            try:
+                hole_id, raw_index = str(reference).rsplit(":", 1)
+                observation_index = int(raw_index)
+                set_id = int(raw_set_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid joint-set assignment reference: {reference!r}") from exc
+            if set_id <= 0:
+                raise ValueError(f"Joint-set assignment for {reference} must use a positive set_id")
+            records = by_hole.get(hole_id, [])
+            if observation_index < 0 or observation_index >= len(records):
+                raise KeyError(f"Formal fracture observation not found for assignment: {reference}")
+            record = records[observation_index]
+            if record.record_id in seen_records:
+                raise ValueError(f"Formal fracture observation assigned more than once: {reference}")
+            seen_records.add(record.record_id)
+            resolved.append((record, set_id))
+
+        changed = 0
+        with self.transaction():
+            for record, set_id in resolved:
+                current = self._optional_int(record.values.get("set_id"))
+                if current == set_id:
+                    continue
+                before = deepcopy(record.values)
+                record.values = deepcopy(record.values)
+                record.values["set_id"] = set_id
+                record.modification_source = modification_source
+                record.modification_history.append(
+                    ModificationEvent(
+                        source=modification_source,
+                        action="assign_joint_set",
+                        before=before,
+                        after=deepcopy(record.values),
+                    )
+                )
+                changed += 1
+            if changed:
+                self.rebuild_formal_collection()
+                workflow = (getattr(self.project, "_m7_data", {}) or {}).get("workflow")
+                if workflow is not None and hasattr(workflow, "invalidate_steps"):
+                    workflow.invalidate_steps(
+                        ["density", "size", "parameter_field", "validation", "explicit_dfn", "second_voxelization"]
+                    )
+        return changed
+
     def apply_grouped_quality_fixes(
         self,
         fixes_by_record: Mapping[str, Iterable[BoreholeQualityIssue]],

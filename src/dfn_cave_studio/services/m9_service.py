@@ -50,6 +50,7 @@ class M9Service:
             get_domain_intervals(self.project),
             interval_length=settings.interval_length,
             interval_mode=settings.interval_mode,
+            set_ids=[item.set_id for item in self.project.joint_sets],
         )
         orientation_models, domain_sets = self._fit_domain_orientations(roles)
         estimates = estimate_p32(

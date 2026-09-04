@@ -8,6 +8,7 @@ from dfn_cave_studio.services.workflow_controller import WorkflowController
 from dfn_cave_studio.ui.dialogs.m8_import_dialog import M8ImportDialog
 from dfn_cave_studio.ui.dialogs.m7_joint_set_dialog import M7JointSetDialog
 from dfn_cave_studio.services.joint_set_service import JointSetIdentificationResult
+from dfn_cave_studio.ui.i18n import LANGUAGE_ENGLISH, language_manager
 from dfn_cave_studio.ui.qt_adapter import QComboBox, QDialogButtonBox, QPushButton, Qt
 
 
@@ -74,6 +75,9 @@ def test_import_dialog_cancel_rolls_back_dip_only_rows(qtbot, tmp_path) -> None:
 
 
 def test_mode_a_table_shows_dip_only_only_set_without_fake_orientation(qtbot) -> None:
+    manager = language_manager()
+    original_language = manager.language
+    manager.set_language(LANGUAGE_ENGLISH, persist=False, force=True)
     project = Project()
     workflow = WorkflowController()
     dialog = M7JointSetDialog(project, workflow)
@@ -83,9 +87,14 @@ def test_mode_a_table_shows_dip_only_only_set_without_fake_orientation(qtbot) ->
     result.set_counts[9] = {"total": 2, "full_orientation": 0, "dip_only": 2}
     result.calibration_count = 2
     result.dip_only_count = 2
-    dialog._populate_results(result)
-    assert dialog._result_table.rowCount() == 1
-    assert dialog._result_table.item(0, 2).text() == "—"
-    assert dialog._result_table.item(0, 5).text() == "2"
-    assert dialog._result_table.item(0, 7).text() == "2"
-    assert dialog._result_table.item(0, 8).text() == "INSUFFICIENT_ORIENTATION_DATA"
+    try:
+        dialog._populate_results(result)
+        assert dialog._result_table.rowCount() == 1
+        assert dialog._result_table.item(0, 2).text() == "—"
+        assert dialog._result_table.item(0, 5).text() == "2"
+        assert dialog._result_table.item(0, 7).text() == "2"
+        source_item = dialog._result_table.item(0, 8)
+        assert source_item.text() == "Insufficient Orientation Data"
+        assert source_item.data(Qt.ItemDataRole.UserRole) == "INSUFFICIENT_ORIENTATION_DATA"
+    finally:
+        manager.set_language(original_language, persist=False, force=True)

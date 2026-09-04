@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import colorsys
 from typing import Any
 
 import numpy as np
@@ -12,6 +13,35 @@ from dfn_cave_studio.dfn.m10_geometry import iter_polygons, source_mask
 
 
 DFN_LAYER_PREFIX = "dfn:"
+_CATEGORY_PALETTE = (
+    (31, 119, 180),
+    (255, 127, 14),
+    (44, 160, 44),
+    (214, 39, 40),
+    (148, 103, 189),
+    (140, 86, 75),
+    (227, 119, 194),
+    (127, 127, 127),
+)
+
+
+def stable_category_rgb(value: int) -> tuple[int, int, int]:
+    """Return a deterministic category colour without a fixed set-count limit.
+
+    Existing IDs 0 through 7 retain their established M10 colours. Higher
+    and non-contiguous IDs use a golden-angle hue derived only from the ID.
+    """
+    index = abs(int(value))
+    if index < len(_CATEGORY_PALETTE):
+        return _CATEGORY_PALETTE[index]
+    hue = (index * 0.6180339887498949) % 1.0
+    red, green, blue = colorsys.hsv_to_rgb(hue, 0.68, 0.88)
+    return round(red * 255), round(green * 255), round(blue * 255)
+
+
+def stable_category_hex(value: int) -> str:
+    """Return the stable categorical colour as a hexadecimal string."""
+    return "#{:02x}{:02x}{:02x}".format(*stable_category_rgb(value))
 
 
 @dataclass(slots=True)
@@ -250,11 +280,6 @@ class DFNLayerManager:
             points.point_data["normal"] = np.asarray(arrays["normal"][indices], dtype=np.float32)
             points.point_data["radius"] = np.asarray(arrays["radius"][indices], dtype=np.float32)
             category_values = self._color_categories(realization, indices, color_by)
-            palette = np.asarray(
-                ((31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40),
-                 (148, 103, 189), (140, 86, 75), (227, 119, 194), (127, 127, 127)),
-                dtype=np.uint8,
-            )
             if color_by == "Size Class":
                 stable = {0: (127, 127, 127), 1: (158, 202, 225), 2: (253, 174, 107), 3: (214, 39, 40)}
                 rgb = [stable.get(int(value), stable[0]) for value in category_values]
@@ -262,7 +287,7 @@ class DFNLayerManager:
                 stable = {0: (78, 121, 167), 1: (242, 142, 43), 2: (225, 87, 89)}
                 rgb = [stable.get(int(value), (127, 127, 127)) for value in category_values]
             else:
-                rgb = [palette[abs(int(value)) % len(palette)] for value in category_values]
+                rgb = [stable_category_rgb(int(value)) for value in category_values]
             points.point_data["category_rgb"] = np.asarray(rgb, dtype=np.uint8)
             source = vtkDiskSource()
             source.SetInnerRadius(0.0)

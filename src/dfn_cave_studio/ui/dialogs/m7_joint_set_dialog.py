@@ -16,7 +16,9 @@ from dfn_cave_studio.ui.qt_adapter import (
     QMessageBox,
 )
 from dfn_cave_studio.services.joint_set_service import JointSetService
+from dfn_cave_studio.services.borehole_repository import BoreholeRepository
 from dfn_cave_studio.services.m7_state import get_holdout
+from dfn_cave_studio.ui.i18n import language_manager, tr
 
 SET_COLORS = ["#1976d2", "#388e3c", "#f57c00", "#d32f2f", "#7b1fa2"]
 
@@ -29,10 +31,12 @@ class M7JointSetDialog(QDialog):
         self._project = project
         self._workflow = workflow
         self._service = JointSetService(random_seed=project.config.master_seed)
+        self._result = None
         self._committed_changes = False
         self.setWindowTitle("Joint Set Identification")
         self.resize(750, 500)
         self._init_ui()
+        language_manager().language_changed.connect(self._retranslate_dynamic_content)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -62,7 +66,7 @@ class M7JointSetDialog(QDialog):
         layout.addWidget(self._identify_btn)
 
         # Results table
-        self._result_table = QTableWidget(0, 9)
+        self._result_table = QTableWidget(0, 12)
         self._result_table.setHorizontalHeaderLabels(
             [
                 "Set ID",
@@ -70,10 +74,13 @@ class M7JointSetDialog(QDialog):
                 "Dip Dir (°)",
                 "Dip (°)",
                 "Kappa",
-                "Total Count",
-                "Full Orientation Count",
-                "Dip-only Count",
+                "Calibration Count",
+                "Calibration Full",
+                "Calibration Dip-only",
                 "Source",
+                "Validation Count",
+                "Validation Full",
+                "Validation Dip-only",
             ]
         )
         self._result_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -146,6 +153,7 @@ class M7JointSetDialog(QDialog):
             QMessageBox.warning(self, "Joint Set Identification", str(error))
             return
 
+        self._result = result
         self._populate_results(result)
 
     def _populate_results(self, result):
@@ -155,12 +163,17 @@ class M7JointSetDialog(QDialog):
         for i, set_id in enumerate(visible_set_ids):
             js = result.sets.get(set_id)
             counts = result.set_counts.get(set_id, {})
+            validation_counts = result.validation_set_counts.get(set_id, {})
             n_assigned = counts.get("total", len([a for a in result.assignments.values() if a == set_id]))
             full_count = counts.get("full_orientation", n_assigned)
             dip_only_count = counts.get("dip_only", 0)
+            validation_count = validation_counts.get("total", 0)
+            validation_full = validation_counts.get("full_orientation", 0)
+            validation_dip_only = validation_counts.get("dip_only", 0)
             total_cal += n_assigned
             self._result_table.setItem(i, 0, QTableWidgetItem(str(set_id)))
-            self._result_table.setItem(i, 1, QTableWidgetItem(js.name if js is not None else f"Joint Set {set_id}"))
+            fallback_name = tr("Joint Set {set_id}").format(set_id=set_id)
+            self._result_table.setItem(i, 1, QTableWidgetItem(js.name if js is not None else fallback_name))
             self._result_table.setItem(
                 i,
                 2,
@@ -172,23 +185,65 @@ class M7JointSetDialog(QDialog):
             self._result_table.setItem(i, 6, QTableWidgetItem(str(full_count)))
             self._result_table.setItem(i, 7, QTableWidgetItem(str(dip_only_count)))
             source = js.provenance.get("orientation", result.mode) if js is not None else "INSUFFICIENT_ORIENTATION_DATA"
-            self._result_table.setItem(i, 8, QTableWidgetItem(source))
-        self._stats_label.setText(
-            f"Mode: {result.mode}  |  "
-            f"Calibration fractures used: {result.calibration_count}  |  "
-            f"Full-orientation records used: {result.full_orientation_count}  |  "
-            f"Dip-only records not eligible for spherical clustering: {result.dip_only_count if result.mode == 'automatic' else 0}  |  "
-            f"Validation fractures excluded: {result.validation_count}  |  "
-            f"Sets count sum: {total_cal}"
+            source_item = QTableWidgetItem(self._source_text(source))
+            source_item.setData(0x0100, source)
+            self._result_table.setItem(i, 8, source_item)
+            self._result_table.setItem(i, 9, QTableWidgetItem(str(validation_count)))
+            self._result_table.setItem(i, 10, QTableWidgetItem(str(validation_full)))
+            self._result_table.setItem(i, 11, QTableWidgetItem(str(validation_dip_only)))
+        self._stats_label.setText(self._stats_text(result, total_cal))
+
+    @staticmethod
+    def _source_text(source: str) -> str:
+        """Translate source/status presentation without modifying the stable value."""
+        return {
+            "INSUFFICIENT_ORIENTATION_DATA": tr("Insufficient Orientation Data"),
+            "automatic": tr("Automatic"),
+            "imported": tr("Imported"),
+        }.get(source, source)
+
+    @staticmethod
+    def _stats_text(result, total_cal: int) -> str:
+        """Build the translated statistics summary from unchanged scientific counts."""
+        dip_only = result.dip_only_count if result.mode == "automatic" else 0
+        return tr(
+            "Mode: {mode} | Calibration fractures used: {calibration} | "
+            "Full-orientation records used: {full} | "
+            "Dip-only records not eligible for spherical clustering: {dip_only} | "
+            "Validation fractures excluded: {validation} | Sets count sum: {total}"
+        ).format(
+            mode=M7JointSetDialog._source_text(result.mode),
+            calibration=result.calibration_count,
+            full=result.full_orientation_count,
+            dip_only=dip_only,
+            validation=result.validation_count,
+            total=total_cal,
         )
 
+    def _retranslate_dynamic_content(self, _language: str) -> None:
+        """Refresh dynamic result cells without rerunning joint-set identification."""
+        if self._result is None:
+            return
+        self._populate_results(self._result)
+
     def _on_accept(self):
-        # Update project joint sets
+        """Commit fitted sets and their canonical Formal-record assignments."""
         all_sets = self._service.get_all_joint_sets()
-        if all_sets:
-            self._project.joint_sets = all_sets
-            self._workflow.complete_step("joint_sets")
-            self._committed_changes = True
+        if not all_sets or self._result is None:
+            self.accept()
+            return
+        repository = BoreholeRepository(self._project)
+        if not repository.database.records:
+            repository.migrate_m7()
+        assignments = {**self._result.assignments, **self._result.validation_assignments}
+        try:
+            repository.apply_joint_set_assignments(assignments)
+        except (KeyError, TypeError, ValueError) as error:
+            QMessageBox.critical(self, tr("Joint Set Commit Failed"), str(error))
+            return
+        self._project.joint_sets = all_sets
+        self._workflow.complete_step("joint_sets")
+        self._committed_changes = True
         self.accept()
 
     @property

@@ -201,5 +201,32 @@
     <message><source>Wait for the active calculation, generation, or save operation to finish.</source><translation>请等待当前计算、生成或保存任务结束。</translation></message>
     <message><source>Translation Unavailable</source><translation>翻译资源不可用</translation></message>
     <message><source>The selected translation catalog could not be loaded. English is being used.</source><translation>无法加载所选翻译资源，界面已回退为英文。</translation></message>
+    <message><source>Calibration Count</source><translation>校准集数量</translation></message>
+    <message><source>Calibration Full</source><translation>校准集完整方向</translation></message>
+    <message><source>Calibration Dip-only</source><translation>校准集仅倾角</translation></message>
+    <message><source>Validation Count</source><translation>验证集数量</translation></message>
+    <message><source>Validation Full</source><translation>验证集完整方向</translation></message>
+    <message><source>Validation Dip-only</source><translation>验证集仅倾角</translation></message>
+    <message><source>Joint Set Commit Failed</source><translation>节理组提交失败</translation></message>
+    <message><source>Set ID</source><translation>节理组ID</translation></message>
+    <message><source>Observations</source><translation>观测数量</translation></message>
+    <message><source>Orientation Status</source><translation>方向状态</translation></message>
+    <message><source>P32 Target</source><translation>P32目标值</translation></message>
+    <message><source>Expected</source><translation>预计数量</translation></message>
+    <message><source>Actual</source><translation>实际数量</translation></message>
+    <message><source>Unresolved Reason</source><translation>未解析原因</translation></message>
+    <message><source>Valid</source><translation>有效</translation></message>
+    <message><source>Invalid</source><translation>无效</translation></message>
+    <message><source>Not Applicable</source><translation>不适用</translation></message>
+    <message><source>No Data</source><translation>无数据</translation></message>
+    <message><source>Target P32 Zero</source><translation>目标P32为零</translation></message>
+    <message><source>Missing Size Model</source><translation>缺少尺寸模型</translation></message>
+    <message><source>Insufficient Orientation Data</source><translation>方向数据不足</translation></message>
+    <message><source>Domain / Joint Set generation summary</source><translation>结构域/节理组生成摘要</translation></message>
+    <message><source>Legend</source><translation>图例</translation></message>
+    <message><source>Joint Set {set_id}</source><translation>节理组 {set_id}</translation></message>
+    <message><source>Automatic</source><translation>自动识别</translation></message>
+    <message><source>Imported</source><translation>导入值</translation></message>
+    <message><source>Mode: {mode} | Calibration fractures used: {calibration} | Full-orientation records used: {full} | Dip-only records not eligible for spherical clustering: {dip_only} | Validation fractures excluded: {validation} | Sets count sum: {total}</source><translation>模式：{mode} | 使用的校准裂隙：{calibration} | 使用的完整方向记录：{full} | 不参与球面聚类的仅倾角记录：{dip_only} | 排除的验证裂隙：{validation} | 各组数量总和：{total}</translation></message>
   </context>
 </TS>

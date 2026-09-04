@@ -10,14 +10,22 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from dfn_cave_studio.dfn.intensity import domain_at_depth
-from dfn_cave_studio.dfn.m10_generator import ConditionedObservation, M10ExplicitDFNGenerator
+from dfn_cave_studio.dfn.m10_generator import (
+    SOURCE_CODES,
+    ConditionedObservation,
+    M10ExplicitDFNGenerator,
+)
 from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal
 from dfn_cave_studio.models.borehole import FractureObservation, OrientationCompleteness
 from dfn_cave_studio.models.borehole_database import BoreholeDataType, RecordState
 from dfn_cave_studio.models.m9 import ValidationState
 from dfn_cave_studio.models.m10 import DeterministicStructure, M10GenerationConfig, M10Realization
 from dfn_cave_studio.services.m7_state import get_domain_intervals, get_holdout
+from dfn_cave_studio.voxel.parameter_field import CELL_STATE_CODES
+from dfn_cave_studio.models.spatial_grid import VoxelCellState
 
 
 def _generate_realization_process(
@@ -47,6 +55,14 @@ class M10Service:
             errors.append("M9 parameter field is not available")
         if not state.size_models:
             errors.append("M9 fracture size models are not available")
+        elif state.parameter_field_metadata is not None and state.parameter_field_arrays:
+            missing_size = self._missing_active_size_models()
+            if missing_size:
+                labels = ", ".join(
+                    f"Domain {domain_id if domain_id is not None else 'None'} / Set {set_id}"
+                    for domain_id, set_id in missing_size
+                )
+                errors.append(f"M9 fracture size model is missing for active targets: {labels}")
         if self.project.spatial_grid_config is None:
             errors.append("DFN Generation Domain is not configured")
         if any(model.source.value == "experimental" for model in state.size_models) and not config.experimental_size_models_confirmed:
@@ -63,6 +79,168 @@ class M10Service:
         if config.condition_calibration_observations and (holdout is None or not holdout.is_locked):
             errors.append("Validation Holdout must be locked before conditioning")
         return errors
+
+    def _missing_active_size_models(self) -> list[tuple[int | None, int]]:
+        """Return positive-P32 Domain/Set targets without a usable size model."""
+        state = self.project.m9_state
+        metadata = state.parameter_field_metadata
+        if metadata is None:
+            return []
+        arrays = state.parameter_field_arrays
+        modeled = arrays["cell_state"] == CELL_STATE_CODES[VoxelCellState.MODELED_VALUE]
+        domains = arrays["domain_id"]
+        available = {(item.domain_id, item.set_id) for item in state.size_models}
+        missing: list[tuple[int | None, int]] = []
+        for set_id in metadata.set_ids:
+            values = arrays[f"set_{set_id}_p32"]
+            active = modeled & np.isfinite(values) & (values > 0.0)
+            for raw_domain_id in np.unique(domains[active]):
+                domain_id = None if int(raw_domain_id) < 0 else int(raw_domain_id)
+                if (domain_id, int(set_id)) not in available and (None, int(set_id)) not in available:
+                    missing.append((domain_id, int(set_id)))
+        return missing
+
+    def joint_set_diagnostics(
+        self,
+        config: M10GenerationConfig | None = None,
+        realization: M10Realization | None = None,
+        *,
+        estimate_details: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Summarize every parameter-field Domain/Set, including zero-output groups."""
+        state = self.project.m9_state
+        metadata = state.parameter_field_metadata
+        if metadata is None or not state.parameter_field_arrays:
+            return []
+        arrays = state.parameter_field_arrays
+        modeled = arrays["cell_state"] == CELL_STATE_CODES[VoxelCellState.MODELED_VALUE]
+        true_zero = arrays["cell_state"] == CELL_STATE_CODES[VoxelCellState.TRUE_ZERO]
+        domains = arrays["domain_id"]
+        details = estimate_details
+        if details is None:
+            try:
+                details = self.estimate_details(config)
+            except (KeyError, RuntimeError, TypeError, ValueError):
+                details = {"targets": []}
+        estimates = {
+            (item.get("domain_id"), int(item["set_id"])): item
+            for item in details.get("targets", [])
+        }
+        observation_counts: dict[tuple[int | None, int], dict[str, int]] = {}
+        holdout = get_holdout(self.project)
+        domain_intervals = get_domain_intervals(self.project)
+        for hole in self.project.borehole_collection.boreholes:
+            role = "validation" if holdout is not None and holdout.is_validation(hole.borehole_id) else "calibration"
+            for observation in hole.fracture_observations:
+                if observation.set_id is None:
+                    continue
+                domain_id = domain_at_depth(hole.borehole_id, observation.measured_depth, domain_intervals)
+                key = (domain_id, int(observation.set_id))
+                counts = observation_counts.setdefault(
+                    key,
+                    {"calibration": 0, "validation": 0, "full_orientation": 0, "dip_only": 0},
+                )
+                counts[role] += 1
+                counts["full_orientation" if observation.has_full_orientation else "dip_only"] += 1
+
+        size_models = {(item.domain_id, item.set_id) for item in state.size_models}
+        quality = {
+            (item.domain_id, item.set_id): item
+            for item in (realization.quality.domain_set if realization is not None else [])
+        }
+        actual_counts: dict[tuple[int | None, int], dict[str, int]] = {}
+        if realization is not None:
+            geometry = realization.geometry_arrays
+            source_values = np.asarray(geometry.get("source_code", []), dtype=np.uint8)
+            for raw_domain_id, set_id in zip(
+                np.asarray(geometry.get("domain_id", []), dtype=np.int32),
+                np.asarray(geometry.get("set_id", []), dtype=np.int16),
+                strict=True,
+            ):
+                domain_id = None if int(raw_domain_id) < 0 else int(raw_domain_id)
+                counts = actual_counts.setdefault(
+                    (domain_id, int(set_id)),
+                    {"actual": 0, "random": 0, "conditioned": 0, "deterministic": 0},
+                )
+                counts["actual"] += 1
+            for source_name, source_code in SOURCE_CODES.items():
+                mask = source_values == source_code
+                for raw_domain_id, set_id in zip(
+                    np.asarray(geometry.get("domain_id", []), dtype=np.int32)[mask],
+                    np.asarray(geometry.get("set_id", []), dtype=np.int16)[mask],
+                    strict=True,
+                ):
+                    domain_id = None if int(raw_domain_id) < 0 else int(raw_domain_id)
+                    label = {
+                        "STOCHASTIC": "random",
+                        "CONDITIONED_OBSERVATION": "conditioned",
+                        "DETERMINISTIC_STRUCTURE": "deterministic",
+                    }[source_name]
+                    actual_counts[(domain_id, int(set_id))][label] += 1
+
+        domain_values = sorted(
+            {None if int(value) < 0 else int(value) for value in np.unique(domains[modeled | true_zero])},
+            key=lambda value: (-1 if value is None else value),
+        )
+        rows: list[dict[str, Any]] = []
+        for domain_id in domain_values:
+            domain_mask = domains == (-1 if domain_id is None else domain_id)
+            for set_id in metadata.set_ids:
+                values = arrays[f"set_{set_id}_p32"]
+                finite = domain_mask & (modeled | true_zero) & np.isfinite(values)
+                positive = finite & (values > 0.0)
+                target = float(np.mean(values[finite], dtype=np.float64)) if np.any(finite) else float("nan")
+                direction_valid = positive
+                for field in ("dip_direction", "dip", "kappa"):
+                    direction_valid = direction_valid & np.isfinite(arrays[f"set_{set_id}_{field}"])
+                direction_valid = direction_valid & (arrays[f"set_{set_id}_kappa"] > 0.0)
+                has_size = (domain_id, int(set_id)) in size_models or (None, int(set_id)) in size_models
+                estimate = estimates.get((domain_id, int(set_id)), {})
+                generated = quality.get((domain_id, int(set_id)))
+                counts = observation_counts.get(
+                    (domain_id, int(set_id)),
+                    {"calibration": 0, "validation": 0, "full_orientation": 0, "dip_only": 0},
+                )
+                actual = actual_counts.get(
+                    (domain_id, int(set_id)),
+                    {"actual": 0, "random": 0, "conditioned": 0, "deterministic": 0},
+                )
+                reason = ""
+                if not np.any(finite):
+                    reason = "NO_DATA"
+                elif not np.any(positive):
+                    reason = "TARGET_P32_ZERO"
+                elif not has_size:
+                    reason = "MISSING_SIZE_MODEL"
+                elif not np.all(direction_valid[positive]):
+                    reason = "INSUFFICIENT_ORIENTATION_DATA"
+                if generated is not None and generated.status != "generated":
+                    reason = generated.status
+                rows.append(
+                    {
+                        "domain_id": domain_id,
+                        "set_id": int(set_id),
+                        "observations": counts["calibration"] + counts["validation"],
+                        "calibration_observations": counts["calibration"],
+                        "validation_observations": counts["validation"],
+                        "full_orientation": counts["full_orientation"],
+                        "dip_only": counts["dip_only"],
+                        "orientation_status": (
+                            "valid"
+                            if np.any(positive) and np.all(direction_valid[positive])
+                            else "invalid" if np.any(positive) else "not_applicable"
+                        ),
+                        "effective_voxels": int(np.count_nonzero(positive)),
+                        "target_p32": target,
+                        "expected": float(estimate.get("expected_fractures", 0.0)),
+                        **actual,
+                        "p32_unresolved_orientation": (
+                            float(generated.p32_unresolved_orientation) if generated is not None else 0.0
+                        ),
+                        "unresolved_reason": reason,
+                    }
+                )
+        return rows
 
     def estimate(self, config: M10GenerationConfig | None = None) -> tuple[float, int]:
         """Estimate fracture count and storage before allocation."""
