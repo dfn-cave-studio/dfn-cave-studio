@@ -48,16 +48,42 @@ class ZipProjectStore:
 
     @staticmethod
     def validate_project_metadata(project: "Project") -> None:
-        """Validate serialized M10/M11 metadata without copying their NumPy arrays."""
+        """Validate serialized M9/M10/M11 metadata without copying their NumPy arrays."""
+        from dfn_cave_studio.models.m9 import M9State
         from dfn_cave_studio.models.m10 import M10State
         from dfn_cave_studio.models.m11 import M11State
 
+        m9_state = getattr(project, "m9_state", None)
+        if m9_state is not None:
+            M9State.model_validate_json(m9_state.model_dump_json())
         m10_state = getattr(project, "m10_state", None)
         if m10_state is not None:
             M10State.model_validate_json(m10_state.model_dump_json())
         m11_state = getattr(project, "m11_state", None)
         if m11_state is not None:
             M11State.model_validate_json(m11_state.model_dump_json())
+
+    @staticmethod
+    def _validate_scalar_field_arrays(metadata: Any, arrays: dict[str, np.ndarray]) -> None:
+        """Reject missing, extra, mis-shaped, or wrongly typed scalar-field arrays."""
+        expected = set(metadata.array_names)
+        actual = set(arrays)
+        if actual != expected:
+            missing = sorted(expected - actual)
+            extra = sorted(actual - expected)
+            raise ValueError(f"M9 scalar array names do not match metadata; missing={missing}, extra={extra}")
+        floating = {"estimate", "kriging_variance"}
+        integer = {"cell_state", "neighbor_count", "domain_id"}
+        for name, values in arrays.items():
+            array = np.asarray(values)
+            if array.shape != tuple(metadata.shape):
+                raise ValueError(
+                    f"M9 scalar array {name!r} has shape {array.shape}; expected {tuple(metadata.shape)}"
+                )
+            if name in floating and not np.issubdtype(array.dtype, np.floating):
+                raise ValueError(f"M9 scalar array {name!r} must use a floating dtype, not {array.dtype}")
+            if name in integer and not np.issubdtype(array.dtype, np.integer):
+                raise ValueError(f"M9 scalar array {name!r} must use an integer dtype, not {array.dtype}")
 
     @staticmethod
     @contextmanager
@@ -122,6 +148,13 @@ class ZipProjectStore:
                     npz_path = Path(temporary_directory) / "voxel_parameter_field.npz"
                     np.savez_compressed(npz_path, **m9_state.parameter_field_arrays)
                     zf.write(npz_path, "results/voxel_parameter_field.npz", compress_type=zipfile.ZIP_STORED)
+                for scalar_field in m9_state.scalar_fields:
+                    if scalar_field.arrays:
+                        self._validate_scalar_field_arrays(scalar_field.metadata, scalar_field.arrays)
+                        safe_id = scalar_field.metadata.field_id.replace("/", "_").replace("\\", "_")
+                        npz_path = Path(temporary_directory) / f"scalar-{safe_id}.npz"
+                        np.savez_compressed(npz_path, **scalar_field.arrays)
+                        zf.write(npz_path, f"results/m9_scalar/{safe_id}.npz", compress_type=zipfile.ZIP_STORED)
             m10_state = getattr(project, "m10_state", None)
             if m10_state is not None:
                 zf.writestr("parameters/m10_state.json", m10_state.model_dump_json(indent=2))
@@ -314,6 +347,16 @@ class ZipProjectStore:
                     extracted = Path(zf.extract("results/voxel_parameter_field.npz", temporary_directory))
                     with np.load(extracted, allow_pickle=False) as archive:
                         project.m9_state.parameter_field_arrays = {name: archive[name].copy() for name in archive.files}
+                for scalar_field in project.m9_state.scalar_fields:
+                    safe_id = scalar_field.metadata.field_id.replace("/", "_").replace("\\", "_")
+                    array_path = f"results/m9_scalar/{safe_id}.npz"
+                    if array_path not in zf.namelist():
+                        raise ValueError(f"M9 scalar parameter arrays are missing: {array_path}")
+                    extracted = Path(zf.extract(array_path, temporary_directory))
+                    with np.load(extracted, allow_pickle=False) as archive:
+                        arrays = {name: archive[name].copy() for name in archive.files}
+                    self._validate_scalar_field_arrays(scalar_field.metadata, arrays)
+                    scalar_field.arrays = arrays
             if "parameters/m10_state.json" in zf.namelist():
                 from dfn_cave_studio.models.m10 import M10State
 

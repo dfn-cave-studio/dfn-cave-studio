@@ -15,6 +15,53 @@ class DensityMethod(StrEnum):
 
     GLOBAL_CONSTANT = "global_constant"
     IDW = "idw"
+    ORDINARY_KRIGING = "ordinary_kriging"
+
+
+class VariogramModel(StrEnum):
+    """Supported isotropic semivariogram models."""
+
+    SPHERICAL = "spherical"
+    EXPONENTIAL = "exponential"
+    GAUSSIAN = "gaussian"
+
+
+class VariogramMode(StrEnum):
+    """Whether variogram parameters are fitted or supplied by the user."""
+
+    AUTO = "auto"
+    MANUAL = "manual"
+
+
+class NonNegativePolicy(StrEnum):
+    """Treatment of negative predictions for non-negative quantities."""
+
+    REJECT = "reject"
+    CLIP_WITH_AUDIT = "clip_with_audit"
+
+
+class KrigingSettings(BaseModel):
+    """Configuration for three-dimensional isotropic ordinary kriging."""
+
+    mode: VariogramMode = VariogramMode.AUTO
+    model: VariogramModel = VariogramModel.SPHERICAL
+    nugget: float = Field(default=0.0, ge=0.0)
+    sill: float = Field(default=1.0, gt=0.0)
+    range: float = Field(default=100.0, gt=0.0)
+    lag_count: int = Field(default=12, ge=3, le=100)
+    minimum_neighbors: int = Field(default=3, ge=2)
+    maximum_neighbors: int = Field(default=24, ge=2)
+    search_radius: float | None = Field(default=None, gt=0.0)
+    non_negative_policy: NonNegativePolicy = NonNegativePolicy.REJECT
+    regularization: float = Field(default=1e-10, ge=0.0)
+
+    @model_validator(mode="after")
+    def validate_parameters(self) -> "KrigingSettings":
+        if self.maximum_neighbors < self.minimum_neighbors:
+            raise ValueError("maximum_neighbors must be greater than or equal to minimum_neighbors")
+        if self.sill < self.nugget:
+            raise ValueError("sill must be greater than or equal to nugget")
+        return self
 
 
 class ObservabilityState(StrEnum):
@@ -60,6 +107,7 @@ class DensitySettings(BaseModel):
     global_fallback: bool = False
     monte_carlo_samples: int = Field(default=20_000, ge=100)
     low_observability_threshold: float = Field(default=0.05, gt=0.0, le=1.0)
+    kriging: KrigingSettings = Field(default_factory=KrigingSettings)
 
     @model_validator(mode="after")
     def validate_neighbor_range(self) -> "DensitySettings":
@@ -216,6 +264,126 @@ class ValidationSummary(BaseModel):
     no_data_interval_count: int = 0
 
 
+class VariogramLag(BaseModel):
+    """One auditable experimental-variogram distance bin."""
+
+    distance: float = Field(ge=0.0)
+    pair_count: int = Field(ge=0)
+    experimental_semivariance: float | None = Field(default=None, ge=0.0)
+    fitted_semivariance: float | None = Field(default=None, ge=0.0)
+
+
+class VariogramDiagnostics(BaseModel):
+    """Fitted model and numerical diagnostics for one scalar field."""
+
+    mode: VariogramMode
+    model: VariogramModel
+    nugget: float = Field(ge=0.0)
+    sill: float = Field(gt=0.0)
+    range: float = Field(gt=0.0)
+    lags: list[VariogramLag] = Field(default_factory=list)
+    fit_status: str = "manual"
+    optimizer_message: str = ""
+    sample_count: int = Field(ge=0)
+    pair_count: int = Field(ge=0)
+    regularized_solve_count: int = Field(default=0, ge=0)
+    pseudoinverse_solve_count: int = Field(default=0, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ScalarParameterSample(BaseModel):
+    """One continuous-parameter interval located along a real borehole trajectory."""
+
+    sample_id: str
+    borehole_id: str
+    from_depth: float = Field(ge=0.0)
+    to_depth: float = Field(gt=0.0)
+    parameter_name: str = Field(min_length=1)
+    value: float
+    unit: str = Field(min_length=1)
+    source_dataset: str = ""
+    quality_flag: str = ""
+    midpoint_x: float
+    midpoint_y: float
+    midpoint_z: float
+    domain_id: int | None = None
+    role: str = "calibration"
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "ScalarParameterSample":
+        if self.to_depth <= self.from_depth:
+            raise ValueError("to_depth must be greater than from_depth")
+        return self
+
+
+class ScalarValidationResult(BaseModel):
+    """Independent prediction at one held-out borehole interval midpoint."""
+
+    sample_id: str
+    borehole_id: str
+    from_depth: float = 0.0
+    to_depth: float = 0.0
+    domain_id: int | None = None
+    observed: float
+    predicted: float | None = None
+    residual: float | None = None
+    kriging_variance: float | None = Field(default=None, ge=0.0)
+    standardized_residual: float | None = None
+    prediction_interval_low: float | None = None
+    prediction_interval_high: float | None = None
+    status: str = "predicted"
+
+
+class ScalarValidationSummary(BaseModel):
+    """Validation metrics without interval-level spatial leakage."""
+
+    sample_count: int = Field(default=0, ge=0)
+    predicted_count: int = Field(default=0, ge=0)
+    mean_error: float | None = None
+    mae: float | None = Field(default=None, ge=0.0)
+    rmse: float | None = Field(default=None, ge=0.0)
+    r_squared: float | None = None
+
+
+class ScalarFieldMetadata(BaseModel):
+    """Persistent metadata for one independently stored physical-parameter field."""
+
+    field_id: str
+    parameter_name: str
+    unit: str
+    method: DensityMethod
+    shape: tuple[int, int, int]
+    origin: tuple[float, float, float]
+    spacing: tuple[float, float, float]
+    array_names: list[str]
+    config_hash: str
+    algorithm_version: str = "m9-scalar-kriging-1"
+    software_version: str = "0.11.0"
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    variograms: dict[str, VariogramDiagnostics] = Field(default_factory=dict)
+    rejected_voxel_count: int = Field(default=0, ge=0)
+    clipped_voxel_count: int = Field(default=0, ge=0)
+    pre_clip_minimum: float | None = None
+    pre_adjustment_minimum: float | None = None
+    pre_adjustment_maximum: float | None = None
+    clipped_total_change: float = Field(default=0.0, ge=0.0)
+    parameter_bounds: tuple[float | None, float | None] = (None, None)
+    adjustment_policy: NonNegativePolicy = NonNegativePolicy.REJECT
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScalarFieldResult(BaseModel):
+    """Session/project result whose large arrays are persisted outside JSON."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    metadata: ScalarFieldMetadata
+    settings: DensitySettings
+    arrays: dict[str, np.ndarray] = Field(default_factory=dict, exclude=True)
+    validation_results: list[ScalarValidationResult] = Field(default_factory=list)
+    validation_summary: ScalarValidationSummary = Field(default_factory=ScalarValidationSummary)
+
+
 class M9State(BaseModel):
     """The single project-owned state container for all M9 outputs."""
 
@@ -232,3 +400,5 @@ class M9State(BaseModel):
     validation_summary: ValidationSummary = Field(default_factory=ValidationSummary)
     random_seed: int = 42
     provenance: dict[str, Any] = Field(default_factory=dict)
+    scalar_samples: list[ScalarParameterSample] = Field(default_factory=list)
+    scalar_fields: list[ScalarFieldResult] = Field(default_factory=list)

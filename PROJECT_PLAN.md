@@ -97,7 +97,7 @@ rendering fixes, and Windows/Linux rendering CI.
 
 Compute fracture-fracture intersections, connected clusters, boundary-spanning
 paths, flow/percolation channels, independent held-out validation, uncertainty,
-mechanical properties, and formal 3DEC/PFC export. Kriging is not implemented.
+mechanical properties, and formal 3DEC/PFC export. The M9 isotropic Ordinary Kriging extension is independent of these later M11 packages.
 Connectivity and every later M11 work package remain explicitly outside M11.1.
 
 ## M12 — v1.0.0-M12
@@ -112,10 +112,11 @@ validation.
 
 1. Generate half-open fixed-length or domain-bound P10 intervals from Formal records, retaining independent Validation intervals.
 2. Estimate domain/set P32 by `N / sum(Lj * E(|n·uj|))`, using seeded Fisher integration and an explicit low-observability state.
-3. Provide replaceable GLOBAL_CONSTANT and three-dimensional IDW density models with anisotropy, domain isolation, diagnostics, fallback provenance, and distinct zero/no-data states.
-4. Fit only real radius/diameter/trace/mapped-size fields by MLE with likelihood/AIC/BIC, or store explicitly assumed/user-defined priors.
-5. Build the first parameter voxel field in chunks with progress/cancel and persist arrays once in compressed NPZ form.
-6. Evaluate held-out boreholes only after fitting, reporting interval errors and aggregate metrics or `INSUFFICIENT_VALIDATION`.
-7. Export P10/P32 tables, density/size JSON, validation outputs, NPZ and VTI; do not generate explicit DFN geometry.
+3. Provide replaceable GLOBAL_CONSTANT, three-dimensional IDW, and isotropic Ordinary Kriging density models with domain isolation, diagnostics, explicit prediction-bound policy, and distinct zero/no-data states.
+4. Support generic continuous interval parameters through trajectory-located samples, domain-safe IDW/Kriging fields, locked-Holdout validation, compressed persistence, and export. Categorical parameters are excluded.
+5. Fit only real radius/diameter/trace/mapped-size fields by MLE with likelihood/AIC/BIC, or store explicitly assumed/user-defined priors.
+6. Build the first parameter voxel field in chunks with progress/cancel and persist arrays once in compressed NPZ form.
+7. Evaluate held-out boreholes only after fitting, reporting interval errors and aggregate metrics or `INSUFFICIENT_VALIDATION`.
+8. Export P10/P32 tables, density/size JSON, validation outputs, NPZ and VTI; do not generate explicit DFN geometry.
 
 M9 and M10 are published historical foundations for the published M11.1 phase. Later M11 work remains separately planned.

@@ -44,6 +44,7 @@ database and confirm a reasonable voxel range.
 - Assign traceable parameters and uncertainty to voxels.
 - Validation boreholes remain completely outside fitting.
 - RQD is auxiliary information and is never directly converted to P32.
+- Extend the published M9 foundation with optional isotropic Ordinary Kriging and generic continuous physical-parameter fields; retain GLOBAL_CONSTANT and IDW without migration or result changes.
 
 **Exit condition:** every input voxel has traceable DFN generation parameters
 and uncertainty.
@@ -80,12 +81,12 @@ and uncertainty.
 - Quantify multiple-realization uncertainty, error, and confidence intervals.
 - Assign fracture mechanics and export 3DEC, PFC, VTK, CSV, and ML-ready
   input/output voxel datasets with provenance, seeds, and versions.
-- Evaluate interpolation extensions such as Kriging only as a separately validated future method.
+- Continue validating the separately developed M9 Ordinary Kriging extension; later M11 connectivity does not depend on selecting Kriging.
 
 **Exit condition:** the model is independently validated and transferable.
 
 M11.1 is intentionally limited to second voxelization. It does not claim
-connectivity, percolation, block cutting, mechanics, formal simulator export, or Kriging.
+connectivity, percolation, block cutting, mechanics, or formal simulator export.
 
 ## M12 — Fragmentation, integration, and formal release
 

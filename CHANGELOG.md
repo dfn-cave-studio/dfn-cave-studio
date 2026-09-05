@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — M9 Ordinary Kriging and generic scalar parameter fields
+
+- Added deterministic three-dimensional isotropic Ordinary Kriging with spherical, exponential, and Gaussian semivariograms, manual or automatic fitting, local `cKDTree` searches, variance diagnostics, progress, and cancellation.
+- Added trajectory-located continuous scalar interval fields for P32, RQD, RMR, UCS, joint spacing, joint density, and future continuous parameters; categorical values remain unsupported.
+- Enforced the current locked Calibration/Validation Holdout at build time and added audited reject/clip policies for physically bounded predictions.
+- Added collision-resistant Unicode parameter IDs, compressed NPZ persistence validation, CSV/JSON/NPZ/VTI export, validation summaries, and session-only M9 scalar visualization.
+- Existing IDW arrays and M10/M11 scientific algorithms remain unchanged. The initial Kriging implementation is isotropic and does not include co-kriging, indicator Kriging, or non-stationary models.
+
 ## [0.11.0-M11.1] — 2026-09-01
 
 This is the formally published bounded **M11.1 Exact Second Voxelization** release. It does not mark the complete M11 milestone as finished.

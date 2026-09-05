@@ -15,7 +15,8 @@ def test_m9_state_and_arrays_round_trip(tmp_path):
         P10Interval(hole_id="BH-1", from_depth=0, to_depth=5, observation_count=0, sample_length=5, p10=0, data_state="true_zero")
     ]
     project.m9_state.parameter_field_metadata = ParameterFieldMetadata(
-        shape=(2, 1, 1), origin=(0, 0, 0), spacing=(1, 1, 1), field_names=["p32_total"], set_ids=[], density_method="global_constant", random_seed=42, estimated_bytes=8
+        shape=(2, 1, 1), origin=(0, 0, 0), spacing=(1, 1, 1), field_names=["p32_total"], set_ids=[], density_method="global_constant", random_seed=42, estimated_bytes=8,
+        provenance={"kriging_variance_total_semantics": "Sum under an inter-set independence assumption."},
     )
     project.m9_state.parameter_field_arrays = {"p32_total": np.array([[[0]], [[np.nan]]], dtype=np.float32)}
     path = tmp_path / "m9.dfnproj"
@@ -23,6 +24,9 @@ def test_m9_state_and_arrays_round_trip(tmp_path):
     restored = ZipProjectStore().load(path)
     assert restored.metadata.software_version == "0.11.0"
     assert restored.m9_state.p10_intervals == project.m9_state.p10_intervals
+    assert "inter-set independence assumption" in restored.m9_state.parameter_field_metadata.provenance[
+        "kriging_variance_total_semantics"
+    ]
     np.testing.assert_equal(restored.m9_state.parameter_field_arrays["p32_total"], project.m9_state.parameter_field_arrays["p32_total"])
 
 

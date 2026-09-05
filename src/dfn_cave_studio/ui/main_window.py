@@ -139,6 +139,13 @@ class MainWindow(QMainWindow):
             self._on_borehole_manager,
             "View, import, and maintain the project borehole database",
         )
+        self._add_menu_action(
+            self._data_menu,
+            "M9 Physical Parameter Fields...",
+            None,
+            self._on_m9_scalar_fields,
+            "Import and interpolate continuous scalar parameters using IDW or Ordinary Kriging",
+        )
 
         # === Voxel Menu ===
         self._voxel_menu = menu_bar.addMenu("&Voxel")
@@ -1102,6 +1109,26 @@ class MainWindow(QMainWindow):
         from dfn_cave_studio.ui.dialogs.m9_dialogs import M9ValidationDialog
 
         self._open_m9_dialog(M9ValidationDialog, "validation")
+
+    def _on_m9_scalar_fields(self) -> None:
+        """Open generic M9 fields, invalidating DFN results only for a P32 input."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Open or create a project first.")
+            return
+        from dfn_cave_studio.ui.dialogs.m9_scalar_field_dialog import M9ScalarFieldDialog
+
+        dialog = M9ScalarFieldDialog(
+            self._project_store.current_project,
+            self._get_m9_layer_manager(),
+            self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            if dialog.dfn_inputs_changed:
+                self._workflow.invalidate_steps(["explicit_dfn", "second_voxelization"])
+                self._discard_stale_m11_visualization()
+            self._project_store.mark_dirty()
+            self._update_project_tree_from_project(self._project_store.current_project)
+            self.log_message("M9 auxiliary physical parameter fields updated")
 
     def _m7_explicit_dfn(self) -> None:
         """Open transactional M10 generation and session layer management."""
