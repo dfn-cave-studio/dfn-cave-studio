@@ -6,7 +6,14 @@ from copy import deepcopy
 
 import numpy as np
 
-from dfn_cave_studio.models.m9 import DensityMethod, DensitySettings
+from dfn_cave_studio.models.m9 import (
+    DensityMethod,
+    DensitySettings,
+    KrigingSettings,
+    NonNegativePolicy,
+    VariogramMode,
+    VariogramModel,
+)
 from dfn_cave_studio.services.m9_service import M9Service
 from dfn_cave_studio.ui.qt_adapter import (
     QCheckBox,
@@ -23,12 +30,14 @@ from dfn_cave_studio.ui.qt_adapter import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     Qt,
     QTableWidget,
     QTableWidgetItem,
     QThreadPool,
     QVBoxLayout,
+    QWidget,
 )
 from dfn_cave_studio.workers.m9_worker import M9Worker
 
@@ -69,7 +78,14 @@ class M9DensityDialog(_M9Dialog):
     def __init__(self, project, workflow, parent=None) -> None:
         super().__init__(project, workflow, parent)
         self.setWindowTitle("M9 Fracture Density Model")
-        layout = QVBoxLayout(self)
+        self.resize(900, 700)
+        root_layout = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        scroll.setWidget(content)
+        root_layout.addWidget(scroll)
         form = QFormLayout()
         self.interval_mode = QComboBox()
         self.interval_mode.addItem("Fixed length", "fixed")
@@ -80,6 +96,7 @@ class M9DensityDialog(_M9Dialog):
         self.method = QComboBox()
         self.method.addItem("Global constant", DensityMethod.GLOBAL_CONSTANT.value)
         self.method.addItem("IDW", DensityMethod.IDW.value)
+        self.method.addItem("Ordinary Kriging", DensityMethod.ORDINARY_KRIGING.value)
         self.seed = QSpinBox()
         self.seed.setRange(0, 2_147_483_647)
         self.seed.setValue(project.m9_state.random_seed)
@@ -116,6 +133,38 @@ class M9DensityDialog(_M9Dialog):
         form.addRow("Fisher Monte Carlo samples", self.monte_carlo_samples)
         form.addRow("Low-observability threshold", self.low_observability_threshold)
         layout.addLayout(form)
+        self.kriging_group = QGroupBox("Ordinary Kriging / 普通克里金")
+        kriging_form = QFormLayout(self.kriging_group)
+        self.variogram_mode = QComboBox(); self.variogram_mode.addItem("Auto", VariogramMode.AUTO.value); self.variogram_mode.addItem("Manual", VariogramMode.MANUAL.value)
+        self.variogram_model = QComboBox()
+        for model in VariogramModel:
+            self.variogram_model.addItem(model.value.title(), model.value)
+        self.nugget = QDoubleSpinBox(); self.nugget.setRange(0, 1e12); self.nugget.setDecimals(6)
+        self.sill = QDoubleSpinBox(); self.sill.setRange(1e-12, 1e12); self.sill.setDecimals(6)
+        self.variogram_range = QDoubleSpinBox(); self.variogram_range.setRange(1e-9, 1e12); self.variogram_range.setDecimals(6)
+        self.lag_count = QSpinBox(); self.lag_count.setRange(3, 100)
+        self.kriging_min_neighbors = QSpinBox(); self.kriging_min_neighbors.setRange(2, 1000)
+        self.kriging_max_neighbors = QSpinBox(); self.kriging_max_neighbors.setRange(2, 1000)
+        self.kriging_radius = QDoubleSpinBox(); self.kriging_radius.setRange(0, 1e12); self.kriging_radius.setSpecialValueText("Unlimited")
+        self.nonnegative_policy = QComboBox()
+        self.nonnegative_policy.addItem("Reject negative predictions", NonNegativePolicy.REJECT.value)
+        self.nonnegative_policy.addItem("Clip to zero with audit", NonNegativePolicy.CLIP_WITH_AUDIT.value)
+        kriging = current.kriging
+        for widget, value in ((self.variogram_mode, kriging.mode.value), (self.variogram_model, kriging.model.value),
+                              (self.nonnegative_policy, kriging.non_negative_policy.value)):
+            widget.setCurrentIndex(widget.findData(value))
+        self.nugget.setValue(kriging.nugget); self.sill.setValue(kriging.sill); self.variogram_range.setValue(kriging.range)
+        self.lag_count.setValue(kriging.lag_count); self.kriging_min_neighbors.setValue(kriging.minimum_neighbors)
+        self.kriging_max_neighbors.setValue(kriging.maximum_neighbors); self.kriging_radius.setValue(kriging.search_radius or 0)
+        kriging_form.addRow("Variogram mode", self.variogram_mode); kriging_form.addRow("Variogram model", self.variogram_model)
+        kriging_form.addRow("Nugget", self.nugget); kriging_form.addRow("Sill", self.sill); kriging_form.addRow("Range (m)", self.variogram_range)
+        kriging_form.addRow("Lag count", self.lag_count); kriging_form.addRow("Minimum neighbours", self.kriging_min_neighbors)
+        kriging_form.addRow("Maximum neighbours", self.kriging_max_neighbors); kriging_form.addRow("Search radius (m)", self.kriging_radius)
+        kriging_form.addRow("Non-negative policy", self.nonnegative_policy)
+        layout.addWidget(self.kriging_group)
+        self.method.currentIndexChanged.connect(self._update_method_controls)
+        self.variogram_mode.currentIndexChanged.connect(self._update_method_controls)
+        self._update_method_controls()
         self.calculate_button = QPushButton("Calculate P10 / P32")
         self.calculate_button.clicked.connect(self._calculate)
         layout.addWidget(self.calculate_button)
@@ -159,6 +208,13 @@ class M9DensityDialog(_M9Dialog):
                 global_fallback=self.global_fallback.isChecked(),
                 monte_carlo_samples=self.monte_carlo_samples.value(),
                 low_observability_threshold=self.low_observability_threshold.value(),
+                kriging=KrigingSettings(
+                    mode=self.variogram_mode.currentData(), model=self.variogram_model.currentData(),
+                    nugget=self.nugget.value(), sill=self.sill.value(), range=self.variogram_range.value(),
+                    lag_count=self.lag_count.value(), minimum_neighbors=self.kriging_min_neighbors.value(),
+                    maximum_neighbors=self.kriging_max_neighbors.value(), search_radius=self.kriging_radius.value() or None,
+                    non_negative_policy=self.nonnegative_policy.currentData(),
+                ),
             )
             self.project.m9_state.random_seed = self.seed.value()
             self.calculate_button.setEnabled(False)
@@ -178,6 +234,13 @@ class M9DensityDialog(_M9Dialog):
             QThreadPool.globalInstance().start(self._worker)
         except Exception as exc:
             self._fail(str(exc))
+
+    def _update_method_controls(self) -> None:
+        is_kriging = self.method.currentData() == DensityMethod.ORDINARY_KRIGING.value
+        self.kriging_group.setVisible(is_kriging)
+        manual = self.variogram_mode.currentData() == VariogramMode.MANUAL.value
+        for widget in (self.nugget, self.sill, self.variogram_range):
+            widget.setEnabled(manual)
 
     def _calculation_done(self, _result) -> None:
         self._worker = None
@@ -330,7 +393,7 @@ class M9ParameterFieldDialog(_M9Dialog):
         self.summary = QLabel()
         layout.addWidget(self.summary)
         self.field = QComboBox()
-        self.field.currentTextChanged.connect(self._refresh_slice)
+        self.field.currentIndexChanged.connect(lambda _index: self._refresh_slice(self.field.currentData()))
         layout.addWidget(self.field)
         controls = QHBoxLayout()
         self.axis = QComboBox()
@@ -470,7 +533,8 @@ class M9ParameterFieldDialog(_M9Dialog):
             self.summary.setText("Parameter field not generated")
             return
         self.summary.setText(f"Shape {metadata.shape}; {np.prod(metadata.shape):,} voxels; {metadata.estimated_bytes / 1024**2:.2f} MiB")
-        self.field.addItems(metadata.field_names)
+        for name in metadata.field_names:
+            self.field.addItem(name, name)
 
     def _refresh_slice(self, name: str) -> None:
         array = self.project.m9_state.parameter_field_arrays.get(name)
@@ -496,7 +560,7 @@ class M9ParameterFieldDialog(_M9Dialog):
 
             renderer = ParameterFieldRenderer()
             axis = self.axis.currentData()
-            field_name = self.field.currentText()
+            field_name = self.field.currentData()
             slice_index, coordinate = renderer.slice_location(metadata, axis, self.slice_fraction.value())
             layer_id = renderer.layer_id(field_name, axis, slice_index)
             actor = renderer.render_slice(
@@ -540,7 +604,7 @@ class M9ParameterFieldDialog(_M9Dialog):
 
     def _current_layer_id(self) -> str | None:
         metadata = self.project.m9_state.parameter_field_metadata
-        if metadata is None or not self.field.currentText():
+        if metadata is None or not self.field.currentData():
             return None
         from dfn_cave_studio.visualization.parameter_field_renderer import ParameterFieldRenderer
 
@@ -549,7 +613,7 @@ class M9ParameterFieldDialog(_M9Dialog):
             self.axis.currentData(),
             self.slice_fraction.value(),
         )
-        return ParameterFieldRenderer.layer_id(self.field.currentText(), self.axis.currentData(), slice_index)
+        return ParameterFieldRenderer.layer_id(self.field.currentData(), self.axis.currentData(), slice_index)
 
     def _selected_layer_id(self) -> str | None:
         row = self.layers_table.currentRow()

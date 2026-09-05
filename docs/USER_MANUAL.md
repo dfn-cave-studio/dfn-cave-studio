@@ -6,7 +6,7 @@
 
 `M11 Visualization`支持体素云图、正交与任意剖面、Plane Cutaway和Box Cutaway。Exact Cell Colours是权威审计显示；Smooth Display仅为显示插值，不修改科学数组。显示图层、色标和交互控件属于session-only状态，不写入项目。
 
-> M11.1已正式发布，仅包含精确第二次体素化及其可视化。裂隙—裂隙求交图、连通簇、边界贯通、渗流通道、块体切割、力学属性、正式3DEC/PFC导出和Kriging尚未实现。
+> M11.1正式发布内容仅包含精确第二次体素化及其可视化。当前开发分支另行增加M9各向同性Ordinary Kriging；裂隙—裂隙求交图、连通簇、边界贯通、渗流通道、块体切割、力学属性和正式3DEC/PFC导出仍未实现。
 
 ## M10 显式DFN操作（步骤12）
 
@@ -28,10 +28,18 @@ M10按每个体素、每个节理组使用`N~Poisson(P32·V/(πE[R²]))`。Calib
 
 M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、Validation Holdout 已锁定、Formal 裂隙/结构域/节理组可用，且 Voxel Analysis Domain 与 dx/dy/dz 已确认。Validation 孔只用于最后评价。
 
-1. `Fracture Density Model`：选择固定长度或结构域区间、GLOBAL_CONSTANT/IDW 和随机种子，点击 `Calculate P10 / P32`。半开区间避免边界重复计数；低可观测性不输出不稳定 P32。
+1. `Fracture Density Model`：选择固定长度或结构域区间、GLOBAL_CONSTANT/IDW/ORDINARY_KRIGING 和随机种子，点击 `Calculate P10 / P32`。半开区间避免边界重复计数；低可观测性不输出不稳定 P32。
 2. `Fracture Size Distribution`：只有真实 radius/diameter/trace_length/mapped_length 才允许自动拟合；否则设置 FIXED、UNIFORM 或三种截断分布并保留 ASSUMED/USER_DEFINED 来源。当前自动截断分布拟合必须视为 EXPERIMENTAL：截断边界使用样本极值，截断对数正态尚非完整截断似然优化。界面和项目文件保存收敛状态、优化器消息和样本量。演示固定半径 2 m 始终标记为 ASSUMED。不会从 aperture、RQD 或 set_id 推导尺寸。
 3. `First Voxel Parameter Field`：后台按块生成，可显示进度并取消。NO_DATA、TRUE_ZERO、OUTSIDE_MODEL 和 MODELED_VALUE 独立保存；本步骤不生成显式裂隙面。
 4. `Validation`：从参数场提取预测 P32，按留出孔真实局部轨迹换算预测 P10，报告 MAE、RMSE、Bias、可用时的 R²/相关系数；样本不足显示 INSUFFICIENT_VALIDATION。
+
+### M9 Ordinary Kriging 与通用物理参数场
+
+从M9物理参数场入口导入长表CSV/XLSX：`borehole_id, from_depth, to_depth, parameter_name, value, unit`，可选`source_dataset, quality_flag`。区间中点按真实三维钻孔轨迹定位。建场前必须锁定Validation Holdout；软件在计算时按当前孔号划分Calibration/Validation，导入时保存的role仅用于审计。
+
+插值方法可选`GLOBAL_CONSTANT`、`IDW`或`ORDINARY_KRIGING`。普通克里金支持Spherical、Exponential、Gaussian变异函数及Auto/Manual参数。可查看Estimate、Kriging Variance、实验变异函数和Validation指标；Kriging Variance只表示给定变异函数下的空间插值不确定性。第一版仅支持三维各向同性普通克里金，不支持各向异性变异函数、协同克里金、指示克里金或非平稳克里金，也不能对岩体等级等类别字段直接插值。
+
+P32、UCS、节理间距和节理密度不得为负，RQD/RMR必须在0–100内。越界预测按用户选择Reject或Clip with audit处理，报告拒绝/裁剪体素数、调整前极值和总改变量；不会静默裁剪。主P32审计中的`set-voxel count`表示“一个节理组在一个空间体素中的预测”，`voxel count`表示至少有一个节理组预测被调整的唯一空间体素数。拒绝某组预测时该组不计入`p32_total`，同一体素内其他有效组仍参与求和；仅当没有任何有效组时汇总状态才为`NO_DATA`。RMR所采用的评分体系版本必须由数据提供者在来源/质量信息中说明。普通物理辅助场的修改不使M10/M11失效；只有明确作为DFN输入的P32场变化才按既有规则使其失效。
 
 `.dfnproj` 保存 M9 设置、P10/P32、尺寸模型、压缩参数场数组、Validation结果，以及M10配置、实现质量报告和压缩显式裂隙几何。
 
@@ -679,7 +687,7 @@ Clip、Show/Hide、Opacity 和清除图层都只改变 session 显示状态，�
 
 所有云图进入 `Rendered Layers`：可显示/隐藏、调整透明度、删除当前图层或清除全部 M11 图层。M11 图层和色卡使用独立命名空间，不会删除 M9、M10、钻孔、边界、网格或坐标轴。关闭窗口会移除交互式平面控件；云图、色卡和缓存均为 session-only，不写入 `.dfnproj`。
 
-必须注意：云图不会改变 `p32_total = p32_explicit_intersection + p32_subgrid`，也不会改变稀疏求交、面积守恒或工作流状态。当前版本未实现 Kriging、连通性、贯通、块度或 Volume Rendering。
+必须注意：云图不会改变 `p32_total = p32_explicit_intersection + p32_subgrid`，也不会改变稀疏求交、面积守恒或工作流状态。M11云图的Smooth Display不是Kriging；当前仍未实现连通性、贯通、块度或Volume Rendering。
 
 ## 界面语言 / Interface language
 

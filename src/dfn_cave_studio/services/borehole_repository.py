@@ -222,7 +222,7 @@ class BoreholeRepository:
             self.rebuild_formal_collection()
         if pending_records and modification_source not in {"m7_migration", "staged_import"}:
             self.invalidate_dependent_results(dtype)
-        if pending_records:
+        if pending_records and dtype in {member.value for member in BoreholeDataType}:
             self._mark_quality_stale()
         counts = {
             "raw": len(pending_records),
@@ -544,6 +544,7 @@ class BoreholeRepository:
             BoreholeDataType.FRACTURES: ["clean", "joint_sets", "bounds", "voxel_grid"],
             BoreholeDataType.RQD: ["clean"],
             BoreholeDataType.DOMAIN_INTERVALS: ["clean", "domains"],
+            "scalar_parameters": [],
         }
         affected = {step_id for data_type in data_types for step_id in dependencies.get(data_type, ["clean"])}
         workflow.invalidate_steps(sorted(affected))
@@ -824,7 +825,7 @@ class BoreholeRepository:
         return changed
 
     def _classify(self, data_type: str, values: Mapping[str, Any]) -> tuple[RecordState, str | None]:
-        if data_type not in {member.value for member in BoreholeDataType}:
+        if data_type not in {member.value for member in BoreholeDataType} | {"scalar_parameters"}:
             return RecordState.FORMAL, None
         hole_id = self._hole_id(data_type, values)
         if not hole_id:
@@ -889,6 +890,15 @@ class BoreholeRepository:
                     return RecordState.EXCLUDED, "RQD must be numeric in [0, 100]"
             elif not self._is_number(values.get("domain_id")):
                 return RecordState.EXCLUDED, "domain_id must be numeric"
+        elif data_type == "scalar_parameters":
+            required = ("from_depth", "to_depth", "value")
+            if any(not self._is_number(values.get(field)) for field in required):
+                return RecordState.EXCLUDED, "Scalar interval depths and value must be finite numbers"
+            from_depth, to_depth = float(values["from_depth"]), float(values["to_depth"])
+            if from_depth < 0 or from_depth >= to_depth or to_depth > total_depth:
+                return RecordState.EXCLUDED, f"Scalar interval [{from_depth}, {to_depth}] is outside borehole depth"
+            if not str(values.get("parameter_name", "")).strip() or not str(values.get("unit", "")).strip():
+                return RecordState.EXCLUDED, "Scalar parameter_name and unit are required"
         return RecordState.FORMAL, None
 
     def _formal_collar(self, hole_id: str) -> BoreholeRecord | None:

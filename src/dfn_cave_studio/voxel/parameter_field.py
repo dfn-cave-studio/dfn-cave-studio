@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import numpy as np
 
 from dfn_cave_studio.dfn.intensity import expected_orientation_exposure
@@ -18,8 +18,10 @@ from dfn_cave_studio.models.m9 import (
     P32Estimate,
     ParameterFieldMetadata,
     SizeModel,
+    VariogramDiagnostics,
 )
 from dfn_cave_studio.models.spatial_grid import VoxelCellState
+from dfn_cave_studio.voxel.ordinary_kriging import OrdinaryKrigingInterpolator, fit_variogram
 
 
 CELL_STATE_CODES = {
@@ -37,7 +39,7 @@ SIZE_TYPE_CODES = {
     "truncated_exponential": 4,
 }
 SIZE_SOURCE_CODES = {"fitted": 0, "size_proxy": 1, "assumed": 2, "user_defined": 3, "experimental": 4}
-DENSITY_METHOD_CODES = {DensityMethod.GLOBAL_CONSTANT: 0, DensityMethod.IDW: 1}
+DENSITY_METHOD_CODES = {DensityMethod.GLOBAL_CONSTANT: 0, DensityMethod.IDW: 1, DensityMethod.ORDINARY_KRIGING: 2}
 SIZE_PARAMETER_ORDER = {
     "fixed": ["radius"],
     "uniform": [],
@@ -70,6 +72,9 @@ class InterpolationResult:
     neighbor_count: int = 0
     confidence: float = 0.0
     provenance: str = "no_data"
+    kriging_variance: float = float("nan")
+    used_regularization: bool = False
+    used_pseudoinverse: bool = False
 
 
 class SpatialInterpolator(ABC):
@@ -173,6 +178,47 @@ class GlobalConstantInterpolator(SpatialInterpolator):
         )
 
 
+class DomainKrigingInterpolator(SpatialInterpolator):
+    """Ordinary kriging models fitted independently inside each structural domain."""
+
+    def __init__(self, samples: Iterable[SpatialSample], settings) -> None:
+        self.models: dict[int | None, OrdinaryKrigingInterpolator] = {}
+        self.diagnostics: dict[int | None, VariogramDiagnostics] = {}
+        grouped: dict[int | None, list[SpatialSample]] = {}
+        for sample in samples:
+            grouped.setdefault(sample.domain_id, []).append(sample)
+        self.failures: dict[int | None, str] = {}
+        for domain_id, rows in grouped.items():
+            coordinates = np.asarray([(row.x, row.y, row.z) for row in rows], dtype=float)
+            values = np.asarray([row.value for row in rows], dtype=float)
+            try:
+                diagnostics = fit_variogram(coordinates, values, settings)
+                self.models[domain_id] = OrdinaryKrigingInterpolator(coordinates, values, diagnostics, settings)
+                self.diagnostics[domain_id] = diagnostics
+            except ValueError as error:
+                self.failures[domain_id] = str(error)
+
+    def predict(self, point: tuple[float, float, float], domain_id: int | None) -> InterpolationResult:
+        model = self.models.get(domain_id)
+        if model is None:
+            return InterpolationResult(None, VoxelCellState.NO_DATA, provenance="insufficient_data")
+        prediction = model.predict(point)
+        if prediction.estimate is None:
+            return InterpolationResult(None, VoxelCellState.NO_DATA, neighbor_count=prediction.neighbor_count,
+                                       provenance=prediction.status.lower())
+        value = prediction.estimate
+        return InterpolationResult(
+            value,
+            VoxelCellState.TRUE_ZERO if value == 0 else VoxelCellState.MODELED_VALUE,
+            neighbor_count=prediction.neighbor_count,
+            confidence=min(1.0, prediction.neighbor_count / model.settings.maximum_neighbors),
+            provenance=prediction.status.lower(),
+            kriging_variance=float(prediction.variance) if prediction.variance is not None else float("nan"),
+            used_regularization=prediction.used_regularization,
+            used_pseudoinverse=prediction.used_pseudoinverse,
+        )
+
+
 class ParameterFieldBuilder:
     """Build the first voxelized DFN parameter field without explicit fractures."""
 
@@ -227,8 +273,12 @@ class ParameterFieldBuilder:
             "confidence": np.zeros(shape, dtype=np.float32),
             "density_method": np.full(shape, DENSITY_METHOD_CODES[settings.method], dtype=np.uint8),
         }
+        if settings.method == DensityMethod.ORDINARY_KRIGING:
+            arrays["kriging_variance_total"] = np.full(shape, np.nan, dtype=np.float32)
         for set_id in set_ids:
             arrays[f"set_{set_id}_p32"] = np.full(shape, np.nan, dtype=np.float32)
+            if settings.method == DensityMethod.ORDINARY_KRIGING:
+                arrays[f"set_{set_id}_kriging_variance"] = np.full(shape, np.nan, dtype=np.float32)
             default_direction = np.nan if explicit_orientation_models else sets[set_id].orientation.mean_dip_direction
             default_dip = np.nan if explicit_orientation_models else sets[set_id].orientation.mean_dip
             default_kappa = np.nan if explicit_orientation_models else sets[set_id].orientation.kappa
@@ -252,53 +302,61 @@ class ParameterFieldBuilder:
             }
         calibration_rows = [item for item in p10_intervals if item.role == "calibration" and item.p10 is not None]
         interpolators: dict[int, SpatialInterpolator] = {}
+        rejected_set_voxel_count = 0
+        clipped_set_voxel_count = 0
+        rejected_voxel_count = 0
+        clipped_voxel_count = 0
+        pre_adjustment_minimum: float | None = None
+        pre_adjustment_maximum: float | None = None
+        negative_clipped_total_change = 0.0
         for set_id in set_ids:
             values = domain_values_by_set[set_id]
             if settings.method == DensityMethod.GLOBAL_CONSTANT:
                 interpolators[set_id] = GlobalConstantInterpolator(values)
-            else:
-                samples = []
-                for row_index, row in enumerate(calibration_rows):
-                    estimate = estimates.get((row.domain_id, set_id))
-                    if row.set_id == set_id and estimate is not None:
-                        orientation = orientations.get((row.domain_id, set_id))
-                        exposure_set = sets[set_id]
-                        if orientation is not None:
-                            exposure_set = exposure_set.model_copy(
-                                update={
-                                    "orientation": exposure_set.orientation.model_copy(
-                                        update={
-                                            "mean_dip_direction": orientation.mean_dip_direction,
-                                            "mean_dip": orientation.mean_dip,
-                                            "kappa": orientation.kappa,
-                                        }
-                                    )
-                                }
-                            )
-                        effective_length = sum(
-                            length
-                            * expected_orientation_exposure(
-                                exposure_set,
-                                (dx, dy, dz),
-                                random_seed=random_seed + set_id * 1_000_003 + row_index,
-                                sample_count=settings.monte_carlo_samples,
-                            )
-                            for dx, dy, dz, length in row.segment_directions
+                continue
+            samples = []
+            for row_index, row in enumerate(calibration_rows):
+                estimate = estimates.get((row.domain_id, set_id))
+                if row.set_id == set_id and estimate is not None:
+                    orientation = orientations.get((row.domain_id, set_id))
+                    exposure_set = sets[set_id]
+                    if orientation is not None:
+                        exposure_set = exposure_set.model_copy(
+                            update={
+                                "orientation": exposure_set.orientation.model_copy(
+                                    update={
+                                        "mean_dip_direction": orientation.mean_dip_direction,
+                                        "mean_dip": orientation.mean_dip,
+                                        "kappa": orientation.kappa,
+                                    }
+                                )
+                            }
                         )
-                        exposure = effective_length / row.sample_length if row.sample_length else 0.0
-                        if exposure < settings.low_observability_threshold:
-                            continue
-                        samples.append(
-                            SpatialSample(
-                                row.center_x or 0.0,
-                                row.center_y or 0.0,
-                                row.center_z or 0.0,
-                                row.p10 / exposure,
-                                row.domain_id,
-                                effective_length,
-                                row.observation_count,
-                            )
+                    effective_length = sum(
+                        length
+                        * expected_orientation_exposure(
+                            exposure_set,
+                            (dx, dy, dz),
+                            random_seed=random_seed + set_id * 1_000_003 + row_index,
+                            sample_count=settings.monte_carlo_samples,
                         )
+                        for dx, dy, dz, length in row.segment_directions
+                    )
+                    exposure = effective_length / row.sample_length if row.sample_length else 0.0
+                    if exposure < settings.low_observability_threshold:
+                        continue
+                    samples.append(
+                        SpatialSample(
+                            row.center_x or 0.0,
+                            row.center_y or 0.0,
+                            row.center_z or 0.0,
+                            row.p10 / exposure,
+                            row.domain_id,
+                            effective_length,
+                            row.observation_count,
+                        )
+                    )
+            if settings.method == DensityMethod.IDW:
                 interpolators[set_id] = IDWInterpolator(
                     samples,
                     power=settings.power,
@@ -308,6 +366,8 @@ class ParameterFieldBuilder:
                     anisotropy=(settings.anisotropy_x, settings.anisotropy_y, settings.anisotropy_z),
                     fallback_by_domain=values if settings.global_fallback else None,
                 )
+            else:
+                interpolators[set_id] = DomainKrigingInterpolator(samples, settings.kriging)
 
         for flat_start in range(0, total, chunk_size):
             if cancelled and cancelled():
@@ -326,6 +386,39 @@ class ParameterFieldBuilder:
                 domain_id = domain_at_point(point) if domain_at_point else None
                 arrays["domain_id"][i, j, k] = -1 if domain_id is None else domain_id
                 results = [interpolators[set_id].predict(point, domain_id) for set_id in set_ids]
+                voxel_had_rejection = False
+                voxel_had_clipping = False
+                if settings.method == DensityMethod.ORDINARY_KRIGING:
+                    audited = []
+                    for result in results:
+                        if result.value is not None and np.isfinite(result.value):
+                            pre_adjustment_minimum = (
+                                result.value
+                                if pre_adjustment_minimum is None
+                                else min(pre_adjustment_minimum, result.value)
+                            )
+                            pre_adjustment_maximum = (
+                                result.value
+                                if pre_adjustment_maximum is None
+                                else max(pre_adjustment_maximum, result.value)
+                            )
+                        if result.value is None or result.value >= 0:
+                            audited.append(result)
+                            continue
+                        if settings.kriging.non_negative_policy.value == "reject":
+                            rejected_set_voxel_count += 1
+                            voxel_had_rejection = True
+                            audited.append(replace(result, value=None, state=VoxelCellState.NO_DATA, provenance="negative_rejected"))
+                        else:
+                            clipped_set_voxel_count += 1
+                            voxel_had_clipping = True
+                            negative_clipped_total_change += -result.value
+                            audited.append(replace(result, value=0.0, state=VoxelCellState.TRUE_ZERO, provenance="negative_clipped"))
+                    results = audited
+                    if voxel_had_rejection:
+                        rejected_voxel_count += 1
+                    if voxel_had_clipping:
+                        clipped_voxel_count += 1
                 valid = [result for result in results if result.value is not None]
                 for set_id, result in zip(set_ids, results):
                     orientation = orientations.get((domain_id, set_id))
@@ -335,6 +428,8 @@ class ParameterFieldBuilder:
                         arrays[f"set_{set_id}_kappa"][i, j, k] = orientation.kappa
                     if result.value is not None:
                         arrays[f"set_{set_id}_p32"][i, j, k] = result.value
+                        if settings.method == DensityMethod.ORDINARY_KRIGING:
+                            arrays[f"set_{set_id}_kriging_variance"][i, j, k] = result.kriging_variance
                         size = sizes.get((domain_id, set_id)) or sizes.get((None, set_id))
                         if size:
                             arrays[f"set_{set_id}_mean_radius"][i, j, k] = size.mean_radius
@@ -367,6 +462,9 @@ class ParameterFieldBuilder:
                 arrays["nearest_data_distance"][i, j, k] = min(distances) if distances else np.nan
                 arrays["neighbour_count"][i, j, k] = max(result.neighbor_count for result in valid)
                 arrays["confidence"][i, j, k] = min(result.confidence for result in valid)
+                if settings.method == DensityMethod.ORDINARY_KRIGING:
+                    finite_variances = [result.kriging_variance for result in valid if np.isfinite(result.kriging_variance)]
+                    arrays["kriging_variance_total"][i, j, k] = sum(finite_variances) if finite_variances else np.nan
                 supporting = [estimates.get((domain_id, set_id)) for set_id in set_ids]
                 supporting = [item for item in supporting if item is not None]
                 arrays["effective_sample_length"][i, j, k] = sum(item.effective_sample_length for item in supporting)
@@ -390,6 +488,41 @@ class ParameterFieldBuilder:
                 "size_source_codes": SIZE_SOURCE_CODES,
                 "size_parameter_order": SIZE_PARAMETER_ORDER,
                 "density_method_codes": {method.value: code for method, code in DENSITY_METHOD_CODES.items()},
+                "ordinary_kriging": {
+                    str(set_id): {
+                        "domains": {
+                            str(domain_id): diagnostics.model_dump(mode="json")
+                            for domain_id, diagnostics in getattr(interpolators[set_id], "diagnostics", {}).items()
+                        },
+                        "failures": getattr(interpolators[set_id], "failures", {}),
+                    }
+                    for set_id in set_ids
+                } if settings.method == DensityMethod.ORDINARY_KRIGING else {},
+                "negative_prediction_audit": {
+                    "policy": settings.kriging.non_negative_policy.value,
+                    "parameter_bounds": {"minimum": 0.0, "maximum": None},
+                    "rejected_set_voxel_count": rejected_set_voxel_count,
+                    "clipped_set_voxel_count": clipped_set_voxel_count,
+                    "rejected_voxel_count": rejected_voxel_count,
+                    "clipped_voxel_count": clipped_voxel_count,
+                    "pre_adjustment_minimum": pre_adjustment_minimum,
+                    "pre_adjustment_maximum": pre_adjustment_maximum,
+                    "pre_clip_minimum": pre_adjustment_minimum,
+                    "clipped_total_change": negative_clipped_total_change,
+                    "count_units": {
+                        "set_voxel_count": "joint-set predictions at spatial voxels",
+                        "voxel_count": "unique spatial voxels with at least one adjusted joint-set prediction",
+                    },
+                    "aggregation_semantics": (
+                        "A rejected joint-set prediction is omitted from p32_total; remaining valid joint-set "
+                        "predictions are summed. The aggregate cell is NO_DATA only when no valid set remains."
+                    ),
+                } if settings.method == DensityMethod.ORDINARY_KRIGING else {},
+                "kriging_variance_total_semantics": (
+                    "Sum of per-joint-set kriging variances under an inter-set independence assumption."
+                    if settings.method == DensityMethod.ORDINARY_KRIGING
+                    else None
+                ),
             },
         )
         return metadata, arrays
