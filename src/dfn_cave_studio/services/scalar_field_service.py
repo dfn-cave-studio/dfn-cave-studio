@@ -32,6 +32,7 @@ from dfn_cave_studio.services.m7_state import get_domain_intervals, get_holdout,
 from dfn_cave_studio.services.borehole_repository import BoreholeRepository
 from dfn_cave_studio.voxel.ordinary_kriging import OrdinaryKrigingInterpolator, fit_variogram
 from dfn_cave_studio.voxel.parameter_field import CELL_STATE_CODES, IDWInterpolator, SpatialSample
+from dfn_cave_studio.voxel.resource_estimate import FieldResourceEstimate, estimate_scalar_field_resources
 
 
 REQUIRED_COLUMNS = {"borehole_id", "from_depth", "to_depth", "parameter_name", "value", "unit"}
@@ -65,6 +66,21 @@ class ScalarParameterFieldService:
 
     def __init__(self, project: Any) -> None:
         self.project = project
+
+    def estimate_resources(
+        self, *, chunk_size: int = 2048, budget_bytes: int | None = None,
+        system_available_bytes: int | None = None,
+    ) -> FieldResourceEstimate:
+        """Estimate the scalar field allocation contract before building it."""
+        if self.project.spatial_grid_config is None:
+            raise RuntimeError("A confirmed voxel analysis domain is required")
+        return estimate_scalar_field_resources(
+            self.project.spatial_grid_config.analysis_domain,
+            self.project.voxel_config,
+            chunk_size=chunk_size,
+            budget_bytes=budget_bytes,
+            system_available_bytes=system_available_bytes,
+        )
 
     def import_table(self, path: Path) -> list[ScalarParameterSample]:
         """Validate and append a CSV/XLSX long table as trajectory-located samples."""
@@ -242,7 +258,9 @@ class ScalarParameterFieldService:
             "domain_id": np.full(shape, -1, dtype=np.int32),
         }
         domain_centers = np.asarray([(item.midpoint_x, item.midpoint_y, item.midpoint_z) for item in calibration])
-        domain_labels = [item.domain_id for item in calibration]
+        domain_labels = np.asarray(
+            [-1 if item.domain_id is None else item.domain_id for item in calibration], dtype=np.int64
+        )
         domain_tree = cKDTree(domain_centers)
         rejected_count = 0
         clipped_count = 0
@@ -260,18 +278,18 @@ class ScalarParameterFieldService:
                 lower + (grid_indices[:, axis] + 0.5) * spacing[axis]
                 for axis, lower in enumerate((bounds.x_min, bounds.y_min, bounds.z_min))
             ])
-            inside = np.asarray([
-                self.project.rock_mask.contains_point(*point) and not self.project.excavation_mask.is_excavated(*point)
-                for point in points
-            ])
+            inside = self.project.rock_mask.contains_points(points) & ~self.project.excavation_mask.contains_points(points)
             state_flat = arrays["cell_state"].ravel()
             state_flat[flat_indices[~inside]] = CELL_STATE_CODES[VoxelCellState.OUTSIDE_MODEL]
             if np.any(inside):
                 inside_rows = np.flatnonzero(inside)
                 _, nearest = domain_tree.query(points[inside_rows], k=1)
-                labels = np.asarray([domain_labels[int(item)] for item in np.atleast_1d(nearest)], dtype=object)
-                for domain_id in dict.fromkeys(labels.tolist()):
-                    local_rows = inside_rows[labels == domain_id]
+                labels = domain_labels[np.atleast_1d(nearest).astype(np.int64)]
+                for encoded_domain in np.unique(labels):
+                    if cancelled and cancelled():
+                        raise InterruptedError("scalar parameter field generation cancelled")
+                    domain_id = None if encoded_domain == -1 else int(encoded_domain)
+                    local_rows = inside_rows[labels == encoded_domain]
                     output_flats = flat_indices[local_rows]
                     arrays["domain_id"].ravel()[output_flats] = -1 if domain_id is None else domain_id
                     predictor = predictors.get(domain_id)
@@ -284,10 +302,9 @@ class ScalarParameterFieldService:
                     if settings.method == DensityMethod.ORDINARY_KRIGING:
                         values, variances, neighbours, _ = predictor.predict_many(target_points)
                     elif settings.method == DensityMethod.IDW:
-                        for item_index, point in enumerate(target_points):
-                            prediction = predictor.predict(tuple(point), domain_id)
-                            if prediction.value is not None:
-                                values[item_index], neighbours[item_index] = prediction.value, prediction.neighbor_count
+                        prediction = predictor.predict_many(target_points, domain_id)
+                        values = prediction.values
+                        neighbours = prediction.neighbor_counts
                     else:
                         values.fill(float(predictor))
                     finite = np.isfinite(values)

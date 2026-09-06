@@ -40,6 +40,11 @@ from dfn_cave_studio.ui.qt_adapter import (
     QWidget,
 )
 from dfn_cave_studio.workers.m9_worker import M9Worker
+from dfn_cave_studio.voxel.resource_estimate import (
+    available_system_memory_bytes,
+    format_resource_details,
+    format_resource_estimate,
+)
 
 
 class _M9Dialog(QDialog):
@@ -389,9 +394,27 @@ class M9ParameterFieldDialog(_M9Dialog):
         super().__init__(project, workflow, parent)
         self.setWindowTitle("M9 First Voxel Parameter Field")
         self._layer_manager = self._resolve_layer_manager(parent)
+        self._discarded_worker_ids: set[int] = set()
+        self._last_resource_estimate = None
         layout = QVBoxLayout(self)
         self.summary = QLabel()
         layout.addWidget(self.summary)
+        budget_row = QHBoxLayout()
+        budget_row.addWidget(QLabel("Safe memory budget (GiB)"))
+        self.memory_budget_gib = QDoubleSpinBox()
+        self.memory_budget_gib.setRange(0.25, 512.0)
+        self.memory_budget_gib.setValue(2.0)
+        self.memory_budget_gib.setDecimals(2)
+        self.memory_budget_gib.valueChanged.connect(lambda _value: self._update_resource_summary())
+        budget_row.addWidget(self.memory_budget_gib)
+        self.resource_details_button = QPushButton("Details...")
+        self.resource_details_button.clicked.connect(self._show_resource_details)
+        budget_row.addWidget(self.resource_details_button)
+        budget_row.addStretch(1)
+        layout.addLayout(budget_row)
+        self.resource_summary = QLabel()
+        self.resource_summary.setWordWrap(True)
+        layout.addWidget(self.resource_summary)
         self.field = QComboBox()
         self.field.currentIndexChanged.connect(lambda _index: self._refresh_slice(self.field.currentData()))
         layout.addWidget(self.field)
@@ -429,8 +452,10 @@ class M9ParameterFieldDialog(_M9Dialog):
         row.addWidget(self.export_button); row.addWidget(self.screenshot_button)
         layout.addLayout(row)
         layout.addWidget(self._create_layer_group())
-        layout.addWidget(self._buttons())
+        self.dialog_buttons = self._buttons()
+        layout.addWidget(self.dialog_buttons)
         self._refresh()
+        self._update_resource_summary()
         self._refresh_layers_table()
 
     @staticmethod
@@ -485,46 +510,123 @@ class M9ParameterFieldDialog(_M9Dialog):
         try:
             from dfn_cave_studio.voxel.parameter_field import ParameterFieldBuilder
 
-            estimated = ParameterFieldBuilder.estimate_bytes(
+            estimate = ParameterFieldBuilder.estimate_resources(
                 self.project.spatial_grid_config.analysis_domain,
                 self.project.voxel_config,
-                len(self.project.joint_sets),
+                [item.set_id for item in self.project.joint_sets],
+                self.project.m9_state.density_settings.method,
+                budget_bytes=int(self.memory_budget_gib.value() * 1024**3),
+                system_available_bytes=available_system_memory_bytes(),
             )
-            if estimated > ParameterFieldBuilder().memory_warning_bytes:
-                QMessageBox.warning(
+            self._last_resource_estimate = estimate
+            self.resource_summary.setText(format_resource_estimate(estimate))
+            if estimate.exceeds_budget:
+                answer = QMessageBox.warning(
                     self,
-                    "Large parameter field",
-                    f"Estimated allocation is {estimated / 1024**3:.2f} GiB. Reduce the grid resolution if needed.",
+                    "Large parameter field requires confirmation",
+                    format_resource_estimate(estimate)
+                    + "\n\nUse Details for the allocation list. This may exhaust system memory. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
                 )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
         except AttributeError:
             self._fail("A confirmed M8 voxel grid is required")
             return
-        self.generate_button.setEnabled(False)
-        self.cancel_button.setEnabled(True)
-        self._worker = M9Worker(lambda progress, cancelled: self.service.build_parameter_field(progress=progress, cancelled=cancelled))
-        self._worker.signals.progress.connect(lambda current, total: self.progress.setRange(0, total))
-        self._worker.signals.progress.connect(lambda current, total: self.progress.setValue(current))
-        self._worker.signals.finished.connect(self._done)
-        self._worker.signals.cancelled.connect(self._cancelled)
-        self._worker.signals.failed.connect(self._failed)
-        QThreadPool.globalInstance().start(self._worker)
+        self._set_generation_running(True)
+        worker = M9Worker(
+            lambda progress, cancelled: self.service.build_parameter_field(
+                progress=progress, cancelled=cancelled, commit=False
+            )
+        )
+        self._worker = worker
+        worker.signals.progress.connect(lambda current, total: self.progress.setRange(0, total))
+        worker.signals.progress.connect(lambda current, total: self.progress.setValue(current))
+        worker.signals.finished.connect(lambda result, owner=worker: self._done(result, owner))
+        worker.signals.cancelled.connect(lambda owner=worker: self._cancelled(owner))
+        worker.signals.failed.connect(lambda message, owner=worker: self._failed(message, owner))
+        QThreadPool.globalInstance().start(worker)
 
-    def _done(self, _result) -> None:
+    def _update_resource_summary(self) -> None:
+        """Show voxel count and exact persistent allocation before generation."""
+        try:
+            from dfn_cave_studio.voxel.parameter_field import ParameterFieldBuilder
+
+            estimate = ParameterFieldBuilder.estimate_resources(
+                self.project.spatial_grid_config.analysis_domain,
+                self.project.voxel_config,
+                [item.set_id for item in self.project.joint_sets],
+                self.project.m9_state.density_settings.method,
+                budget_bytes=int(self.memory_budget_gib.value() * 1024**3),
+                system_available_bytes=available_system_memory_bytes(),
+            )
+            self._last_resource_estimate = estimate
+            self.resource_summary.setText(format_resource_estimate(estimate))
+        except AttributeError:
+            self._last_resource_estimate = None
+            self.resource_summary.setText("A confirmed M8 voxel grid is required for resource estimation.")
+
+    def _show_resource_details(self) -> None:
+        """Show the full allocation contract behind the compact summary."""
+        if self._last_resource_estimate is None:
+            self._update_resource_summary()
+        if self._last_resource_estimate is None:
+            return
+        message = QMessageBox(self)
+        message.setWindowTitle("First Parameter Field resource details")
+        message.setText(format_resource_estimate(self._last_resource_estimate))
+        message.setDetailedText(format_resource_details(self._last_resource_estimate))
+        message.exec()
+
+    def _set_generation_running(self, running: bool) -> None:
+        """Keep close/commit controls consistent with worker ownership."""
+        self.generate_button.setEnabled(not running)
+        self.cancel_button.setEnabled(running)
+        ok_button = self.dialog_buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_button is not None:
+            ok_button.setEnabled(not running)
+
+    def _done(self, result, worker=None) -> None:
+        if worker is not None and id(worker) in self._discarded_worker_ids:
+            self._discarded_worker_ids.discard(id(worker))
+            if worker is self._worker:
+                self._cancelled(worker)
+            return
+        if worker is not None and worker is not self._worker:
+            return
+        metadata, arrays = result
+        self.project.m9_state.parameter_field_metadata = metadata
+        self.project.m9_state.parameter_field_arrays = arrays
         self._worker = None
-        self.generate_button.setEnabled(True); self.cancel_button.setEnabled(False)
+        self._set_generation_running(False)
         self.committed_changes = True
         self._refresh()
 
-    def _cancelled(self) -> None:
+    def _cancelled(self, worker=None) -> None:
+        if worker is not None and worker is not self._worker:
+            return
+        if worker is not None:
+            self._discarded_worker_ids.discard(id(worker))
         self._worker = None
-        self.generate_button.setEnabled(True); self.cancel_button.setEnabled(False)
+        self._set_generation_running(False)
 
-    def _failed(self, message: str) -> None:
-        self._cancelled(); self._fail(message)
+    def _failed(self, message: str, worker=None) -> None:
+        discarded = worker is not None and id(worker) in self._discarded_worker_ids
+        if worker is not None:
+            self._discarded_worker_ids.discard(id(worker))
+        self._cancelled(worker)
+        if not discarded:
+            self._fail(message)
 
     def _cancel(self) -> None:
         if self._worker is not None:
+            self._discarded_worker_ids.add(id(self._worker))
             self._worker.cancel()
+
+    def reject(self) -> None:
+        self._cancel()
+        super().reject()
 
     def _refresh(self) -> None:
         metadata = self.project.m9_state.parameter_field_metadata

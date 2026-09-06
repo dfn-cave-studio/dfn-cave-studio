@@ -1,0 +1,93 @@
+{
+  "random_seed": 20260903,
+  "synthetic_data_only": true,
+  "warmup_runs": 1,
+  "repetitions": 3,
+  "summary_statistic": "median",
+  "cases": [
+    {
+      "implementation": "baseline-709ca10",
+      "method": "idw",
+      "shape": [
+        50,
+        69,
+        47
+      ],
+      "voxel_count": 162150,
+      "elapsed_seconds": 20.922540499828756,
+      "voxels_per_second": 7750,
+      "persistent_array_bytes": 2432250,
+      "tracemalloc_peak_bytes": 3288482,
+      "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa",
+      "runs": [
+        {"repetition": 1, "elapsed_seconds": 20.973300700075924, "voxels_per_second": 7731, "tracemalloc_peak_bytes": 3289226, "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa"},
+        {"repetition": 2, "elapsed_seconds": 20.922540499828756, "voxels_per_second": 7750, "tracemalloc_peak_bytes": 3288482, "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa"},
+        {"repetition": 3, "elapsed_seconds": 20.91297860001214, "voxels_per_second": 7753, "tracemalloc_peak_bytes": 3288466, "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa"}
+      ],
+      "execution_order": ["1:baseline-709ca10", "1:optimized", "2:optimized", "2:baseline-709ca10", "3:baseline-709ca10", "3:optimized"]
+    },
+    {
+      "implementation": "optimized",
+      "method": "idw",
+      "shape": [
+        50,
+        69,
+        47
+      ],
+      "voxel_count": 162150,
+      "elapsed_seconds": 0.785296400077641,
+      "voxels_per_second": 206482,
+      "persistent_array_bytes": 2432250,
+      "tracemalloc_peak_bytes": 7620711,
+      "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa",
+      "runs": [
+        {"repetition": 1, "elapsed_seconds": 0.785296400077641, "voxels_per_second": 206482, "tracemalloc_peak_bytes": 7621263, "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa"},
+        {"repetition": 2, "elapsed_seconds": 0.802885300014168, "voxels_per_second": 201959, "tracemalloc_peak_bytes": 7620711, "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa"},
+        {"repetition": 3, "elapsed_seconds": 0.7794346001464874, "voxels_per_second": 208035, "tracemalloc_peak_bytes": 7620695, "array_sha256": "c1c56969d332348aa52d9d86d1d1ddb75447fa162a51adb09b2a20ce23c0d9fa"}
+      ],
+      "execution_order": ["1:baseline-709ca10", "1:optimized", "2:optimized", "2:baseline-709ca10", "3:baseline-709ca10", "3:optimized"]
+    },
+    {
+      "implementation": "baseline-709ca10",
+      "method": "ordinary_kriging",
+      "shape": [
+        50,
+        69,
+        47
+      ],
+      "voxel_count": 162150,
+      "elapsed_seconds": 23.38615349982865,
+      "voxels_per_second": 6933,
+      "persistent_array_bytes": 2432250,
+      "tracemalloc_peak_bytes": 4396084,
+      "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64",
+      "runs": [
+        {"repetition": 1, "elapsed_seconds": 23.369690699968487, "voxels_per_second": 6938, "tracemalloc_peak_bytes": 4396155, "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64"},
+        {"repetition": 2, "elapsed_seconds": 23.38615349982865, "voxels_per_second": 6933, "tracemalloc_peak_bytes": 4396084, "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64"},
+        {"repetition": 3, "elapsed_seconds": 23.446045499993488, "voxels_per_second": 6915, "tracemalloc_peak_bytes": 4396044, "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64"}
+      ],
+      "execution_order": ["1:baseline-709ca10", "1:optimized", "2:optimized", "2:baseline-709ca10", "3:baseline-709ca10", "3:optimized"]
+    },
+    {
+      "implementation": "optimized",
+      "method": "ordinary_kriging",
+      "shape": [
+        50,
+        69,
+        47
+      ],
+      "voxel_count": 162150,
+      "elapsed_seconds": 17.49905139999464,
+      "voxels_per_second": 9266,
+      "persistent_array_bytes": 2432250,
+      "tracemalloc_peak_bytes": 4394804,
+      "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64",
+      "runs": [
+        {"repetition": 1, "elapsed_seconds": 17.49905139999464, "voxels_per_second": 9266, "tracemalloc_peak_bytes": 4394836, "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64"},
+        {"repetition": 2, "elapsed_seconds": 17.48766569979489, "voxels_per_second": 9272, "tracemalloc_peak_bytes": 4394804, "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64"},
+        {"repetition": 3, "elapsed_seconds": 17.59153060009703, "voxels_per_second": 9217, "tracemalloc_peak_bytes": 4394732, "array_sha256": "c1322379516428b17b9cdb12f3d481e6631bc67ee5949ac08d49a0d780e5ea64"}
+      ],
+      "execution_order": ["1:baseline-709ca10", "1:optimized", "2:optimized", "2:baseline-709ca10", "3:baseline-709ca10", "3:optimized"]
+    }
+  ]
+}

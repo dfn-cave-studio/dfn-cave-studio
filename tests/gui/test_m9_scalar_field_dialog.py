@@ -8,10 +8,12 @@ import pytest
 from dfn_cave_studio.models.m9 import DensityMethod, DensitySettings, ScalarFieldMetadata, ScalarFieldResult, ScalarParameterSample
 from dfn_cave_studio.models.borehole_database import BoreholeRecord, RecordState
 from dfn_cave_studio.models.project import Project
+from dfn_cave_studio.models.bounds import ModelBounds, VoxelConfig
+from dfn_cave_studio.models.spatial_grid import SpatialGridConfig
 from dfn_cave_studio.ui.main_window import MainWindow
 from dfn_cave_studio.ui.dialogs.m9_scalar_field_dialog import M9ScalarFieldDialog
 from dfn_cave_studio.ui.dialogs.m9_dialogs import M9DensityDialog
-from dfn_cave_studio.ui.qt_adapter import QDialogButtonBox
+from dfn_cave_studio.ui.qt_adapter import QDialogButtonBox, QMessageBox
 from dfn_cave_studio.services.workflow_controller import WorkflowController
 from dfn_cave_studio.voxel.parameter_field import CELL_STATE_CODES
 from dfn_cave_studio.models.spatial_grid import VoxelCellState
@@ -132,6 +134,25 @@ def test_new_computation_resets_cancel_discard_guard(qtbot, monkeypatch: pytest.
     dialog._done(_candidate("new-computation"))
 
     assert [item.metadata.field_id for item in project.m9_state.scalar_fields] == ["new-computation"]
+
+
+def test_scalar_field_over_budget_requires_confirmation_before_worker(
+    qtbot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = Project()
+    project.m9_state.scalar_samples = [_sample()]
+    bounds = ModelBounds(x_min=0, x_max=300, y_min=0, y_max=300, z_min=0, z_max=300)
+    project.spatial_grid_config = SpatialGridConfig(analysis_domain=bounds, generation_domain=bounds)
+    project.voxel_config = VoxelConfig()
+    dialog = M9ScalarFieldDialog(project)
+    qtbot.addWidget(dialog)
+    dialog.memory_budget_gib.setValue(0.25)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: warnings.append(_args) or QMessageBox.StandardButton.No)
+    dialog._build()
+    assert warnings
+    assert dialog._worker is None
+    assert "27,000,000 voxels" in dialog.summary.text()
 
 
 def test_cancelled_worker_cannot_commit_after_replacement_worker_starts(

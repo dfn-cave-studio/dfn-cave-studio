@@ -14,6 +14,7 @@ from dfn_cave_studio.ui.qt_adapter import (
     QVBoxLayout, QWidget,
 )
 from dfn_cave_studio.workers.m9_worker import M9Worker
+from dfn_cave_studio.voxel.resource_estimate import available_system_memory_bytes, format_resource_estimate
 
 
 class _VariogramPlot(QWidget):
@@ -113,11 +114,14 @@ class M9ScalarFieldDialog(QDialog):
         self.radius = QDoubleSpinBox(); self.radius.setRange(0, 1e12); self.radius.setSpecialValueText("Unlimited")
         self.policy = QComboBox(); self.policy.addItem("Reject out-of-range predictions", NonNegativePolicy.REJECT.value)
         self.policy.addItem("Clip to physical bounds with audit", NonNegativePolicy.CLIP_WITH_AUDIT.value)
+        self.memory_budget_gib = QDoubleSpinBox(); self.memory_budget_gib.setRange(0.25, 512.0)
+        self.memory_budget_gib.setValue(2.0); self.memory_budget_gib.setDecimals(2)
         form.addRow("Interpolation method", self.method); form.addRow("IDW power", self.power)
         form.addRow("Variogram mode", self.mode); form.addRow("Variogram", self.model)
         form.addRow("Nugget", self.nugget); form.addRow("Sill", self.sill); form.addRow("Range (m)", self.variogram_range)
         form.addRow("Lag count", self.lags); form.addRow("Min / max neighbours", self._pair(self.minimum, self.maximum))
         form.addRow("Search radius (m)", self.radius); form.addRow("Prediction bound policy", self.policy)
+        form.addRow("Safe memory budget (GiB)", self.memory_budget_gib)
         layout.addLayout(form)
         controls = QHBoxLayout()
         self.build_button = QPushButton("Build field / 建立参数场"); self.build_button.clicked.connect(self._build)
@@ -202,6 +206,29 @@ class M9ScalarFieldDialog(QDialog):
         if self.parameter.currentData() is None: return
         try: settings = self._settings()
         except Exception as error: QMessageBox.critical(self, "Invalid interpolation settings", str(error)); return
+        estimate = None
+        if self.project.spatial_grid_config is not None:
+            try:
+                estimate = self.service.estimate_resources(
+                    budget_bytes=int(self.memory_budget_gib.value() * 1024**3),
+                    system_available_bytes=available_system_memory_bytes(),
+                )
+            except Exception as error:
+                QMessageBox.critical(self, "Resource estimation failed", str(error))
+                return
+        if estimate is not None:
+            self.summary.setText(format_resource_estimate(estimate))
+        if estimate is not None and estimate.exceeds_budget:
+            answer = QMessageBox.warning(
+                self,
+                "Large scalar field requires confirmation",
+                format_resource_estimate(estimate)
+                + "\n\nThis may exhaust system memory. Continue with the configured grid unchanged?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         # A cancellation only discards the result of the worker that was active at
         # that time.  A later, explicitly started computation owns a new result.
         self._discard_worker_result = False
