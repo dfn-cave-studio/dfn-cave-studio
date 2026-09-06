@@ -233,6 +233,22 @@ class RockMask(BaseModel):
 
         return True
 
+    def contains_points(self, points: NDArray[np.float64]) -> NDArray[np.bool_]:
+        """Classify an ``(N, 3)`` XYZ batch, vectorizing the common box mask."""
+        xyz = np.asarray(points, dtype=np.float64)
+        if xyz.ndim != 2 or xyz.shape[1] != 3:
+            raise ValueError("points must have shape (N, 3)")
+        if not self.enabled:
+            return np.ones(len(xyz), dtype=np.bool_)
+        limits = (self.x_min, self.x_max, self.y_min, self.y_max, self.z_min, self.z_max)
+        if self.mask_type == MaskType.BOX and all(value is not None for value in limits):
+            return (
+                (xyz[:, 0] >= self.x_min) & (xyz[:, 0] <= self.x_max)
+                & (xyz[:, 1] >= self.y_min) & (xyz[:, 1] <= self.y_max)
+                & (xyz[:, 2] >= self.z_min) & (xyz[:, 2] <= self.z_max)
+            )
+        return np.fromiter((self.contains_point(*point) for point in xyz), dtype=np.bool_, count=len(xyz))
+
     def contains_aabb(self, box_min: NDArray[np.float64], box_max: NDArray[np.float64]) -> int:
         """Check if an AABB is inside, outside, or partially inside the mask.
 
@@ -316,6 +332,26 @@ class ExcavationMask(BaseModel):
             pass
 
         return False
+
+    def contains_points(self, points: NDArray[np.float64]) -> NDArray[np.bool_]:
+        """Classify an ``(N, 3)`` XYZ batch against all excavation boxes."""
+        xyz = np.asarray(points, dtype=np.float64)
+        if xyz.ndim != 2 or xyz.shape[1] != 3:
+            raise ValueError("points must have shape (N, 3)")
+        excavated = np.zeros(len(xyz), dtype=np.bool_)
+        if not self.enabled:
+            return excavated
+        for x_min, x_max, y_min, y_max, z_min, z_max in self.excavation_boxes:
+            excavated |= (
+                (xyz[:, 0] >= x_min) & (xyz[:, 0] <= x_max)
+                & (xyz[:, 1] >= y_min) & (xyz[:, 1] <= y_max)
+                & (xyz[:, 2] >= z_min) & (xyz[:, 2] <= z_max)
+            )
+        if self.excavation_meshes:
+            excavated |= np.fromiter(
+                (self.is_excavated(*point) for point in xyz), dtype=np.bool_, count=len(xyz)
+            )
+        return excavated
 
 
 # =============================================================================

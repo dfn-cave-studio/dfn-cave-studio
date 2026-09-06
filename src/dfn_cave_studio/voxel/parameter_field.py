@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import numpy as np
+from scipy.spatial import cKDTree
 
 from dfn_cave_studio.dfn.intensity import expected_orientation_exposure
 from dfn_cave_studio.models.bounds import ModelBounds, VoxelConfig
@@ -22,6 +23,10 @@ from dfn_cave_studio.models.m9 import (
 )
 from dfn_cave_studio.models.spatial_grid import VoxelCellState
 from dfn_cave_studio.voxel.ordinary_kriging import OrdinaryKrigingInterpolator, fit_variogram
+from dfn_cave_studio.voxel.resource_estimate import (
+    FieldResourceEstimate,
+    estimate_parameter_field_resources,
+)
 
 
 CELL_STATE_CODES = {
@@ -47,6 +52,65 @@ SIZE_PARAMETER_ORDER = {
     "truncated_power_law": ["exponent"],
     "truncated_exponential": ["rate"],
 }
+
+
+def _chunk_points(
+    start: int,
+    stop: int,
+    shape: tuple[int, int, int],
+    origin: tuple[float, float, float],
+    spacing: tuple[float, float, float],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create flat indices and XYZ cell centres for one bounded chunk."""
+    flat = np.arange(start, stop, dtype=np.int64)
+    grid = np.column_stack(np.unravel_index(flat, shape))
+    points = np.empty((len(flat), 3), dtype=np.float64)
+    for axis in range(3):
+        points[:, axis] = origin[axis] + (grid[:, axis] + 0.5) * spacing[axis]
+    return flat, points
+
+
+def _callback_many(callback: Callable | None, points: np.ndarray, default, dtype) -> np.ndarray:
+    """Use a callback's batch protocol, retaining point-callback compatibility."""
+    if callback is None:
+        return np.full(len(points), default, dtype=dtype)
+    batch = getattr(callback, "predict_many", None)
+    if batch is not None:
+        values = np.asarray(batch(points), dtype=dtype)
+        if values.shape != (len(points),):
+            raise ValueError("batch callback must return one value per point")
+        return values
+    return np.asarray([callback(tuple(point)) for point in points], dtype=dtype)
+
+
+def _domain_callback_many(callback: Callable | None, points: np.ndarray) -> np.ndarray:
+    """Preserve numeric batch labels while allowing ``None`` from legacy callbacks."""
+    if callback is None:
+        return np.full(len(points), None, dtype=object)
+    batch = getattr(callback, "predict_many", None)
+    if batch is not None:
+        values = np.asarray(batch(points))
+        if values.shape != (len(points),):
+            raise ValueError("batch callback must return one value per point")
+        return values
+    return np.asarray([callback(tuple(point)) for point in points], dtype=object)
+
+
+def _predict_many_compatible(
+    interpolator: SpatialInterpolator, points: np.ndarray, domain_id: int | None
+) -> BatchInterpolationResult:
+    """Use the batch protocol or adapt a legacy/custom single-point interpolator."""
+    batch = getattr(interpolator, "predict_many", None)
+    if batch is not None:
+        return batch(points, domain_id)
+    rows = [interpolator.predict(tuple(point), domain_id) for point in points]
+    return BatchInterpolationResult(
+        np.asarray([np.nan if row.value is None else row.value for row in rows], dtype=np.float64),
+        np.asarray([row.nearest_distance for row in rows], dtype=np.float64),
+        np.asarray([row.neighbor_count for row in rows], dtype=np.int16),
+        np.asarray([row.confidence for row in rows], dtype=np.float64),
+        np.asarray([row.kriging_variance for row in rows], dtype=np.float64),
+    )
 
 
 @dataclass(frozen=True)
@@ -75,6 +139,17 @@ class InterpolationResult:
     kriging_variance: float = float("nan")
     used_regularization: bool = False
     used_pseudoinverse: bool = False
+
+
+@dataclass(frozen=True)
+class BatchInterpolationResult:
+    """Bounded NumPy buffers returned by a deterministic batch prediction."""
+
+    values: np.ndarray
+    nearest_distances: np.ndarray
+    neighbor_counts: np.ndarray
+    confidences: np.ndarray
+    variances: np.ndarray
 
 
 class SpatialInterpolator(ABC):
@@ -108,12 +183,28 @@ class IDWInterpolator(SpatialInterpolator):
         self.max_neighbors = max_neighbors
         self.anisotropy = np.asarray(anisotropy, dtype=float)
         self.fallback_by_domain = fallback_by_domain or {}
+        grouped: dict[int | None, list[SpatialSample]] = {}
+        for sample in self.samples:
+            grouped.setdefault(sample.domain_id, []).append(sample)
+        self._domain_samples = grouped
+        self._domain_coordinates = {
+            domain_id: np.asarray([(sample.x, sample.y, sample.z) for sample in rows], dtype=float)
+            for domain_id, rows in grouped.items()
+        }
+        self._domain_values = {
+            domain_id: np.asarray([sample.value for sample in rows], dtype=float)
+            for domain_id, rows in grouped.items()
+        }
+        self._domain_trees = {
+            domain_id: cKDTree(coordinates / self.anisotropy)
+            for domain_id, coordinates in self._domain_coordinates.items()
+        }
 
     def predict(self, point: tuple[float, float, float], domain_id: int | None) -> InterpolationResult:
-        eligible = [sample for sample in self.samples if sample.domain_id == domain_id]
+        eligible = self._domain_samples.get(domain_id, [])
         if not eligible:
             return self._fallback(domain_id)
-        coordinates = np.asarray([(sample.x, sample.y, sample.z) for sample in eligible], dtype=float)
+        coordinates = self._domain_coordinates[domain_id]
         distances = np.linalg.norm((coordinates - np.asarray(point, dtype=float)) / self.anisotropy, axis=1)
         exact = np.flatnonzero(distances <= 1e-12)
         if exact.size:
@@ -126,7 +217,7 @@ class IDWInterpolator(SpatialInterpolator):
                 1.0,
                 "exact_observation",
             )
-        indices = np.argsort(distances)
+        indices = np.lexsort((np.arange(len(distances), dtype=np.int64), distances))
         if self.search_radius is not None:
             indices = indices[distances[indices] <= self.search_radius]
         indices = indices[: self.max_neighbors]
@@ -144,6 +235,141 @@ class IDWInterpolator(SpatialInterpolator):
             confidence,
             "idw",
         )
+
+    def predict_many(self, points: np.ndarray, domain_id: int | None) -> BatchInterpolationResult:
+        """Predict a bounded point batch while reusing domain sample arrays."""
+        targets = np.asarray(points, dtype=np.float64)
+        if targets.ndim != 2 or targets.shape[1] != 3 or np.any(~np.isfinite(targets)):
+            raise ValueError("Prediction points must be a finite (N,3) array")
+        count = len(targets)
+        values = np.full(count, np.nan, dtype=np.float64)
+        nearest = np.full(count, np.nan, dtype=np.float64)
+        neighbours = np.zeros(count, dtype=np.int16)
+        confidence = np.zeros(count, dtype=np.float64)
+        variances = np.full(count, np.nan, dtype=np.float64)
+        coordinates = self._domain_coordinates.get(domain_id)
+        if coordinates is None:
+            if domain_id in self.fallback_by_domain:
+                values.fill(self.fallback_by_domain[domain_id])
+                confidence.fill(0.1)
+            return BatchInterpolationResult(values, nearest, neighbours, confidence, variances)
+        sample_values = self._domain_values[domain_id]
+        selected_count = min(self.max_neighbors, len(coordinates))
+        query_count = min(self.max_neighbors + 1, len(coordinates))
+        query_distances, candidates = self._domain_trees[domain_id].query(
+            targets / self.anisotropy, k=query_count
+        )
+        query_distances = np.asarray(query_distances, dtype=np.float64).reshape(count, -1)
+        candidates = np.asarray(candidates, dtype=np.int64).reshape(count, -1)
+        scaled_targets = targets / self.anisotropy
+        if query_count > selected_count:
+            boundary_distances = query_distances[:, selected_count - 1]
+            next_distances = query_distances[:, selected_count]
+            boundary_ties = np.abs(boundary_distances - next_distances) <= 1e-12 * np.maximum.reduce(
+                (np.ones(count, dtype=np.float64), np.abs(boundary_distances), np.abs(next_distances))
+            )
+        else:
+            boundary_distances = query_distances[:, selected_count - 1]
+            boundary_ties = np.zeros(count, dtype=np.bool_)
+
+        # cKDTree does not guarantee original-index ordering for equal distances.
+        # Recompute the bounded candidate distances once, then handle the common
+        # non-exact/non-boundary-tie rows as dense arrays.  Only exceptional rows
+        # need the stable per-row path (and potentially query_ball_point).
+        candidate_coordinates = coordinates[candidates]
+        exact_distances = np.linalg.norm(
+            (candidate_coordinates - targets[:, None, :]) / self.anisotropy,
+            axis=2,
+        )
+        exact_rows = np.any(exact_distances <= 1e-12, axis=1)
+        slow_rows = boundary_ties | exact_rows
+        fast_rows = np.flatnonzero(~slow_rows)
+        if fast_rows.size:
+            fast_candidates = candidates[fast_rows]
+            fast_distances = exact_distances[fast_rows]
+            order = np.lexsort((fast_candidates, fast_distances), axis=1)
+            fast_candidates = np.take_along_axis(fast_candidates, order, axis=1)[:, :selected_count]
+            fast_distances = np.take_along_axis(fast_distances, order, axis=1)[:, :selected_count]
+            nearest_available = fast_distances[:, 0]
+            if self.search_radius is None:
+                usable = np.ones(fast_distances.shape, dtype=np.bool_)
+            else:
+                usable = fast_distances <= self.search_radius
+            usable_counts = np.sum(usable, axis=1, dtype=np.int64)
+            successful = usable_counts >= self.min_neighbors
+            failed_rows = fast_rows[~successful]
+            if failed_rows.size:
+                nearest[failed_rows] = nearest_available[~successful]
+                if domain_id in self.fallback_by_domain:
+                    values[failed_rows] = self.fallback_by_domain[domain_id]
+                    confidence[failed_rows] = 0.1
+            successful_rows = fast_rows[successful]
+            if successful_rows.size:
+                successful_distances = fast_distances[successful]
+                successful_candidates = fast_candidates[successful]
+                successful_usable = usable[successful]
+                weights = np.zeros(successful_distances.shape, dtype=np.float64)
+                np.power(
+                    successful_distances,
+                    -self.power,
+                    out=weights,
+                    where=successful_usable,
+                )
+                weighted_values = weights * sample_values[successful_candidates]
+                values[successful_rows] = np.sum(weighted_values, axis=1) / np.sum(weights, axis=1)
+                nearest[successful_rows] = successful_distances[:, 0]
+                neighbours[successful_rows] = usable_counts[successful].astype(np.int16)
+                confidence[successful_rows] = (
+                    np.minimum(1.0, usable_counts[successful] / self.max_neighbors)
+                    / (1.0 + successful_distances[:, 0])
+                )
+
+        for row in np.flatnonzero(slow_rows):
+            initial_candidates = candidates[row]
+            if boundary_ties[row]:
+                boundary = float(boundary_distances[row])
+                radius = max(boundary, 1e-12) + max(1.0, boundary) * 1e-12
+                candidate_indices = np.asarray(
+                    self._domain_trees[domain_id].query_ball_point(scaled_targets[row], radius),
+                    dtype=np.int64,
+                )
+            else:
+                candidate_indices = initial_candidates[:selected_count]
+            row_distances = np.linalg.norm(
+                (coordinates[candidate_indices] - targets[row]) / self.anisotropy, axis=1
+            )
+            exact_indices = candidate_indices[row_distances <= 1e-12]
+            if exact_indices.size:
+                first_exact = int(np.min(exact_indices))
+                values[row] = sample_values[first_exact]
+                nearest[row] = 0.0
+                neighbours[row] = 1
+                confidence[row] = 1.0
+                continue
+            order = np.lexsort((candidate_indices, row_distances))
+            candidate_indices = candidate_indices[order]
+            row_distances = row_distances[order]
+            nearest_available = float(row_distances[0])
+            if self.search_radius is not None:
+                within_radius = row_distances <= self.search_radius
+                candidate_indices = candidate_indices[within_radius]
+                row_distances = row_distances[within_radius]
+            candidate_indices = candidate_indices[: self.max_neighbors]
+            row_distances = row_distances[: self.max_neighbors]
+            if len(candidate_indices) < self.min_neighbors:
+                nearest[row] = nearest_available
+                if domain_id in self.fallback_by_domain:
+                    values[row] = self.fallback_by_domain[domain_id]
+                    confidence[row] = 0.1
+                continue
+            weights = row_distances ** (-self.power)
+            values[row] = float(np.dot(weights, sample_values[candidate_indices]) / weights.sum())
+            nearest[row] = float(row_distances[0])
+            neighbours[row] = len(candidate_indices)
+            confidence[row] = float(
+                min(1.0, len(candidate_indices) / self.max_neighbors) / (1.0 + nearest[row])
+            )
+        return BatchInterpolationResult(values, nearest, neighbours, confidence, variances)
 
     def _fallback(self, domain_id: int | None, distance: float = float("nan")) -> InterpolationResult:
         if domain_id in self.fallback_by_domain:
@@ -175,6 +401,18 @@ class GlobalConstantInterpolator(SpatialInterpolator):
             VoxelCellState.TRUE_ZERO if value == 0 else VoxelCellState.MODELED_VALUE,
             provenance="global_constant",
             confidence=1.0,
+        )
+
+    def predict_many(self, points: np.ndarray, domain_id: int | None) -> BatchInterpolationResult:
+        """Return constant domain values without allocating Python result objects."""
+        count = len(points)
+        values = np.full(count, np.nan, dtype=np.float64)
+        confidence = np.zeros(count, dtype=np.float64)
+        if domain_id in self.values:
+            values.fill(self.values[domain_id])
+            confidence.fill(1.0)
+        return BatchInterpolationResult(
+            values, np.full(count, np.nan), np.zeros(count, dtype=np.int16), confidence, np.full(count, np.nan)
         )
 
 
@@ -218,6 +456,19 @@ class DomainKrigingInterpolator(SpatialInterpolator):
             used_pseudoinverse=prediction.used_pseudoinverse,
         )
 
+    def predict_many(self, points: np.ndarray, domain_id: int | None) -> BatchInterpolationResult:
+        """Predict a domain-local bounded batch using the kriging batch solver."""
+        count = len(points)
+        model = self.models.get(domain_id)
+        if model is None:
+            return BatchInterpolationResult(
+                np.full(count, np.nan), np.full(count, np.nan), np.zeros(count, dtype=np.int16),
+                np.zeros(count), np.full(count, np.nan),
+            )
+        values, variances, neighbours, _status = model.predict_many(points)
+        confidence = np.minimum(1.0, neighbours.astype(float) / model.settings.maximum_neighbors)
+        return BatchInterpolationResult(values, np.full(count, np.nan), neighbours, confidence, variances)
+
 
 class ParameterFieldBuilder:
     """Build the first voxelized DFN parameter field without explicit fractures."""
@@ -226,12 +477,33 @@ class ParameterFieldBuilder:
         self.memory_warning_bytes = memory_warning_bytes
 
     @staticmethod
-    def estimate_bytes(bounds: ModelBounds, voxel: VoxelConfig, set_count: int) -> int:
-        """Estimate dense-array memory before allocating it."""
-        nx, ny, nz = voxel.compute_grid_dimensions(bounds)
-        base_bytes = 4 * 4 + 1 + 4 + 2 + 4 + 1
-        per_set_bytes = 11 * 4 + 2
-        return nx * ny * nz * (base_bytes + set_count * per_set_bytes)
+    def estimate_bytes(
+        bounds: ModelBounds,
+        voxel: VoxelConfig,
+        set_count: int,
+        method: DensityMethod = DensityMethod.GLOBAL_CONSTANT,
+    ) -> int:
+        """Estimate exact persisted-array payload before allocating it."""
+        return estimate_parameter_field_resources(
+            bounds, voxel, range(set_count), method
+        ).persistent_bytes
+
+    @staticmethod
+    def estimate_resources(
+        bounds: ModelBounds,
+        voxel: VoxelConfig,
+        set_ids: Iterable[int],
+        method: DensityMethod,
+        *,
+        chunk_size: int = 8192,
+        budget_bytes: int | None = None,
+        system_available_bytes: int | None = None,
+    ) -> FieldResourceEstimate:
+        """Return the public array-by-array and temporary resource estimate."""
+        return estimate_parameter_field_resources(
+            bounds, voxel, set_ids, method, chunk_size=chunk_size, budget_bytes=budget_bytes,
+            system_available_bytes=system_available_bytes,
+        )
 
     def build(
         self,
@@ -369,106 +641,153 @@ class ParameterFieldBuilder:
             else:
                 interpolators[set_id] = DomainKrigingInterpolator(samples, settings.kriging)
 
+        if chunk_size < 1:
+            raise ValueError("chunk_size must be positive")
+        flat_arrays = {name: array.ravel() for name, array in arrays.items()}
+        origin = (bounds.x_min, bounds.y_min, bounds.z_min)
+        spacing = (voxel.cell_size_x, voxel.cell_size_y, voxel.cell_size_z)
         for flat_start in range(0, total, chunk_size):
             if cancelled and cancelled():
                 raise InterruptedError("parameter field generation cancelled")
             flat_end = min(total, flat_start + chunk_size)
-            for flat in range(flat_start, flat_end):
-                i, j, k = np.unravel_index(flat, shape)
-                point = (
-                    bounds.x_min + (i + 0.5) * voxel.cell_size_x,
-                    bounds.y_min + (j + 0.5) * voxel.cell_size_y,
-                    bounds.z_min + (k + 0.5) * voxel.cell_size_z,
+            flat_indices, points = _chunk_points(flat_start, flat_end, shape, origin, spacing)
+            inside = _callback_many(inside_model, points, True, np.bool_)
+            flat_arrays["cell_state"][flat_indices[~inside]] = CELL_STATE_CODES[VoxelCellState.OUTSIDE_MODEL]
+            if np.any(inside):
+                inside_rows = np.flatnonzero(inside)
+                inside_points = points[inside_rows]
+                raw_domains = _domain_callback_many(domain_at_point, inside_points)
+                domain_values = (
+                    np.unique(raw_domains).tolist()
+                    if raw_domains.dtype != object
+                    else list(dict.fromkeys(raw_domains.tolist()))
                 )
-                if inside_model is not None and not inside_model(point):
-                    arrays["cell_state"][i, j, k] = CELL_STATE_CODES[VoxelCellState.OUTSIDE_MODEL]
-                    continue
-                domain_id = domain_at_point(point) if domain_at_point else None
-                arrays["domain_id"][i, j, k] = -1 if domain_id is None else domain_id
-                results = [interpolators[set_id].predict(point, domain_id) for set_id in set_ids]
-                voxel_had_rejection = False
-                voxel_had_clipping = False
-                if settings.method == DensityMethod.ORDINARY_KRIGING:
-                    audited = []
-                    for result in results:
-                        if result.value is not None and np.isfinite(result.value):
+                for domain_id in domain_values:
+                    if cancelled and cancelled():
+                        raise InterruptedError("parameter field generation cancelled")
+                    domain_rows = inside_rows[raw_domains == domain_id]
+                    output_flats = flat_indices[domain_rows]
+                    target_points = points[domain_rows]
+                    flat_arrays["domain_id"][output_flats] = -1 if domain_id is None else domain_id
+                    value_rows: list[np.ndarray] = []
+                    distance_rows: list[np.ndarray] = []
+                    neighbour_rows: list[np.ndarray] = []
+                    confidence_rows: list[np.ndarray] = []
+                    variance_rows: list[np.ndarray] = []
+                    rejected_here = np.zeros(len(output_flats), dtype=np.bool_)
+                    clipped_here = np.zeros(len(output_flats), dtype=np.bool_)
+                    for set_id in set_ids:
+                        if cancelled and cancelled():
+                            raise InterruptedError("parameter field generation cancelled")
+                        batch = _predict_many_compatible(interpolators[set_id], target_points, domain_id)
+                        values = batch.values.copy()
+                        raw_finite = np.isfinite(values)
+                        if settings.method == DensityMethod.ORDINARY_KRIGING and np.any(raw_finite):
+                            batch_minimum = float(np.min(values[raw_finite]))
+                            batch_maximum = float(np.max(values[raw_finite]))
                             pre_adjustment_minimum = (
-                                result.value
-                                if pre_adjustment_minimum is None
-                                else min(pre_adjustment_minimum, result.value)
+                                batch_minimum if pre_adjustment_minimum is None
+                                else min(pre_adjustment_minimum, batch_minimum)
                             )
                             pre_adjustment_maximum = (
-                                result.value
-                                if pre_adjustment_maximum is None
-                                else max(pre_adjustment_maximum, result.value)
+                                batch_maximum if pre_adjustment_maximum is None
+                                else max(pre_adjustment_maximum, batch_maximum)
                             )
-                        if result.value is None or result.value >= 0:
-                            audited.append(result)
-                            continue
-                        if settings.kriging.non_negative_policy.value == "reject":
-                            rejected_set_voxel_count += 1
-                            voxel_had_rejection = True
-                            audited.append(replace(result, value=None, state=VoxelCellState.NO_DATA, provenance="negative_rejected"))
-                        else:
-                            clipped_set_voxel_count += 1
-                            voxel_had_clipping = True
-                            negative_clipped_total_change += -result.value
-                            audited.append(replace(result, value=0.0, state=VoxelCellState.TRUE_ZERO, provenance="negative_clipped"))
-                    results = audited
-                    if voxel_had_rejection:
-                        rejected_voxel_count += 1
-                    if voxel_had_clipping:
-                        clipped_voxel_count += 1
-                valid = [result for result in results if result.value is not None]
-                for set_id, result in zip(set_ids, results):
-                    orientation = orientations.get((domain_id, set_id))
-                    if orientation is not None:
-                        arrays[f"set_{set_id}_dip_direction"][i, j, k] = orientation.mean_dip_direction
-                        arrays[f"set_{set_id}_dip"][i, j, k] = orientation.mean_dip
-                        arrays[f"set_{set_id}_kappa"][i, j, k] = orientation.kappa
-                    if result.value is not None:
-                        arrays[f"set_{set_id}_p32"][i, j, k] = result.value
+                            negative = raw_finite & (values < 0)
+                            if settings.kriging.non_negative_policy.value == "reject":
+                                rejected_set_voxel_count += int(np.count_nonzero(negative))
+                                rejected_here |= negative
+                                values[negative] = np.nan
+                            else:
+                                clipped_set_voxel_count += int(np.count_nonzero(negative))
+                                clipped_here |= negative
+                                negative_clipped_total_change += float(np.sum(-values[negative]))
+                                values[negative] = 0.0
+                        valid = np.isfinite(values)
+                        orientation = orientations.get((domain_id, set_id))
+                        if orientation is not None:
+                            flat_arrays[f"set_{set_id}_dip_direction"][output_flats] = orientation.mean_dip_direction
+                            flat_arrays[f"set_{set_id}_dip"][output_flats] = orientation.mean_dip
+                            flat_arrays[f"set_{set_id}_kappa"][output_flats] = orientation.kappa
+                        selected = output_flats[valid]
+                        flat_arrays[f"set_{set_id}_p32"][selected] = values[valid]
                         if settings.method == DensityMethod.ORDINARY_KRIGING:
-                            arrays[f"set_{set_id}_kriging_variance"][i, j, k] = result.kriging_variance
+                            flat_arrays[f"set_{set_id}_kriging_variance"][selected] = batch.variances[valid]
                         size = sizes.get((domain_id, set_id)) or sizes.get((None, set_id))
-                        if size:
-                            arrays[f"set_{set_id}_mean_radius"][i, j, k] = size.mean_radius
-                            arrays[f"set_{set_id}_mean_squared_radius"][i, j, k] = size.mean_squared_radius
-                            arrays[f"set_{set_id}_size_type"][i, j, k] = SIZE_TYPE_CODES[size.distribution_type]
-                            arrays[f"set_{set_id}_size_source"][i, j, k] = SIZE_SOURCE_CODES[size.source.value]
-                            arrays[f"set_{set_id}_size_min_radius"][i, j, k] = size.min_radius
-                            arrays[f"set_{set_id}_size_max_radius"][i, j, k] = size.max_radius
+                        if size is not None and selected.size:
+                            flat_arrays[f"set_{set_id}_mean_radius"][selected] = size.mean_radius
+                            flat_arrays[f"set_{set_id}_mean_squared_radius"][selected] = size.mean_squared_radius
+                            flat_arrays[f"set_{set_id}_size_type"][selected] = SIZE_TYPE_CODES[size.distribution_type]
+                            flat_arrays[f"set_{set_id}_size_source"][selected] = SIZE_SOURCE_CODES[size.source.value]
+                            flat_arrays[f"set_{set_id}_size_min_radius"][selected] = size.min_radius
+                            flat_arrays[f"set_{set_id}_size_max_radius"][selected] = size.max_radius
                             parameter_values = [
-                                size.parameters[name]
-                                for name in SIZE_PARAMETER_ORDER[size.distribution_type]
+                                size.parameters[name] for name in SIZE_PARAMETER_ORDER[size.distribution_type]
                                 if name in size.parameters
                             ]
                             if parameter_values:
-                                arrays[f"set_{set_id}_size_parameter_1"][i, j, k] = parameter_values[0]
+                                flat_arrays[f"set_{set_id}_size_parameter_1"][selected] = parameter_values[0]
                             if len(parameter_values) > 1:
-                                arrays[f"set_{set_id}_size_parameter_2"][i, j, k] = parameter_values[1]
-                if not valid:
-                    continue
-                total_p32 = sum(float(result.value) for result in valid if result.value is not None)
-                arrays["p32_total"][i, j, k] = total_p32
-                for set_id in set_ids:
-                    set_value = arrays[f"set_{set_id}_p32"][i, j, k]
-                    if np.isfinite(set_value):
-                        arrays[f"set_{set_id}_probability"][i, j, k] = set_value / total_p32 if total_p32 > 0 else 0.0
-                arrays["cell_state"][i, j, k] = CELL_STATE_CODES[
-                    VoxelCellState.TRUE_ZERO if total_p32 == 0 else VoxelCellState.MODELED_VALUE
-                ]
-                distances = [result.nearest_distance for result in valid if np.isfinite(result.nearest_distance)]
-                arrays["nearest_data_distance"][i, j, k] = min(distances) if distances else np.nan
-                arrays["neighbour_count"][i, j, k] = max(result.neighbor_count for result in valid)
-                arrays["confidence"][i, j, k] = min(result.confidence for result in valid)
-                if settings.method == DensityMethod.ORDINARY_KRIGING:
-                    finite_variances = [result.kriging_variance for result in valid if np.isfinite(result.kriging_variance)]
-                    arrays["kriging_variance_total"][i, j, k] = sum(finite_variances) if finite_variances else np.nan
-                supporting = [estimates.get((domain_id, set_id)) for set_id in set_ids]
-                supporting = [item for item in supporting if item is not None]
-                arrays["effective_sample_length"][i, j, k] = sum(item.effective_sample_length for item in supporting)
-                arrays["observation_count"][i, j, k] = sum(item.fracture_count for item in supporting)
+                                flat_arrays[f"set_{set_id}_size_parameter_2"][selected] = parameter_values[1]
+                        value_rows.append(values)
+                        distance_rows.append(batch.nearest_distances)
+                        neighbour_rows.append(batch.neighbor_counts)
+                        confidence_rows.append(batch.confidences)
+                        variance_rows.append(batch.variances)
+                    rejected_voxel_count += int(np.count_nonzero(rejected_here))
+                    clipped_voxel_count += int(np.count_nonzero(clipped_here))
+                    if not value_rows:
+                        continue
+                    valid_rows = [np.isfinite(values) for values in value_rows]
+                    any_valid = np.logical_or.reduce(valid_rows)
+                    if not np.any(any_valid):
+                        continue
+                    total_values = np.zeros(len(output_flats), dtype=np.float64)
+                    maximum_neighbours = np.zeros(len(output_flats), dtype=np.int16)
+                    minimum_confidence = np.full(len(output_flats), np.inf, dtype=np.float64)
+                    minimum_distance = np.full(len(output_flats), np.inf, dtype=np.float64)
+                    total_variance = np.zeros(len(output_flats), dtype=np.float64)
+                    has_variance = np.zeros(len(output_flats), dtype=np.bool_)
+                    for set_id, values, valid, distances, neighbours, confidences, variances in zip(
+                        set_ids, value_rows, valid_rows, distance_rows, neighbour_rows,
+                        confidence_rows, variance_rows, strict=True,
+                    ):
+                        total_values[valid] += values[valid]
+                        maximum_neighbours[valid] = np.maximum(maximum_neighbours[valid], neighbours[valid])
+                        minimum_confidence[valid] = np.minimum(minimum_confidence[valid], confidences[valid])
+                        finite_distance = valid & np.isfinite(distances)
+                        minimum_distance[finite_distance] = np.minimum(
+                            minimum_distance[finite_distance], distances[finite_distance]
+                        )
+                        finite_variance = valid & np.isfinite(variances)
+                        total_variance[finite_variance] += variances[finite_variance]
+                        has_variance |= finite_variance
+                    modeled = output_flats[any_valid]
+                    flat_arrays["p32_total"][modeled] = total_values[any_valid]
+                    for set_id, values, valid in zip(set_ids, value_rows, valid_rows, strict=True):
+                        probability = np.zeros(len(output_flats), dtype=np.float64)
+                        positive = valid & (total_values > 0)
+                        stored_values = flat_arrays[f"set_{set_id}_p32"][output_flats]
+                        probability[positive] = (
+                            stored_values[positive] / total_values[positive].astype(np.float32)
+                        )
+                        flat_arrays[f"set_{set_id}_probability"][output_flats[valid]] = probability[valid]
+                    flat_arrays["cell_state"][modeled] = np.where(
+                        total_values[any_valid] == 0,
+                        CELL_STATE_CODES[VoxelCellState.TRUE_ZERO], CELL_STATE_CODES[VoxelCellState.MODELED_VALUE],
+                    )
+                    finite_distance = any_valid & np.isfinite(minimum_distance)
+                    flat_arrays["nearest_data_distance"][output_flats[finite_distance]] = minimum_distance[finite_distance]
+                    flat_arrays["neighbour_count"][modeled] = maximum_neighbours[any_valid]
+                    flat_arrays["confidence"][modeled] = minimum_confidence[any_valid]
+                    if settings.method == DensityMethod.ORDINARY_KRIGING:
+                        flat_arrays["kriging_variance_total"][output_flats[has_variance]] = total_variance[has_variance]
+                    supporting = [estimates.get((domain_id, set_id)) for set_id in set_ids]
+                    supporting = [item for item in supporting if item is not None]
+                    flat_arrays["effective_sample_length"][modeled] = sum(
+                        item.effective_sample_length for item in supporting
+                    )
+                    flat_arrays["observation_count"][modeled] = sum(item.fracture_count for item in supporting)
             if progress:
                 progress(flat_end, total)
         metadata = ParameterFieldMetadata(

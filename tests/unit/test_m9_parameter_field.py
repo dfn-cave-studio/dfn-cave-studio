@@ -407,8 +407,46 @@ def test_p32_audit_uses_constant_memory_unique_voxel_counters() -> None:
     source = inspect.getsource(ParameterFieldBuilder.build)
     assert "rejected_voxels" not in source
     assert "clipped_voxels" not in source
-    assert "voxel_had_rejection" in source
-    assert "voxel_had_clipping" in source
+    assert "rejected_here" in source
+    assert "clipped_here" in source
+
+
+@pytest.mark.parametrize("method", [DensityMethod.IDW, DensityMethod.ORDINARY_KRIGING])
+def test_seven_set_results_are_consistent_across_chunk_sizes(
+    monkeypatch: pytest.MonkeyPatch, method: DensityMethod
+) -> None:
+    monkeypatch.setattr("dfn_cave_studio.voxel.parameter_field.expected_orientation_exposure", lambda *_a, **_k: 1.0)
+    set_ids = [1, 2, 4, 7, 9, 12, 15]
+    points = ((0.25, 0.25), (1.75, 0.25), (0.25, 1.75), (1.75, 1.75))
+    intervals = [
+        P10Interval(
+            hole_id=f"SYN-{set_id}-{index}", from_depth=0, to_depth=1, domain_id=1, set_id=set_id,
+            observation_count=index + 1, sample_length=1, p10=0.1 * set_id + index * 0.01,
+            role="calibration", center_x=x, center_y=y, center_z=0.5,
+            segment_directions=[(0.0, 0.0, -1.0, 1.0)],
+        )
+        for set_id in set_ids for index, (x, y) in enumerate(points)
+    ]
+    estimates = [
+        P32Estimate(domain_id=1, set_id=set_id, fracture_count=4, raw_sample_length=4,
+                    effective_sample_length=4, mean_exposure=1, p32=0.1 * set_id,
+                    observability="adequate", random_seed=42)
+        for set_id in set_ids
+    ]
+    settings = DensitySettings(
+        method=method, min_neighbors=1, max_neighbors=4,
+        kriging=KrigingSettings(mode="manual", nugget=0, sill=5, range=5,
+                                minimum_neighbors=2, maximum_neighbors=4),
+    )
+    arguments = (
+        ModelBounds(x_min=0, x_max=2, y_min=0, y_max=2, z_min=0, z_max=1), VoxelConfig(),
+        settings, intervals, estimates, [JointSetConfig(set_id=set_id) for set_id in set_ids],
+        [SizeModel(domain_id=1, set_id=set_id) for set_id in set_ids],
+    )
+    _, small = ParameterFieldBuilder().build(*arguments, random_seed=42, domain_at_point=lambda _p: 1, chunk_size=1)
+    _, large = ParameterFieldBuilder().build(*arguments, random_seed=42, domain_at_point=lambda _p: 1, chunk_size=64)
+    for name in small:
+        np.testing.assert_allclose(small[name], large[name], rtol=0, atol=1e-6, equal_nan=True)
 
 
 def test_idw_all_arrays_match_pre_kriging_baseline(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,0 +1,3863 @@
+{
+  "label": "baseline-709ca10",
+  "random_seed": 20260905,
+  "synthetic_data_only": true,
+  "cases": [
+    {
+      "method": "idw",
+      "set_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "set_count": 7,
+      "shape": [
+        24,
+        24,
+        12
+      ],
+      "voxel_count": 6912,
+      "field_count": 100,
+      "array_contract": {
+        "cell_state": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "confidence": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "density_method": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "domain_id": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "effective_sample_length": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "nearest_data_distance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "neighbour_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int16",
+          "nbytes": 13824
+        },
+        "observation_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "p32_total": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_1_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_3_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_3_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_5_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_5_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_6_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_6_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        }
+      },
+      "persistent_array_bytes": 2419200,
+      "elapsed_seconds": 16.240256800083444,
+      "voxels_per_second": 425,
+      "tracemalloc_peak_bytes": 2490208,
+      "array_sha256": "dbf7df7cf2950ae89dfca92729f8b078818cc0b3ee280f86c7fe6745d8ad2241",
+      "chunk_size": 2048
+    },
+    {
+      "method": "ordinary_kriging",
+      "set_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "set_count": 7,
+      "shape": [
+        24,
+        24,
+        12
+      ],
+      "voxel_count": 6912,
+      "field_count": 108,
+      "array_contract": {
+        "cell_state": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "confidence": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "density_method": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "domain_id": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "effective_sample_length": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "kriging_variance_total": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "nearest_data_distance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "neighbour_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int16",
+          "nbytes": 13824
+        },
+        "observation_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "p32_total": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_1_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_3_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_3_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_3_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_5_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_5_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_5_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_6_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_6_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_6_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        }
+      },
+      "persistent_array_bytes": 2640384,
+      "elapsed_seconds": 27.573626999976113,
+      "voxels_per_second": 250,
+      "tracemalloc_peak_bytes": 2748012,
+      "array_sha256": "3c3ea3a139c612c9270130fea19f7ec518416ff1004069992cd95cd6deee509d",
+      "chunk_size": 2048
+    },
+    {
+      "method": "idw",
+      "set_ids": [
+        1,
+        2,
+        4,
+        7,
+        9,
+        12,
+        15
+      ],
+      "set_count": 7,
+      "shape": [
+        24,
+        24,
+        12
+      ],
+      "voxel_count": 6912,
+      "field_count": 100,
+      "array_contract": {
+        "cell_state": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "confidence": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "density_method": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "domain_id": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "effective_sample_length": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "nearest_data_distance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "neighbour_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int16",
+          "nbytes": 13824
+        },
+        "observation_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "p32_total": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_12_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_15_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_15_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_1_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_1_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_9_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_9_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        }
+      },
+      "persistent_array_bytes": 2419200,
+      "elapsed_seconds": 14.513997800182551,
+      "voxels_per_second": 476,
+      "tracemalloc_peak_bytes": 2486572,
+      "array_sha256": "572581d72b30406f084f53c7383c846c93f95af13da39a3bc00249704427fef5",
+      "chunk_size": 2048
+    },
+    {
+      "method": "ordinary_kriging",
+      "set_ids": [
+        1,
+        2,
+        4,
+        7,
+        9,
+        12,
+        15
+      ],
+      "set_count": 7,
+      "shape": [
+        24,
+        24,
+        12
+      ],
+      "voxel_count": 6912,
+      "field_count": 108,
+      "array_contract": {
+        "cell_state": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "confidence": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "density_method": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "domain_id": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "effective_sample_length": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "kriging_variance_total": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "nearest_data_distance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "neighbour_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int16",
+          "nbytes": 13824
+        },
+        "observation_count": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "int32",
+          "nbytes": 27648
+        },
+        "p32_total": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_12_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_12_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_15_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_15_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_15_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_1_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_1_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_1_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_2_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_2_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_4_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_4_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_7_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_7_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_9_dip": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_dip_direction": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_kappa": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_kriging_variance": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_mean_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_mean_squared_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_p32": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_probability": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_max_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_min_radius": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_parameter_1": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_parameter_2": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "float32",
+          "nbytes": 27648
+        },
+        "set_9_size_source": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        },
+        "set_9_size_type": {
+          "shape": [
+            24,
+            24,
+            12
+          ],
+          "dtype": "uint8",
+          "nbytes": 6912
+        }
+      },
+      "persistent_array_bytes": 2640384,
+      "elapsed_seconds": 27.680134700145572,
+      "voxels_per_second": 249,
+      "tracemalloc_peak_bytes": 2742713,
+      "array_sha256": "177f1e1a6135a564c952f06991fe03599cc5aa91166f582539eb78a801e1d206",
+      "chunk_size": 2048
+    }
+  ]
+}

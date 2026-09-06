@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass, field
 import json
 import math
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from dfn_cave_studio.dfn.intensity import build_p10_intervals, domain_at_depth, estimate_p32, expected_orientation_exposure
 from dfn_cave_studio.dfn.size_models import MLESizeModelFitter, assumed_size_model
@@ -17,12 +19,69 @@ from dfn_cave_studio.models.fracture_set import JointSetConfig, OrientationDistr
 from dfn_cave_studio.models.m9 import (
     DensitySettings,
     DomainOrientationModel,
+    ParameterFieldMetadata,
     ValidationIntervalResult,
     ValidationState,
     ValidationSummary,
 )
 from dfn_cave_studio.services.m7_state import get_domain_intervals, get_holdout
 from dfn_cave_studio.voxel.parameter_field import ParameterFieldBuilder
+
+
+@dataclass(frozen=True)
+class _NearestDomainClassifier:
+    coordinates: np.ndarray
+    labels: tuple[int, ...]
+    _tree: cKDTree = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        coordinates = np.asarray(self.coordinates, dtype=np.float64)
+        if coordinates.ndim != 2 or coordinates.shape[1] != 3 or len(coordinates) != len(self.labels):
+            raise ValueError("Domain centres must be a finite (N,3) array matching labels")
+        if len(coordinates) == 0 or np.any(~np.isfinite(coordinates)):
+            raise ValueError("Domain centres must be a non-empty finite array")
+        object.__setattr__(self, "coordinates", coordinates)
+        object.__setattr__(self, "_tree", cKDTree(coordinates))
+
+    def __call__(self, point: tuple[float, float, float]) -> int:
+        return int(self.predict_many(np.asarray([point], dtype=np.float64))[0])
+
+    def predict_many(self, points: np.ndarray) -> np.ndarray:
+        """Classify a bounded batch without a point-by-all-centres matrix."""
+        targets = np.asarray(points, dtype=np.float64)
+        if targets.ndim != 2 or targets.shape[1] != 3 or np.any(~np.isfinite(targets)):
+            raise ValueError("Domain query points must be a finite (N,3) array")
+        if len(targets) == 0:
+            return np.empty(0, dtype=np.int64)
+        query_count = min(2, len(self.coordinates))
+        distances, indices = self._tree.query(targets, k=query_count)
+        distances = np.asarray(distances, dtype=np.float64).reshape(len(targets), query_count)
+        indices = np.asarray(indices, dtype=np.int64).reshape(len(targets), query_count)
+        selected = indices[:, 0].copy()
+        if query_count == 2:
+            tie_rows = np.flatnonzero(
+                np.isclose(distances[:, 0], distances[:, 1], rtol=1e-12, atol=1e-12)
+            )
+            for row in tie_rows:
+                radius = distances[row, 0] + max(1.0, distances[row, 0]) * 1e-12
+                candidates = np.asarray(self._tree.query_ball_point(targets[row], radius), dtype=np.int64)
+                exact_distances = np.linalg.norm(self.coordinates[candidates] - targets[row], axis=1)
+                order = np.lexsort((candidates, exact_distances))
+                selected[row] = candidates[order[0]]
+        return np.asarray(self.labels, dtype=np.int64)[selected]
+
+
+@dataclass(frozen=True)
+class _ActiveRockClassifier:
+    rock_mask: Any
+    excavation_mask: Any
+
+    def __call__(self, point: tuple[float, float, float]) -> bool:
+        return self.rock_mask.contains_point(*point) and not self.excavation_mask.is_excavated(*point)
+
+    def predict_many(self, points: np.ndarray) -> np.ndarray:
+        """Classify rock/excavation state through mask batch protocols."""
+        return self.rock_mask.contains_points(points) & ~self.excavation_mask.contains_points(points)
 
 
 class M9Service:
@@ -214,10 +273,12 @@ class M9Service:
         if not centers:
             return lambda point: None
         coordinates = np.asarray([item[0] for item in centers])
-        return lambda point: centers[int(np.argmin(np.linalg.norm(coordinates - np.asarray(point), axis=1)))][1]
+        return _NearestDomainClassifier(coordinates, tuple(item[1] for item in centers))
 
-    def build_parameter_field(self, *, progress=None, cancelled=None) -> None:
-        """Build M9's first voxel field using the confirmed M8 grid."""
+    def build_parameter_field(
+        self, *, progress=None, cancelled=None, commit: bool = True
+    ) -> tuple[ParameterFieldMetadata, dict[str, np.ndarray]]:
+        """Build M9's first voxel field and optionally commit the complete candidate."""
         if self.project.spatial_grid_config is None:
             raise RuntimeError("A confirmed M8 voxel analysis domain is required")
         if not self.project.m9_state.p32_estimates:
@@ -235,15 +296,18 @@ class M9Service:
             self.project.m9_state.size_models,
             random_seed=self.project.m9_state.random_seed,
             domain_at_point=self._domain_classifier(),
-            inside_model=lambda point: self.project.rock_mask.contains_point(*point)
-            and not self.project.excavation_mask.is_excavated(*point),
+            inside_model=_ActiveRockClassifier(self.project.rock_mask, self.project.excavation_mask),
             progress=progress,
             cancelled=cancelled,
             orientation_models=self.project.m9_state.orientation_models,
         )
         metadata.provenance["domain_assignment"] = "nearest_calibration_domain_interval_center"
-        self.project.m9_state.parameter_field_metadata = metadata
-        self.project.m9_state.parameter_field_arrays = arrays
+        if cancelled is not None and cancelled():
+            raise InterruptedError("parameter field generation cancelled")
+        if commit:
+            self.project.m9_state.parameter_field_metadata = metadata
+            self.project.m9_state.parameter_field_arrays = arrays
+        return metadata, arrays
 
     def validate(self, *, progress=None, cancelled=None) -> ValidationSummary:
         """Evaluate held-out P10 only after all calibration fitting is complete."""

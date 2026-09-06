@@ -9,7 +9,7 @@ from dfn_cave_studio.services.holdout_service import HoldoutService
 from dfn_cave_studio.services.m7_state import set_holdout
 from dfn_cave_studio.services.workflow_controller import StepStatus, WorkflowController
 from dfn_cave_studio.ui.dialogs.m9_dialogs import M9DensityDialog, M9ParameterFieldDialog, M9SizeDialog
-from dfn_cave_studio.ui.qt_adapter import QDialogButtonBox, Qt
+from dfn_cave_studio.ui.qt_adapter import QDialogButtonBox, QMessageBox, Qt
 
 
 def _project() -> Project:
@@ -86,6 +86,116 @@ def test_parameter_field_button_runs_in_worker_and_can_close(qtbot):
     assert dialog.field.count() > 0
     qtbot.mouseClick(_ok(dialog), Qt.MouseButton.LeftButton)
     assert workflow.get_step("parameter_field").status == StepStatus.COMPLETED
+
+
+def test_parameter_field_over_budget_requires_confirmation_before_worker(
+    qtbot, monkeypatch
+):
+    project, workflow = _project(), WorkflowController()
+    project.spatial_grid_config = SpatialGridConfig(
+        analysis_domain=ModelBounds(x_min=0, x_max=200, y_min=0, y_max=200, z_min=0, z_max=200),
+        generation_domain=ModelBounds(x_min=0, x_max=200, y_min=0, y_max=200, z_min=0, z_max=200),
+    )
+    dialog = M9ParameterFieldDialog(project, workflow)
+    qtbot.addWidget(dialog)
+    dialog.memory_budget_gib.setValue(0.25)
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: warnings.append(_args) or QMessageBox.StandardButton.No)
+    dialog._generate()
+    assert warnings
+    assert dialog._worker is None
+    assert "8,000,000 voxels" in dialog.resource_summary.text()
+    assert dialog.resource_summary.text().count("\n") == 3
+    assert "cell_state" not in dialog.resource_summary.text()
+    assert "cell_state" not in warnings[0][2]
+    assert len(warnings[0][2].splitlines()) <= 7
+
+
+def test_parameter_field_compact_resource_summary_keeps_scrollable_details(qtbot):
+    project, workflow = _project(), WorkflowController()
+    dialog = M9ParameterFieldDialog(project, workflow)
+    qtbot.addWidget(dialog)
+    dialog.resize(640, 480)
+    dialog.show()
+    dialog._update_resource_summary()
+
+    assert dialog.resource_summary.text().count("\n") == 3
+    assert "Shape:" in dialog.resource_summary.text()
+    assert "Persistent arrays:" in dialog.resource_summary.text()
+    assert "Temporary buffers:" in dialog.resource_summary.text()
+    assert dialog.resource_details_button.isVisible()
+    assert dialog.resource_details_button.text() == "Details..."
+    assert dialog._last_resource_estimate is not None
+
+
+def test_parameter_field_running_disables_ok_and_reject_discards_late_result(qtbot):
+    project, workflow = _project(), WorkflowController()
+    dialog = M9ParameterFieldDialog(project, workflow)
+    qtbot.addWidget(dialog)
+
+    class _LateWorker:
+        cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+    worker = _LateWorker()
+    dialog._worker = worker
+    dialog._set_generation_running(True)
+    ok = dialog.dialog_buttons.button(QDialogButtonBox.StandardButton.Ok)
+    assert ok.isEnabled() is False
+    dialog.accept()
+    assert dialog.result() == 0
+
+    dialog.reject()
+    dialog._done(object(), worker)
+    assert worker.cancelled
+    assert project.m9_state.parameter_field_metadata is None
+    assert project.m9_state.parameter_field_arrays == {}
+
+
+def test_parameter_field_window_close_discards_late_worker_result(qtbot):
+    project, workflow = _project(), WorkflowController()
+    dialog = M9ParameterFieldDialog(project, workflow)
+    qtbot.addWidget(dialog)
+
+    class _LateWorker:
+        cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+    worker = _LateWorker()
+    dialog._worker = worker
+    dialog._set_generation_running(True)
+    dialog.show()
+    dialog.close()
+    dialog._done(object(), worker)
+
+    assert worker.cancelled
+    assert project.m9_state.parameter_field_metadata is None
+    assert project.m9_state.parameter_field_arrays == {}
+    assert workflow.get_step("parameter_field").status == StepStatus.NOT_STARTED
+
+
+def test_cancelled_parameter_worker_cannot_commit_late_result(qtbot):
+    project, workflow = _project(), WorkflowController()
+    dialog = M9ParameterFieldDialog(project, workflow)
+    qtbot.addWidget(dialog)
+
+    class _LateWorker:
+        cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+    worker = _LateWorker()
+    dialog._worker = worker
+    dialog._cancel()
+    dialog._done(object(), worker)
+    assert worker.cancelled
+    assert project.m9_state.parameter_field_metadata is None
+    assert project.m9_state.parameter_field_arrays == {}
 
 
 def test_cancel_restores_project_and_workflow(qtbot):
