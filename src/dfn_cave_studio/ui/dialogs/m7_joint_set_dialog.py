@@ -20,9 +20,6 @@ from dfn_cave_studio.services.borehole_repository import BoreholeRepository
 from dfn_cave_studio.services.m7_state import get_holdout
 from dfn_cave_studio.ui.i18n import language_manager, tr
 
-SET_COLORS = ["#1976d2", "#388e3c", "#f57c00", "#d32f2f", "#7b1fa2"]
-
-
 class M7JointSetDialog(QDialog):
     """Joint set identification using M7 services."""
 

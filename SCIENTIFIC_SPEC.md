@@ -1461,6 +1461,31 @@ Reproducibility is tested:
 
 ---
 
+## Phase 2A: measured-point constrained along-hole realizations
+
+Phase 2A is an independent derived-data workflow; it does not write generated rows into Formal fracture observations and does not automatically start M9. Its orientation fit uses only complete P point-cloud dominant-set representatives and complete Z borehole-camera representatives. Each imported representative remains an immutable Local Orientation Component identified by source kind, point, local set and observation; a Global Joint Set is only its confirmed parent label. Mapping several components to one global set never deletes or physically merges the local records. The input is an axial unit normal (a plane pole), not a Euclidean pair of dip and dip direction. P representatives carry `joint_num` as a fit weight; Z representatives have weight one. This weight therefore describes clustered representative orientations and must not be interpreted as raw individual-fracture orientation fitting. P `RANDOM` rows and every missing direction are excluded from Global K.
+
+The number of imported local representatives is not the number of confirmed global joint sets. The latter is exactly the user-selected global `K`; point-local `local_set_id` values are mapped to, but never equated with, the confirmed global identifiers. A global group supported by one representative has `kappa_status=UNRESOLVED`; two or more representatives can provide only `SITE_MEAN_DISPERSION`, not original within-set Fisher dispersion. Phase 2A defaults to `LOCAL_REPRESENTATIVE`, which does not pretend that an unresolved Kappa was fitted; `FIXED_GLOBAL_SET_MEAN` remains an explicit legacy-compatible display/generation choice. P/Z representative observations contain no fracture-size or trace-length evidence, so their size status is `UNRESOLVED`; the stored legacy model-shaped placeholders are inactive and cannot satisfy the M10 size-model preflight. Likewise their target intensity is `DERIVED_LATER_BY_M9`, not an automatically fitted `P32=0.5`.
+
+Local P dominant-set intensity is `lambda_g(x_i) = 1 / spacing_g(x_i)`. A P random row similarly defines `lambda_random`; Z rows never provide intensity. Each intensity is interpolated independently in XYZ with deterministic three-dimensional IDW, then the available positive intensities are normalized into component probabilities. An unreported component is missing information, not a measured zero. A spacing interval with no valid nearby P intensity support is reported as blocked rather than assigned equal probabilities. Representative directions are combined as sign-aligned axial pole vectors; dip and dip direction are never interpolated as ordinary scalars.
+
+Every spacing record retains a `measurement_basis`: `BOREHOLE_ALONG_HOLE`, `TRUE_NORMAL`, or `SCANLINE_APPARENT`. Only true-normal spacing can support the explicit approximation `P32 ≈ 1/S`. Along-hole and scanline-apparent spacing require directional correction before any P32 interpretation. Phase 2A does not perform that conversion: P-site reciprocal spacing supplies relative component allocation, while the borehole interval spacing alone supplies the Poisson total `L/S`, so intensity is not counted twice.
+
+For an original spacing-only borehole interval `[a,b)` with length `L=b-a` and spacing `S`, the implemented `HOMOGENEOUS_POISSON` sampler uses:
+
+```text
+N ~ Poisson(L / S)
+MD_i | N ~ sorted Uniform[a,b)
+```
+
+For each borehole interval midpoint, P sites are first selected by `(distance, stable point index)`. `max_neighbors` therefore counts sites, not component rows. Every valid dominant and reported RANDOM component at each selected site receives the same spatial kernel; component contribution is `(1 / spacing) × kernel`, and all contributions are normalized. `joint_num` is not multiplied again. Z components never enter this probability calculation. An unlimited search is an explicit extrapolation mode and records nearest/farthest constraint distance and selected site count.
+
+Measured depths are located on the persisted survey trajectory. Dominant fractures use the selected local representative, an axial-normal spatial fit within its confirmed Global Set (P and Z direction anchors), or the legacy fixed global-set mean. Random-background normals are isotropic on an axial hemisphere and retain a distinct component code instead of a fabricated global set. Every stochastic stream is derived deterministically from `master_seed` and realization index.
+
+Generated scientific rows are compact aligned NumPy columns (`interval_index`, measured depth, origin-relative XYZ, global set, `local_component_index`, component type, dip, dip direction, and status). The component index references the fit-level metadata table; strings are not repeated per fracture. Generator version `borehole-phase2a-3` records this local-mixture allocation change. Multiple realizations, their input hash, mappings, diagnostics, seeds, and random-component declarations are persisted separately from the source database. On reopen only the selected realization arrays are loaded. Phase 2A currently provides an along-hole conditional realization for review; no adapter into M9/M10/M11 is implemented in this phase.
+
+---
+
 ## Appendix A: Notation Index
 
 | Symbol | Meaning | Units |

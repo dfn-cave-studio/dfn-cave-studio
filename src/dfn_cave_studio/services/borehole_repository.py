@@ -28,10 +28,13 @@ from dfn_cave_studio.models.borehole_database import (
     BoreholeDataType,
     BoreholeQualityIssue,
     BoreholeRecord,
+    FractureObservationMode,
     ModificationEvent,
     RecordState,
 )
 from dfn_cave_studio.models.data_management import DomainInterval
+from dfn_cave_studio.models.observations import OrientationPointSummary
+from dfn_cave_studio.models.borehole_fracture_realization import RandomComponentStatus
 from dfn_cave_studio.services.field_mapping import (
     COLLAR_FIELD_ALIASES,
     detect_field_mapping,
@@ -50,7 +53,16 @@ _ALIASES: dict[str, dict[str, str]] = {
     BoreholeDataType.SURVEYS: {"borehole_id": "hole_id", "depth": "measured_depth"},
     BoreholeDataType.FRACTURES: {"borehole_id": "hole_id", "measured_depth": "depth"},
     BoreholeDataType.RQD: {"borehole_id": "hole_id", "rqd_value": "rqd"},
+    BoreholeDataType.RMR: {"borehole_id": "hole_id"},
     BoreholeDataType.DOMAIN_INTERVALS: {"borehole_id": "hole_id"},
+    BoreholeDataType.ORIENTATION_POINTS: {
+        "easting": "x",
+        "northing": "y",
+        "elevation": "z",
+        "E": "x",
+        "N": "y",
+        "R": "z",
+    },
 }
 
 
@@ -95,6 +107,10 @@ class BoreholeRepository:
         """Rollback database, formal projection, legacy domains, and workflow on failure."""
         database_snapshot = self.snapshot()
         collection_snapshot = self.project.borehole_collection.model_copy(deep=True)
+        borehole_fracture_state_snapshot = getattr(self.project, "borehole_fracture_state", None)
+        m9_state = getattr(self.project, "m9_state", None)
+        scalar_samples_snapshot = deepcopy(m9_state.scalar_samples) if m9_state is not None else None
+        scalar_fields_snapshot = list(m9_state.scalar_fields) if m9_state is not None else None
         m7_data = getattr(self.project, "_m7_data", None)
         domain_snapshot = deepcopy((m7_data or {}).get("domain_intervals", []))
         workflow = (m7_data or {}).get("workflow")
@@ -104,6 +120,11 @@ class BoreholeRepository:
         except Exception:
             self.project.borehole_database = database_snapshot
             self.project.borehole_collection = collection_snapshot
+            if borehole_fracture_state_snapshot is not None:
+                self.project.borehole_fracture_state = borehole_fracture_state_snapshot
+            if m9_state is not None:
+                m9_state.scalar_samples = scalar_samples_snapshot
+                m9_state.scalar_fields = scalar_fields_snapshot
             if m7_data is not None:
                 m7_data["domain_intervals"] = domain_snapshot
             if workflow_snapshot is not None and hasattr(workflow, "from_dict"):
@@ -128,6 +149,7 @@ class BoreholeRepository:
         mode: str = "append",
         modification_source: str = "import",
         field_mapping: Mapping[str, str] | None = None,
+        import_metadata: Mapping[str, Any] | None = None,
     ) -> ImportBatchResult:
         """Import one table independently and atomically.
 
@@ -162,23 +184,32 @@ class BoreholeRepository:
 
         batch_id = str(uuid4())
         pending_records: list[BoreholeRecord] = []
-        existing_signatures = {
-            self._signature(record.data_type, record.original_values): record.record_id
-            for record in self.database.records
-        }
+        existing_signatures = {self._record_signature(record): record.record_id for record in self.database.records}
         duplicates = 0
+        blank_rows_skipped = 0
         for row_number, (_, row) in enumerate(dataframe.iterrows()):
             original = self._json_values(row.to_dict())
+            if self._is_blank_row(original):
+                blank_rows_skipped += 1
+                continue
             mapped_values = dict(original)
             for source, standard in source_field_mapping.items():
                 mapped_values[standard] = original.get(source)
-            values = self._standardize(dtype, mapped_values)
-            signature = self._signature(dtype, original)
+            values = self._standardize(dtype, mapped_values, import_metadata)
+            signature_values = values if dtype == BoreholeDataType.ORIENTATION_POINTS else original
+            signature = self._signature(dtype, signature_values, import_metadata)
             if signature in existing_signatures:
                 duplicates += 1
                 continue
             hole_id = self._hole_id(dtype, values)
             state, reason = self._classify(dtype, values)
+            if dtype == BoreholeDataType.ORIENTATION_POINTS and state == RecordState.FORMAL:
+                reason = self._orientation_relationship_error(values, pending_records=pending_records)
+                if reason:
+                    state = RecordState.EXCLUDED
+            if dtype == BoreholeDataType.ORIENTATION_POINTS and reason:
+                observation_id = values.get("observation_id") or "<missing>"
+                reason = f"Row {row_number + 2}, observation_id {observation_id}: {reason}"
             record = BoreholeRecord(
                 data_type=dtype,
                 hole_id=hole_id,
@@ -192,6 +223,7 @@ class BoreholeRepository:
                 exclusion_reason=reason,
                 modification_source=modification_source,
                 import_batch_id=batch_id,
+                import_metadata=dict(import_metadata or {}),
             )
             pending_records.append(record)
             existing_signatures[signature] = record.record_id
@@ -233,6 +265,8 @@ class BoreholeRepository:
             "cancelled": False,
             "data_type": dtype,
         }
+        if blank_rows_skipped:
+            counts["blank_rows_skipped"] = blank_rows_skipped
         if dtype == BoreholeDataType.FRACTURES:
             counts["total_fracture_rows"] = len(dataframe)
             counts["full_orientation"] = sum(
@@ -257,7 +291,14 @@ class BoreholeRepository:
         """Edit cleaned values while retaining raw values and change history."""
         record = self._get(record_id)
         before = deepcopy(record.values)
-        record.values = self._standardize(record.data_type, self._json_values(dict(values)))
+        standardized = self._standardize(record.data_type, self._json_values(dict(values)))
+        if record.data_type == BoreholeDataType.ORIENTATION_POINTS:
+            state, reason = self._classify(record.data_type, standardized)
+            if state == RecordState.FORMAL:
+                reason = self._orientation_relationship_error(standardized, ignore_record_id=record.record_id)
+            if reason:
+                raise ValueError(reason)
+        record.values = standardized
         record.hole_id = self._hole_id(record.data_type, record.values)
         record.state = RecordState.PENDING
         record.state, record.exclusion_reason = self._classify(record.data_type, record.values)
@@ -297,6 +338,8 @@ class BoreholeRepository:
             return 0
         by_hole: dict[str, list[BoreholeRecord]] = {}
         for record in self.query(BoreholeDataType.FRACTURES, RecordState.FORMAL):
+            if not self._is_projected_orientation_record(record.values):
+                continue
             by_hole.setdefault(record.hole_id, []).append(record)
 
         resolved: list[tuple[BoreholeRecord, int]] = []
@@ -460,6 +503,10 @@ class BoreholeRepository:
         record.exclusion_reason = None
         record.exclusion_confirmed_at = None
         record.state, record.exclusion_reason = self._classify(record.data_type, record.values)
+        if record.data_type == BoreholeDataType.ORIENTATION_POINTS and record.state == RecordState.FORMAL:
+            reason = self._orientation_relationship_error(record.values, ignore_record_id=record.record_id)
+            if reason:
+                record.state, record.exclusion_reason = RecordState.EXCLUDED, reason
         record.modification_source = modification_source
         record.modification_history.append(
             ModificationEvent(
@@ -481,6 +528,25 @@ class BoreholeRepository:
         """Return one record by ID."""
         return self._get(record_id)
 
+    def formal_collar(self, hole_id: str) -> BoreholeRecord | None:
+        """Return the active Formal collar used for association fallback."""
+        return self._formal_collar(hole_id)
+
+    def set_random_component_status(self, point_key: str, status: str) -> None:
+        """Persist an explicit point-level random-component declaration."""
+        requested = RandomComponentStatus(status)
+        summaries = {item.point_key: item for item in self.database.orientation_point_summaries}
+        summary = summaries.get(point_key)
+        if summary is None:
+            raise KeyError(f"Unknown point_key: {point_key}")
+        if summary.includes_random and requested != RandomComponentStatus.REPORTED_PRESENT:
+            raise ValueError("A point with a RANDOM row must remain REPORTED_PRESENT")
+        if not summary.includes_random and requested == RandomComponentStatus.REPORTED_PRESENT:
+            raise ValueError("REPORTED_PRESENT requires an imported RANDOM row")
+        summary.random_component_status = requested.value
+        summary.provenance["random_component_status_source"] = "user_confirmation"
+        summary.provenance["random_component_status_changed_at"] = datetime.now(UTC).isoformat()
+
     @staticmethod
     def is_number(value: Any) -> bool:
         """Return whether a value is a finite number."""
@@ -490,6 +556,11 @@ class BoreholeRepository:
     def optional_int(value: Any) -> int | None:
         """Parse an optional integer without coercing non-integral values."""
         return BoreholeRepository._optional_int(value)
+
+    @staticmethod
+    def optional_float(value: Any) -> float | None:
+        """Parse an optional finite float."""
+        return BoreholeRepository._optional_float(value)
 
     def set_quality_issues(self, issues: Iterable[BoreholeQualityIssue]) -> None:
         """Replace the persisted quality-issue projection through the write boundary."""
@@ -535,6 +606,17 @@ class BoreholeRepository:
 
     def invalidate_dependent_results_batch(self, data_types: Iterable[str]) -> None:
         """Invalidate the union of dependent results in one workflow update."""
+        changed_types = {item.value if isinstance(item, BoreholeDataType) else str(item) for item in data_types}
+        phase2a_inputs = {
+            BoreholeDataType.COLLARS.value,
+            BoreholeDataType.SURVEYS.value,
+            BoreholeDataType.FRACTURES.value,
+            BoreholeDataType.ORIENTATION_POINTS.value,
+        }
+        if changed_types & phase2a_inputs and getattr(self.project, "borehole_fracture_state", None) is not None:
+            from dfn_cave_studio.models.borehole_fracture_realization import BoreholeFractureState
+
+            self.project.borehole_fracture_state = BoreholeFractureState()
         workflow = (getattr(self.project, "_m7_data", {}) or {}).get("workflow")
         if workflow is None or not hasattr(workflow, "invalidate_steps"):
             return
@@ -543,10 +625,12 @@ class BoreholeRepository:
             BoreholeDataType.SURVEYS: ["clean", "bounds", "voxel_grid"],
             BoreholeDataType.FRACTURES: ["clean", "joint_sets", "bounds", "voxel_grid"],
             BoreholeDataType.RQD: ["clean"],
+            BoreholeDataType.RMR: ["clean"],
             BoreholeDataType.DOMAIN_INTERVALS: ["clean", "domains"],
+            BoreholeDataType.ORIENTATION_POINTS: ["clean", "bounds"],
             "scalar_parameters": [],
         }
-        affected = {step_id for data_type in data_types for step_id in dependencies.get(data_type, ["clean"])}
+        affected = {step_id for data_type in changed_types for step_id in dependencies.get(data_type, ["clean"])}
         workflow.invalidate_steps(sorted(affected))
 
     def reconcile_pending(self) -> int:
@@ -609,6 +693,8 @@ class BoreholeRepository:
             if record.hole_id not in boreholes:
                 continue
             values = record.values
+            if not self._is_projected_orientation_record(values):
+                continue
             try:
                 observation = FractureObservation(
                     borehole_id=record.hole_id,
@@ -659,6 +745,13 @@ class BoreholeRepository:
             m7_data = self.project._m7_data
         if domain_records:
             m7_data["domain_intervals"] = domains
+        if hasattr(self.project, "m9_state"):
+            # RQD/RMR remain canonical database records.  This idempotent
+            # projection reuses the existing generic scalar-field path.
+            from dfn_cave_studio.services.observation_service import ObservationService
+
+            ObservationService(self.project).synchronize_scalar_samples()
+        self._rebuild_orientation_point_summaries()
         return collection
 
     def migrate_m7(self) -> BoreholeDatabase:
@@ -827,6 +920,51 @@ class BoreholeRepository:
     def _classify(self, data_type: str, values: Mapping[str, Any]) -> tuple[RecordState, str | None]:
         if data_type not in {member.value for member in BoreholeDataType} | {"scalar_parameters"}:
             return RecordState.FORMAL, None
+        if data_type == BoreholeDataType.ORIENTATION_POINTS:
+            if not str(values.get("observation_id", "")).strip():
+                return RecordState.EXCLUDED, "field observation_id is required"
+            if not str(values.get("point_id", "")).strip():
+                return RecordState.EXCLUDED, "field point_id is required"
+            if any(not self._is_number(values.get(field)) for field in ("x", "y", "z")):
+                return RecordState.EXCLUDED, "fields x, y and z must be finite numbers"
+            source_kind = values.get("source_kind")
+            local_set_id = str(values.get("local_set_id", "")).strip()
+            if source_kind not in {"POINT_CLOUD", "BOREHOLE_CAMERA"}:
+                return RecordState.EXCLUDED, "field observation_id prefix must be P or Z"
+            if not local_set_id:
+                return RecordState.EXCLUDED, "field local_set_id is required"
+            is_random = local_set_id.upper() == "RANDOM"
+            dip_valid = self._is_number(values.get("dip")) and 0 <= float(values["dip"]) <= 90
+            direction_valid = self._is_number(values.get("dip_direction")) and 0 <= float(values["dip_direction"]) < 360
+            spacing = values.get("joint_spacing_m")
+            measurement_basis = values.get("measurement_basis")
+            joint_num = values.get("joint_num")
+            if source_kind == "POINT_CLOUD":
+                if is_random:
+                    if values.get("dip") is not None or values.get("dip_direction") is not None:
+                        return RecordState.EXCLUDED, "fields dip and dip_direction must be empty for RANDOM"
+                elif not dip_valid:
+                    return RecordState.EXCLUDED, "field dip must be in [0, 90] for point-cloud dominant sets"
+                elif not direction_valid:
+                    return RecordState.EXCLUDED, "field dip_direction must be in [0, 360) for point-cloud dominant sets"
+                if not self._is_number(spacing) or float(spacing) <= 0:
+                    return RecordState.EXCLUDED, "field joint_spacing_m must be greater than zero for P records"
+                if measurement_basis not in {None, "BOREHOLE_ALONG_HOLE", "TRUE_NORMAL", "SCANLINE_APPARENT"}:
+                    return RecordState.EXCLUDED, "field measurement_basis is invalid for P records"
+                if self._optional_int(joint_num) is None or int(float(joint_num)) <= 0:
+                    return RecordState.EXCLUDED, "field joint_num must be a positive integer for P records"
+            else:
+                if is_random:
+                    return RecordState.EXCLUDED, "field local_set_id cannot be RANDOM for Z records"
+                if not dip_valid:
+                    return RecordState.EXCLUDED, "field dip must be in [0, 90] for Z records"
+                if not direction_valid:
+                    return RecordState.EXCLUDED, "field dip_direction must be in [0, 360) for Z records"
+                if spacing is not None:
+                    return RecordState.EXCLUDED, "field joint_spacing_m must be empty for Z records"
+                if joint_num is not None:
+                    return RecordState.EXCLUDED, "field joint_num must be empty for Z records"
+            return RecordState.FORMAL, None
         hole_id = self._hole_id(data_type, values)
         if not hole_id:
             return RecordState.EXCLUDED, "Missing required hole_id"
@@ -859,25 +997,55 @@ class BoreholeRepository:
             ):
                 return RecordState.EXCLUDED, f"Duplicate survey station at measured depth {depth}"
         elif data_type == BoreholeDataType.FRACTURES:
-            required = ("depth", "dip")
-            if any(not self._is_number(values.get(field)) for field in required):
-                return RecordState.EXCLUDED, "Fracture depth/dip must be numeric"
-            depth = float(values["depth"])
-            dip = float(values["dip"])
-            if depth < 0 or depth > total_depth:
-                return RecordState.EXCLUDED, f"Fracture depth {depth} exceeds borehole total depth {total_depth}"
-            if dip < 0 or dip > 90:
-                return RecordState.EXCLUDED, f"Dip {dip} is outside [0, 90]"
-            dip_direction = values.get("dip_direction")
-            if dip_direction is not None:
-                if not self._is_number(dip_direction):
-                    return RecordState.EXCLUDED, "dip_direction must be numeric when provided"
-                if not 0 <= float(dip_direction) <= 360:
-                    return RecordState.EXCLUDED, f"Dip direction {dip_direction} is outside [0, 360]"
+            mode = values.get("observation_mode", FractureObservationMode.GLOBAL_DIP_ONLY)
+            if mode == FractureObservationMode.INTERVAL_SPACING:
+                if any(not self._is_number(values.get(field)) for field in ("from_depth", "to_depth", "fracture_spacing")):
+                    return RecordState.EXCLUDED, "Spacing interval depths and fracture_spacing must be numeric"
+                start, end = float(values["from_depth"]), float(values["to_depth"])
+                if start < 0 or start >= end or end > total_depth:
+                    return RecordState.EXCLUDED, f"Spacing interval [{start}, {end}] is outside borehole depth"
+                if float(values["fracture_spacing"]) <= 0:
+                    return RecordState.EXCLUDED, "fracture_spacing must be greater than zero"
+                if values.get("spacing_unit") not in {"mm", "cm", "m"}:
+                    return RecordState.EXCLUDED, "spacing_unit must be one of mm, cm, or m"
+                if values.get("measurement_basis") not in {
+                    "BOREHOLE_ALONG_HOLE",
+                    "TRUE_NORMAL",
+                    "SCANLINE_APPARENT",
+                }:
+                    return RecordState.EXCLUDED, "measurement_basis is invalid for spacing observations"
+                if not self._is_number(values.get("derived_p10")):
+                    return RecordState.EXCLUDED, "Unable to derive P10 from fracture_spacing and its unit"
+            elif mode == FractureObservationMode.AXIS_PLANE_ANGLE:
+                if any(not self._is_number(values.get(field)) for field in ("depth", "axis_plane_angle")):
+                    return RecordState.EXCLUDED, "Fracture depth and axis_plane_angle must be numeric"
+                depth, angle = float(values["depth"]), float(values["axis_plane_angle"])
+                if depth < 0 or depth > total_depth:
+                    return RecordState.EXCLUDED, f"Fracture depth {depth} exceeds borehole total depth {total_depth}"
+                if not 0 <= angle <= 90:
+                    return RecordState.EXCLUDED, "axis_plane_angle must be in [0, 90]"
+            else:
+                required = ("depth", "dip")
+                if any(not self._is_number(values.get(field)) for field in required):
+                    return RecordState.EXCLUDED, "Fracture depth/dip must be numeric"
+                depth = float(values["depth"])
+                dip = float(values["dip"])
+                if depth < 0 or depth > total_depth:
+                    return RecordState.EXCLUDED, f"Fracture depth {depth} exceeds borehole total depth {total_depth}"
+                if dip < 0 or dip > 90:
+                    return RecordState.EXCLUDED, f"Dip {dip} is outside [0, 90]"
+                dip_direction = values.get("dip_direction")
+                if mode == FractureObservationMode.FULL_ORIENTATION and dip_direction is None:
+                    return RecordState.EXCLUDED, "dip_direction is required in full-orientation mode"
+                if dip_direction is not None:
+                    if not self._is_number(dip_direction):
+                        return RecordState.EXCLUDED, "dip_direction must be numeric when provided"
+                    if not 0 <= float(dip_direction) <= 360:
+                        return RecordState.EXCLUDED, f"Dip direction {dip_direction} is outside [0, 360]"
             set_id = values.get("set_id")
             if set_id is not None and set_id != "" and self._optional_int(set_id) is None:
                 return RecordState.EXCLUDED, f"set_id '{set_id}' is not an integer"
-        elif data_type in {BoreholeDataType.RQD, BoreholeDataType.DOMAIN_INTERVALS}:
+        elif data_type in {BoreholeDataType.RQD, BoreholeDataType.RMR, BoreholeDataType.DOMAIN_INTERVALS}:
             required = ("from_depth", "to_depth")
             if any(not self._is_number(values.get(field)) for field in required):
                 return RecordState.EXCLUDED, "Interval depths must be numeric"
@@ -888,6 +1056,9 @@ class BoreholeRepository:
             if data_type == BoreholeDataType.RQD:
                 if not self._is_number(values.get("rqd")) or not 0 <= float(values["rqd"]) <= 100:
                     return RecordState.EXCLUDED, "RQD must be numeric in [0, 100]"
+            elif data_type == BoreholeDataType.RMR:
+                if not self._is_number(values.get("rmr")) or not 0 <= float(values["rmr"]) <= 100:
+                    return RecordState.EXCLUDED, "RMR must be numeric in [0, 100]"
             elif not self._is_number(values.get("domain_id")):
                 return RecordState.EXCLUDED, "domain_id must be numeric"
         elif data_type == "scalar_parameters":
@@ -912,24 +1083,183 @@ class BoreholeRepository:
         return None
 
     @staticmethod
-    def _standardize(data_type: str, values: Mapping[str, Any]) -> dict[str, Any]:
+    def _standardize(
+        data_type: str,
+        values: Mapping[str, Any],
+        import_metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         result = dict(values)
         for source, target in _ALIASES.get(data_type, {}).items():
             if target not in result and source in result:
                 result[target] = result[source]
         if data_type == BoreholeDataType.FRACTURES:
+            metadata = dict(import_metadata or {})
+            mode = metadata.get("observation_mode") or result.get("observation_mode")
             direction = result.get("dip_direction")
             if isinstance(direction, str) and direction.strip().lower() in {"", "na", "n/a", "null", "none"}:
                 direction = None
             if direction is not None and BoreholeRepository._is_number(direction):
                 direction = float(direction)
-            result["dip_direction"] = direction
-            result["orientation_completeness"] = (
-                OrientationCompleteness.FULL_ORIENTATION.value
-                if direction is not None
-                else OrientationCompleteness.DIP_ONLY.value
+            if mode is None:
+                mode = (
+                    FractureObservationMode.FULL_ORIENTATION
+                    if direction is not None
+                    else FractureObservationMode.GLOBAL_DIP_ONLY
+                )
+            result["observation_mode"] = str(mode)
+            if mode in {FractureObservationMode.FULL_ORIENTATION, FractureObservationMode.GLOBAL_DIP_ONLY}:
+                result["dip_direction"] = direction
+                result["orientation_completeness"] = (
+                    OrientationCompleteness.FULL_ORIENTATION.value
+                    if direction is not None
+                    else OrientationCompleteness.DIP_ONLY.value
+                )
+            elif mode == FractureObservationMode.INTERVAL_SPACING:
+                unit = str(metadata.get("spacing_unit", result.get("spacing_unit", "cm"))).strip().lower()
+                factor = {"mm": 0.001, "cm": 0.01, "m": 1.0}.get(unit)
+                result["spacing_unit"] = unit
+                raw_basis = metadata.get("measurement_basis", result.get("measurement_basis"))
+                if raw_basis is None or str(raw_basis).strip().lower() in {"", "nan", "none", "null"}:
+                    raw_basis = "BOREHOLE_ALONG_HOLE"
+                result["measurement_basis"] = str(raw_basis).strip().upper()
+                result["spacing_definition"] = {
+                    "BOREHOLE_ALONG_HOLE": "along_hole_mean_spacing",
+                    "TRUE_NORMAL": "true_normal_spacing",
+                    "SCANLINE_APPARENT": "scanline_apparent_spacing",
+                }.get(result["measurement_basis"], "unrecognized_spacing_basis")
+                if factor is not None and BoreholeRepository._is_number(result.get("fracture_spacing")):
+                    spacing_m = float(result["fracture_spacing"]) * factor
+                    result["derived_p10"] = 1.0 / spacing_m if spacing_m > 0 else None
+                    result["derived_p10_unit"] = "m^-1"
+                    result["derivation"] = "reciprocal_of_along_hole_mean_spacing"
+                result["orientation_completeness"] = "none"
+            elif mode == FractureObservationMode.AXIS_PLANE_ANGLE:
+                result["reference_frame"] = "BOREHOLE_RELATIVE"
+                result["angle_definition"] = "acute_angle_between_plane_and_local_borehole_axis"
+                result["orientation_completeness"] = "borehole_relative"
+                result["dip_direction"] = None
+        elif data_type == BoreholeDataType.ORIENTATION_POINTS:
+            for field in ("observation_id", "point_id", "local_set_id"):
+                result[field] = "" if result.get(field) is None else str(result[field]).strip()
+            observation_id = result["observation_id"]
+            prefix = observation_id[:1]
+            source_kind = {"P": "POINT_CLOUD", "Z": "BOREHOLE_CAMERA"}.get(prefix)
+            local_set_id = result["local_set_id"]
+            is_random = local_set_id.upper() == "RANDOM"
+            result["source_kind"] = source_kind
+            result["point_key"] = f"{source_kind}:{result['point_id']}" if source_kind else None
+            result["component_type"] = "RANDOM_BACKGROUND" if is_random else "LOCAL_DOMINANT_SET"
+            result["orientation_status"] = "MISSING" if is_random else "COMPLETE"
+            for field in ("dip", "dip_direction", "joint_spacing_m"):
+                raw = result.get(field)
+                if isinstance(raw, str) and not raw.strip():
+                    raw = None
+                result[field] = float(raw) if BoreholeRepository._is_number(raw) else raw
+            raw_joint_num = result.get("joint_num")
+            if isinstance(raw_joint_num, str) and not raw_joint_num.strip():
+                raw_joint_num = None
+            parsed_joint_num = BoreholeRepository._optional_int(raw_joint_num)
+            result["joint_num"] = parsed_joint_num if parsed_joint_num is not None else raw_joint_num
+            result["set_id"] = None
+            result.setdefault("observation_kind", "DOMINANT_SUMMARY")
+            result["calibration_role"] = "UNASSIGNED"
+            raw_basis = result.get("measurement_basis")
+            result["measurement_basis"] = (
+                None
+                if raw_basis is None or str(raw_basis).strip().lower() in {"", "nan", "none", "null"}
+                else str(raw_basis).strip().upper()
             )
         return result
+
+    def _record_signature(self, record: BoreholeRecord) -> str:
+        values = record.values if record.data_type == BoreholeDataType.ORIENTATION_POINTS else record.original_values
+        return self._signature(record.data_type, values, record.import_metadata)
+
+    def _orientation_relationship_error(
+        self,
+        values: Mapping[str, Any],
+        *,
+        pending_records: Iterable[BoreholeRecord] = (),
+        ignore_record_id: str | None = None,
+        candidate_records: Iterable[BoreholeRecord] | None = None,
+    ) -> str | None:
+        source_records = (
+            list(candidate_records)
+            if candidate_records is not None
+            else [*self.database.records, *pending_records]
+        )
+        candidates = [
+            record
+            for record in source_records
+            if record.data_type == BoreholeDataType.ORIENTATION_POINTS
+            and record.record_id != ignore_record_id
+        ]
+        observation_id = str(values.get("observation_id", ""))
+        if any(str(record.values.get("observation_id", "")) == observation_id for record in candidates):
+            return f"field observation_id '{observation_id}' must be globally unique"
+        point_key = values.get("point_key")
+        same_point = [record for record in candidates if record.values.get("point_key") == point_key]
+        xyz = tuple(float(values[field]) for field in ("x", "y", "z"))
+        for record in same_point:
+            other = tuple(float(record.values[field]) for field in ("x", "y", "z"))
+            if any(abs(left - right) > 1e-9 for left, right in zip(xyz, other)):
+                return f"fields x/y/z conflict with existing point_key '{point_key}'"
+        if str(values.get("local_set_id", "")).upper() == "RANDOM" and any(
+            str(record.values.get("local_set_id", "")).upper() == "RANDOM" for record in same_point
+        ):
+            return f"field local_set_id has duplicate RANDOM component for point_key '{point_key}'"
+        return None
+
+    def _rebuild_orientation_point_summaries(self) -> None:
+        previous = {item.point_key: item for item in self.database.orientation_point_summaries}
+        grouped: dict[str, list[BoreholeRecord]] = {}
+        for record in self.query(BoreholeDataType.ORIENTATION_POINTS, RecordState.FORMAL):
+            if record.values.get("source_kind") != "POINT_CLOUD":
+                continue
+            grouped.setdefault(str(record.values.get("point_key")), []).append(record)
+        summaries: list[OrientationPointSummary] = []
+        for point_key, records in sorted(grouped.items()):
+            spaced = [record for record in records if self._is_number(record.values.get("joint_spacing_m"))]
+            if not spaced:
+                continue
+            jv = sum(1.0 / float(record.values["joint_spacing_m"]) for record in spaced)
+            rqd = 100.0 if jv <= 4.0 else (0.0 if jv >= 44.0 else 110.0 - 2.5 * jv)
+            includes_random = any(
+                str(record.values.get("local_set_id", "")).upper() == "RANDOM" for record in spaced
+            )
+            if includes_random:
+                random_status = RandomComponentStatus.REPORTED_PRESENT
+            elif (
+                point_key in previous
+                and previous[point_key].random_component_status == RandomComponentStatus.REPORTED_ABSENT
+            ):
+                random_status = RandomComponentStatus.REPORTED_ABSENT
+            else:
+                random_status = RandomComponentStatus.NOT_REPORTED
+            summaries.append(
+                OrientationPointSummary(
+                    point_key=point_key,
+                    input_observation_ids=sorted(str(record.values["observation_id"]) for record in spaced),
+                    includes_random=includes_random,
+                    random_component_status=random_status.value,
+                    jv_estimated=jv,
+                    rqd_from_jv=rqd,
+                    provenance={
+                        "source": "orientation_points",
+                        "density_role": "audit_only",
+                        **(
+                            {
+                                key: value
+                                for key, value in previous[point_key].provenance.items()
+                                if key.startswith("random_component_status_")
+                            }
+                            if point_key in previous
+                            else {}
+                        ),
+                    },
+                )
+            )
+        self.database.orientation_point_summaries = summaries
 
     @staticmethod
     def _hole_id(data_type: str, values: Mapping[str, Any]) -> str:
@@ -952,8 +1282,27 @@ class BoreholeRepository:
         return result
 
     @staticmethod
-    def _signature(data_type: str, values: Mapping[str, Any]) -> str:
-        return f"{data_type}:{json.dumps(values, sort_keys=True, default=str, separators=(',', ':'))}"
+    def _is_blank_row(values: Mapping[str, Any]) -> bool:
+        return all(value is None or (isinstance(value, str) and not value.strip()) for value in values.values())
+
+    @staticmethod
+    def _is_projected_orientation_record(values: Mapping[str, Any]) -> bool:
+        mode = values.get("observation_mode")
+        if mode is None:
+            return "depth" in values and "dip" in values
+        return mode in {
+            FractureObservationMode.FULL_ORIENTATION,
+            FractureObservationMode.GLOBAL_DIP_ONLY,
+        }
+
+    @staticmethod
+    def _signature(
+        data_type: str,
+        values: Mapping[str, Any],
+        import_metadata: Mapping[str, Any] | None = None,
+    ) -> str:
+        payload = {"values": values, "import_metadata": dict(import_metadata or {})}
+        return f"{data_type}:{json.dumps(payload, sort_keys=True, default=str, separators=(',', ':'))}"
 
     @staticmethod
     def _is_number(value: Any) -> bool:
@@ -992,10 +1341,26 @@ class BoreholeRepository:
     def _reclassify_records(self, records: Iterable[BoreholeRecord]) -> None:
         """Classify a batch sequentially so intra-batch duplicates are visible."""
         records = list(records)
+        batch_ids = {record.record_id for record in records}
+        external = [record for record in self.database.records if record.record_id not in batch_ids]
+        processed: list[BoreholeRecord] = []
         for record in records:
             record.state = RecordState.PENDING
         for record in records:
             record.state, record.exclusion_reason = self._classify(record.data_type, record.values)
-
+            if record.data_type == BoreholeDataType.ORIENTATION_POINTS and record.state == RecordState.FORMAL:
+                reason = self._orientation_relationship_error(
+                    record.values,
+                    ignore_record_id=record.record_id,
+                    candidate_records=[*external, *processed],
+                )
+                if reason:
+                    record.state, record.exclusion_reason = RecordState.EXCLUDED, reason
+            if record.data_type == BoreholeDataType.ORIENTATION_POINTS and record.exclusion_reason:
+                observation_id = record.values.get("observation_id") or "<missing>"
+                record.exclusion_reason = (
+                    f"Row {record.source_row + 2}, observation_id {observation_id}: {record.exclusion_reason}"
+                )
+            processed.append(record)
     def _mark_quality_stale(self) -> None:
         self.set_quality_confirmation(None)

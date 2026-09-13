@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from dfn_cave_studio.models.borehole_database import BoreholeDataType, RecordState
 from dfn_cave_studio.services.borehole_repository import BoreholeRepository
@@ -32,7 +32,7 @@ from dfn_cave_studio.ui.qt_adapter import (
 class BoreholeDatabasePanel(QDockWidget):
     """Searchable, sortable view over the canonical project repository."""
 
-    def __init__(self, project, on_changed: Callable[[], None] | None = None, parent=None):
+    def __init__(self, project, on_changed: Callable[..., None] | None = None, parent=None):
         super().__init__("Borehole Database / 钻孔数据库", parent)
         self._project = project
         self._repository = BoreholeRepository(project)
@@ -86,6 +86,12 @@ class BoreholeDatabasePanel(QDockWidget):
         splitter.addWidget(self._table)
         splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter)
+        self._orientation_summary = QTableWidget(0, 6)
+        self._orientation_summary.setHorizontalHeaderLabels(
+            ["Point key", "Input observations", "Includes RANDOM", "Jv estimate", "RQD from Jv", "Method"]
+        )
+        self._orientation_summary.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self._orientation_summary)
         self._counts = QLabel()
         layout.addWidget(self._counts)
 
@@ -216,6 +222,22 @@ class BoreholeDatabasePanel(QDockWidget):
                 f"{self._counts.text()} | Full orientation {orientation_counts['full_orientation']} | "
                 f"Dip only {orientation_counts['dip_only']}"
             )
+        summaries = self._repository.database.orientation_point_summaries
+        show_summaries = data_type == BoreholeDataType.ORIENTATION_POINTS
+        self._orientation_summary.setVisible(show_summaries)
+        self._orientation_summary.setRowCount(len(summaries) if show_summaries else 0)
+        if show_summaries:
+            for row, summary in enumerate(summaries):
+                values = (
+                    summary.point_key,
+                    ", ".join(summary.input_observation_ids),
+                    "Yes" if summary.includes_random else "No",
+                    f"{summary.jv_estimated:g}",
+                    f"{summary.rqd_from_jv:g}",
+                    summary.method_code,
+                )
+                for column, value in enumerate(values):
+                    self._orientation_summary.setItem(row, column, QTableWidgetItem(value))
 
     def _selected_record_id(self) -> str | None:
         items = self._table.selectedItems()
@@ -227,7 +249,7 @@ class BoreholeDatabasePanel(QDockWidget):
         dialog = M8ImportDialog(self._project, self)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
             self.refresh()
-            self._notify_changed()
+            self._notify_changed(dialog.committed_data_types)
 
     def _edit_selected(self) -> None:
         record_id = self._selected_record_id()
@@ -253,12 +275,13 @@ class BoreholeDatabasePanel(QDockWidget):
             return
         self._repository.edit_record(record_id, values)
         self.refresh()
-        self._notify_changed()
+        self._notify_changed({record.data_type})
 
     def _delete_selected(self) -> None:
         record_id = self._selected_record_id()
         if not record_id:
             return
+        record = next(record for record in self._repository.database.records if record.record_id == record_id)
         if (
             QMessageBox.question(self, "Confirm delete", "Move this record to Excluded? Raw data will be retained.")
             != QMessageBox.StandardButton.Yes
@@ -266,8 +289,11 @@ class BoreholeDatabasePanel(QDockWidget):
             return
         self._repository.delete_record(record_id)
         self.refresh()
-        self._notify_changed()
+        self._notify_changed({record.data_type})
 
-    def _notify_changed(self) -> None:
+    def _notify_changed(self, data_types: Iterable[str] | None = None) -> None:
         if self._on_changed is not None:
-            self._on_changed()
+            if data_types is None:
+                self._on_changed()
+            else:
+                self._on_changed(set(data_types))

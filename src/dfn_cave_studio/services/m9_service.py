@@ -101,6 +101,19 @@ class M9Service:
 
     def calculate_density(self, settings: DensitySettings | None = None, *, progress=None, cancelled=None) -> None:
         """Compute P10 and direction-corrected P32 with no validation leakage."""
+        compatible_count = sum(
+            len(hole.fracture_observations) for hole in self.project.borehole_collection.boreholes
+        )
+        database = getattr(self.project, "borehole_database", None)
+        counts = database.observation_mode_counts() if database is not None else {}
+        spacing = int(counts.get("interval_spacing", 0))
+        relative = int(counts.get("axis_plane_angle", 0))
+        if compatible_count == 0:
+            raise ValueError(
+                "No global fracture orientations are available for the existing P32 workflow. "
+                f"Imported interval-spacing records={spacing}; borehole-relative angle records={relative}. "
+                "Their import and derived metrics are retained, but direction completion is not implemented in this phase."
+            )
         settings = settings or self.project.m9_state.density_settings
         roles = self._roles()
         intervals = build_p10_intervals(
@@ -138,6 +151,11 @@ class M9Service:
         self.project.m9_state.provenance["validation_holes_excluded"] = sorted(
             hole_id for hole_id, role in roles.items() if role == "validation"
         )
+        self.project.m9_state.provenance["non_global_orientation_records_excluded_from_density_fit"] = {
+            "interval_spacing": spacing,
+            "axis_plane_angle": relative,
+            "reason": "direction completion is not implemented in this phase",
+        }
 
     def _fit_domain_orientations(self, roles: dict[str, str]):
         """Fit Fisher orientation per domain/set from Calibration observations."""

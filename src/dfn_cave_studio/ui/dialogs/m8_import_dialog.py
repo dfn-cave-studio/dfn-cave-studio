@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from dfn_cave_studio.models.borehole_database import BoreholeDataType
+from dfn_cave_studio.models.borehole_database import BoreholeDataType, FractureObservationMode
 from dfn_cave_studio.services.borehole_repository import BoreholeRepository
 from dfn_cave_studio.services.import_service import read_input_table
 from dfn_cave_studio.borehole.borehole_importer import STANDARD_COLLAR_FIELDS, STANDARD_FRACTURE_FIELDS
@@ -39,6 +39,11 @@ class M8ImportDialog(QDialog):
         self._snapshot = self._repository.snapshot()
         m7_data = getattr(project, "_m7_data", {}) or {}
         self._legacy_domain_snapshot = deepcopy(m7_data.get("domain_intervals", []))
+        self._scalar_samples_snapshot = deepcopy(project.m9_state.scalar_samples)
+        # Synchronization replaces/removes field objects but never mutates
+        # their scientific arrays, so a shallow list snapshot avoids copying
+        # potentially large voxel arrays during an import transaction.
+        self._scalar_fields_snapshot = list(project.m9_state.scalar_fields)
         self._preview: pd.DataFrame | None = None
         self._preview_path = ""
         self._mapping_conflicts: list[str] = []
@@ -57,6 +62,28 @@ class M8ImportDialog(QDialog):
             self._type_combo.addItem(data_type.value, data_type.value)
         self._type_combo.currentIndexChanged.connect(self._clear_preview_mapping)
         form.addRow("Data type:", self._type_combo)
+        self._fracture_mode_combo = QComboBox()
+        self._fracture_mode_combo.addItem(
+            "Legacy — Global orientation (dip direction optional)", FractureObservationMode.GLOBAL_DIP_ONLY
+        )
+        self._fracture_mode_combo.addItem("A — Full orientation / 完整产状", FractureObservationMode.FULL_ORIENTATION)
+        self._fracture_mode_combo.addItem(
+            "B — Interval spacing / 区间间距", FractureObservationMode.INTERVAL_SPACING
+        )
+        self._fracture_mode_combo.addItem(
+            "C — Borehole-axis angle / 孔轴夹角", FractureObservationMode.AXIS_PLANE_ANGLE
+        )
+        self._fracture_mode_combo.currentIndexChanged.connect(self._clear_preview_mapping)
+        form.addRow("Fracture observation mode:", self._fracture_mode_combo)
+        self._spacing_unit_combo = QComboBox()
+        for label, value in (("centimetres (cm)", "cm"), ("metres (m)", "m"), ("millimetres (mm)", "mm")):
+            self._spacing_unit_combo.addItem(label, value)
+        form.addRow("Fracture spacing unit:", self._spacing_unit_combo)
+        self._template = QLabel()
+        self._template.setWordWrap(True)
+        form.addRow("Required template:", self._template)
+        self._type_combo.currentIndexChanged.connect(self._update_mode_controls)
+        self._fracture_mode_combo.currentIndexChanged.connect(self._update_mode_controls)
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("Append (skip exact duplicates)", "append")
         self._mode_combo.addItem("Replace formal table (retain audit history)", "replace")
@@ -92,6 +119,17 @@ class M8ImportDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        self._update_mode_controls()
+
+    def _update_mode_controls(self, *_args) -> None:
+        data_type = self._type_combo.currentData()
+        fracture = data_type == BoreholeDataType.FRACTURES
+        spacing = fracture and self._fracture_mode_combo.currentData() == FractureObservationMode.INTERVAL_SPACING
+        self._fracture_mode_combo.setVisible(fracture)
+        self._spacing_unit_combo.setVisible(spacing)
+        fields = ", ".join(sorted(self._required_fields(data_type)))
+        units = " Angles: degrees; lengths: m." if not spacing else " Interval depths: m; spacing: selected unit."
+        self._template.setText(f"{fields}.{units}")
 
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -128,6 +166,11 @@ class M8ImportDialog(QDialog):
             BoreholeDataType.FRACTURES: [
                 "hole_id",
                 "depth",
+                "from_depth",
+                "to_depth",
+                "fracture_spacing",
+                "measurement_basis",
+                "axis_plane_angle",
                 "dip_direction",
                 "dip",
                 "set_id",
@@ -136,6 +179,7 @@ class M8ImportDialog(QDialog):
                 "confidence",
             ],
             BoreholeDataType.RQD: ["hole_id", "from_depth", "to_depth", "rqd", "core_recovery"],
+            BoreholeDataType.RMR: ["hole_id", "from_depth", "to_depth", "rmr"],
             BoreholeDataType.DOMAIN_INTERVALS: [
                 "hole_id",
                 "from_depth",
@@ -143,11 +187,58 @@ class M8ImportDialog(QDialog):
                 "domain_id",
                 "domain_name",
             ],
+            BoreholeDataType.ORIENTATION_POINTS: [
+                "observation_id",
+                "point_id",
+                "x",
+                "y",
+                "z",
+                "dip",
+                "dip_direction",
+                "local_set_id",
+                "joint_spacing_m",
+                "measurement_basis",
+                "joint_num",
+            ],
         }.get(data_type, [])
         options = [""] + fields
         if current and current not in options:
             options.append(current)
         return options
+
+    def _required_fields(self, data_type: str) -> set[str]:
+        required = {
+            BoreholeDataType.COLLARS: {"borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"},
+            BoreholeDataType.SURVEYS: {"hole_id", "measured_depth", "azimuth", "dip"},
+            BoreholeDataType.RQD: {"hole_id", "from_depth", "to_depth", "rqd"},
+            BoreholeDataType.RMR: {"hole_id", "from_depth", "to_depth", "rmr"},
+            BoreholeDataType.DOMAIN_INTERVALS: {"hole_id", "from_depth", "to_depth", "domain_id"},
+            BoreholeDataType.ORIENTATION_POINTS: {
+                "observation_id",
+                "point_id",
+                "x",
+                "y",
+                "z",
+                "dip",
+                "dip_direction",
+                "local_set_id",
+                "joint_spacing_m",
+                "joint_num",
+            },
+        }.get(data_type, set())
+        if data_type != BoreholeDataType.FRACTURES:
+            return required
+        return {
+            FractureObservationMode.GLOBAL_DIP_ONLY: {"hole_id", "depth", "dip"},
+            FractureObservationMode.FULL_ORIENTATION: {"hole_id", "depth", "dip_direction", "dip"},
+            FractureObservationMode.INTERVAL_SPACING: {
+                "hole_id",
+                "from_depth",
+                "to_depth",
+                "fracture_spacing",
+            },
+            FractureObservationMode.AXIS_PLANE_ANGLE: {"hole_id", "depth", "axis_plane_angle"},
+        }[self._fracture_mode_combo.currentData()]
 
     def _load_preview(self) -> None:
         path = self._path_edit.text().strip()
@@ -170,13 +261,7 @@ class M8ImportDialog(QDialog):
                 self._preview_table.setItem(row, column, QTableWidgetItem("" if pd.isna(value) else str(value)))
         self._mapping_table.setRowCount(len(dataframe.columns))
         data_type = self._type_combo.currentData()
-        required = {
-            BoreholeDataType.COLLARS: {"borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"},
-            BoreholeDataType.SURVEYS: {"hole_id", "measured_depth", "azimuth", "dip"},
-            BoreholeDataType.FRACTURES: {"hole_id", "depth", "dip"},
-            BoreholeDataType.RQD: {"hole_id", "from_depth", "to_depth", "rqd"},
-            BoreholeDataType.DOMAIN_INTERVALS: {"hole_id", "from_depth", "to_depth", "domain_id"},
-        }.get(data_type, set())
+        required = self._required_fields(data_type)
         fracture_aliases = {
             alias.lower(): standard
             for standard, aliases in STANDARD_FRACTURE_FIELDS.items()
@@ -195,6 +280,18 @@ class M8ImportDialog(QDialog):
             standard = collar_mapping.get(str(column), "") if data_type == BoreholeDataType.COLLARS else str(column)
             if data_type == BoreholeDataType.FRACTURES:
                 standard = fracture_targets.get(fracture_aliases.get(standard.lower(), standard), fracture_aliases.get(standard.lower(), standard))
+            elif data_type == BoreholeDataType.ORIENTATION_POINTS:
+                standard = {
+                    "e": "x",
+                    "east": "x",
+                    "easting": "x",
+                    "n": "y",
+                    "north": "y",
+                    "northing": "y",
+                    "r": "z",
+                    "rl": "z",
+                    "elevation": "z",
+                }.get(standard.strip().lower(), standard)
             selector = QComboBox()
             selector.addItems(self._standard_field_options(data_type, standard))
             selector.setCurrentText(standard)
@@ -232,17 +329,16 @@ class M8ImportDialog(QDialog):
         except (OSError, ValueError, ImportError, KeyError) as error:
             QMessageBox.critical(self, "Import failed", str(error))
             return
-        required = {
-            BoreholeDataType.COLLARS: {"borehole_id", "collar_x", "collar_y", "collar_z", "final_depth"},
-            BoreholeDataType.SURVEYS: {"hole_id", "measured_depth", "azimuth", "dip"},
-            BoreholeDataType.FRACTURES: {"hole_id", "depth", "dip"},
-            BoreholeDataType.RQD: {"hole_id", "from_depth", "to_depth", "rqd"},
-            BoreholeDataType.DOMAIN_INTERVALS: {"hole_id", "from_depth", "to_depth", "domain_id"},
-        }.get(data_type, set())
+        required = self._required_fields(data_type)
         missing = sorted(required - set(dataframe.columns))
         if missing:
             QMessageBox.critical(self, "Import failed", f"Missing required fields: {', '.join(missing)}")
             return
+        import_metadata = {}
+        if data_type == BoreholeDataType.FRACTURES:
+            import_metadata["observation_mode"] = self._fracture_mode_combo.currentData()
+            if self._fracture_mode_combo.currentData() == FractureObservationMode.INTERVAL_SPACING:
+                import_metadata["spacing_unit"] = self._spacing_unit_combo.currentData()
         result = self._repository.import_dataframe(
             data_type,
             raw_dataframe if data_type == BoreholeDataType.COLLARS else dataframe,
@@ -250,6 +346,7 @@ class M8ImportDialog(QDialog):
             mode=self._mode_combo.currentData(),
             modification_source="staged_import",
             field_mapping=rename if data_type == BoreholeDataType.COLLARS else None,
+            import_metadata=import_metadata,
         )
         self._results.append(dict(result))
         self._staged_changes = self._staged_changes or result.changed
@@ -263,6 +360,7 @@ class M8ImportDialog(QDialog):
         self._status.setText(
             f"Staged raw={result['raw']}, formal={result['formal']}, excluded={result['excluded']}, "
             f"pending={result['pending']}, duplicates={result['duplicates']}{orientation}"
+            f", blank rows skipped={result.get('blank_rows_skipped', 0)}"
         )
 
     def _accept(self) -> None:
@@ -280,6 +378,8 @@ class M8ImportDialog(QDialog):
             self._repository.project._m7_data = {}
             m7_data = self._repository.project._m7_data
         m7_data["domain_intervals"] = deepcopy(self._legacy_domain_snapshot)
+        self._repository.project.m9_state.scalar_samples = deepcopy(self._scalar_samples_snapshot)
+        self._repository.project.m9_state.scalar_fields = list(self._scalar_fields_snapshot)
         self._committed_changes = False
         super().reject()
 
@@ -287,6 +387,13 @@ class M8ImportDialog(QDialog):
     def committed_changes(self) -> bool:
         """Whether OK committed at least one new raw record."""
         return self._committed_changes
+
+    @property
+    def committed_data_types(self) -> set[str]:
+        """Return data types that added at least one record on acceptance."""
+        if not self._committed_changes:
+            return set()
+        return {str(result["data_type"]) for result in self._results if result.get("raw", 0) > 0}
 
     @property
     def results(self) -> list[dict]:

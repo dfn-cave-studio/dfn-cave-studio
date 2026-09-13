@@ -39,6 +39,7 @@ class FieldResourceEstimate:
     worker_extra_bytes: dict[int, int]
     budget_bytes: int | None = None
     system_available_bytes: int | None = None
+    safety_margin_bytes: int = 0
 
     @property
     def persistent_bytes(self) -> int:
@@ -53,10 +54,15 @@ class FieldResourceEstimate:
     @property
     def exceeds_budget(self) -> bool:
         """Return whether one-worker memory exceeds user or system-safe budget."""
-        required = self.persistent_bytes + self.temporary_bytes
+        required = self.peak_bytes
         user_exceeded = self.budget_bytes is not None and required > self.budget_bytes
         system_exceeded = self.system_available_bytes is not None and required > self.system_available_bytes // 2
         return user_exceeded or system_exceeded
+
+    @property
+    def peak_bytes(self) -> int:
+        """Return persistent payload, live temporaries, and explicit safety margin."""
+        return self.persistent_bytes + self.temporary_bytes + self.safety_margin_bytes
 
 
 def available_system_memory_bytes() -> int | None:
@@ -113,6 +119,78 @@ def scalar_field_array_contract(shape: tuple[int, int, int]) -> tuple[ArrayAlloc
         ("estimate", np.float32), ("kriging_variance", np.float32), ("cell_state", np.uint8),
         ("neighbor_count", np.int16), ("domain_id", np.int32),
     ))
+
+
+def estimate_borehole_fracture_resources(
+    realization_counts: float | Iterable[int | float],
+    *,
+    interval_count: int = 0,
+    chunk_size: int = 65_536,
+    budget_bytes: int | None = None,
+    system_available_bytes: int | None = None,
+    component_count: int = 0,
+) -> FieldResourceEstimate:
+    """Estimate the real Phase 2A ownership model without allocating fracture rows.
+
+    Every requested realization remains resident in the candidate until it is
+    committed/saved.  Only one realization is populated at a time, directly
+    into its final arrays; the count/offset plans and one bounded working chunk
+    are the only generation-wide temporary arrays.
+    """
+    if isinstance(realization_counts, (int, float, np.integer, np.floating)):
+        raw_counts = [realization_counts]
+    else:
+        raw_counts = list(realization_counts)
+    if not raw_counts:
+        raw_counts = [0]
+    if any(not math.isfinite(float(value)) or float(value) < 0 for value in raw_counts):
+        raise ValueError("realization counts must be finite and non-negative")
+    if chunk_size < 1 or interval_count < 0 or component_count < 0:
+        raise ValueError("chunk_size must be positive and counts must be non-negative")
+    counts = [int(math.ceil(float(value))) for value in raw_counts]
+    count = sum(counts)
+    chunk = min(max(max(counts, default=0), 1), chunk_size)
+    arrays = tuple(
+        ArrayAllocation(name, shape, np.dtype(dtype))
+        for name, shape, dtype in (
+            ("interval_index", (count,), np.int32),
+            ("measured_depth", (count,), np.float64),
+            ("xyz_offset", (count, 3), np.float32),
+            ("global_set_id", (count,), np.int32),
+            ("local_component_index", (count,), np.int32),
+            ("component_type", (count,), np.uint8),
+            ("dip", (count,), np.float32),
+            ("dip_direction", (count,), np.float32),
+            ("status", (count,), np.uint8),
+        )
+    )
+    temporary = (
+        ArrayAllocation("poisson_counts", (len(counts), interval_count), np.dtype(np.int64)),
+        ArrayAllocation("realization_offsets", (len(counts), interval_count + 1), np.dtype(np.int64)),
+        ArrayAllocation("xyz", (chunk, 3), np.dtype(np.float64)),
+        ArrayAllocation("mean_normals", (chunk, 3), np.dtype(np.float64)),
+        ArrayAllocation("sampled_normals", (chunk, 3), np.dtype(np.float64)),
+        ArrayAllocation("assignment_uniform", (chunk,), np.dtype(np.float64)),
+        ArrayAllocation("local_component_codes", (chunk,), np.dtype(np.int32)),
+        ArrayAllocation("global_set_codes", (chunk,), np.dtype(np.int32)),
+        ArrayAllocation("component_type_codes", (chunk,), np.dtype(np.uint8)),
+        ArrayAllocation("dominant_and_random_masks", (2, chunk), np.dtype(np.bool_)),
+    )
+    temporary_bytes = sum(item.nbytes for item in temporary)
+    persistent_bytes = sum(item.nbytes for item in arrays)
+    component_metadata_allowance = component_count * 1024
+    safety_margin = max(256 * 1024, math.ceil((persistent_bytes + temporary_bytes) * 0.05))
+    safety_margin += component_metadata_allowance
+    return FieldResourceEstimate(
+        (count, 1, 1),
+        count,
+        arrays,
+        temporary,
+        {workers: temporary_bytes * workers for workers in (1, 2, 4, 8)},
+        budget_bytes,
+        system_available_bytes,
+        safety_margin,
+    )
 
 
 def estimate_parameter_field_resources(

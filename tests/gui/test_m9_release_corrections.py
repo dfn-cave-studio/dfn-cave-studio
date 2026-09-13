@@ -120,8 +120,8 @@ def _install_spatial_dialog(monkeypatch, config, voxel, result=QDialog.DialogCod
     import dfn_cave_studio.ui.dialogs.m8_spatial_grid_dialog as spatial_module
 
     class FakeSpatialDialog:
-        def __init__(self, project, plotter, mode, parent):
-            del project, plotter, mode, parent
+        def __init__(self, project, plotter, mode, borehole_display_manager=None, parent=None):
+            del project, plotter, mode, borehole_display_manager, parent
 
         def exec(self):
             return result

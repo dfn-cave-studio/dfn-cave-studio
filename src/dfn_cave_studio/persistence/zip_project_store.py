@@ -52,6 +52,7 @@ class ZipProjectStore:
         from dfn_cave_studio.models.m9 import M9State
         from dfn_cave_studio.models.m10 import M10State
         from dfn_cave_studio.models.m11 import M11State
+        from dfn_cave_studio.models.borehole_fracture_realization import BoreholeFractureState
 
         m9_state = getattr(project, "m9_state", None)
         if m9_state is not None:
@@ -62,6 +63,9 @@ class ZipProjectStore:
         m11_state = getattr(project, "m11_state", None)
         if m11_state is not None:
             M11State.model_validate_json(m11_state.model_dump_json())
+        borehole_fracture_state = getattr(project, "borehole_fracture_state", None)
+        if borehole_fracture_state is not None:
+            BoreholeFractureState.model_validate_json(borehole_fracture_state.model_dump_json())
 
     @staticmethod
     def _validate_scalar_field_arrays(metadata: Any, arrays: dict[str, np.ndarray]) -> None:
@@ -141,6 +145,34 @@ class ZipProjectStore:
                     "parameters/spatial_grid_config.json",
                     spatial_grid_config.model_dump_json(indent=2),
                 )
+            borehole_fracture_state = getattr(project, "borehole_fracture_state", None)
+            if borehole_fracture_state is not None:
+                zf.writestr(
+                    "parameters/borehole_fracture_state.json",
+                    borehole_fracture_state.model_dump_json(indent=2),
+                )
+                for realization in borehole_fracture_state.realizations:
+                    if realization.arrays:
+                        from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
+
+                        BoreholeFractureService.validate_arrays(realization)
+                        npz_path = Path(temporary_directory) / f"{realization.realization_id}.npz"
+                        np.savez_compressed(npz_path, **realization.arrays)
+                        zf.write(npz_path, realization.array_member, compress_type=zipfile.ZIP_STORED)
+                    else:
+                        source_path = getattr(borehole_fracture_state, "archive_source", None)
+                        if not source_path or not Path(source_path).exists():
+                            raise ValueError(
+                                f"Borehole realization arrays are not loaded and their source archive is unavailable: "
+                                f"{realization.realization_id}"
+                            )
+                        with zipfile.ZipFile(source_path, "r") as source_zip:
+                            if realization.array_member not in source_zip.namelist():
+                                raise ValueError(
+                                    f"Borehole realization arrays are missing: {realization.array_member}"
+                                )
+                            copied = Path(source_zip.extract(realization.array_member, temporary_directory))
+                        zf.write(copied, realization.array_member, compress_type=zipfile.ZIP_STORED)
             m9_state = getattr(project, "m9_state", None)
             if m9_state is not None:
                 zf.writestr("parameters/m9_state.json", m9_state.model_dump_json(indent=2))
@@ -339,6 +371,27 @@ class ZipProjectStore:
                 project.spatial_grid_config = SpatialGridConfig.model_validate_json(
                     zf.read("parameters/spatial_grid_config.json").decode("utf-8")
                 )
+            if "parameters/borehole_fracture_state.json" in zf.namelist():
+                from dfn_cave_studio.models.borehole_fracture_realization import BoreholeFractureState
+
+                project.borehole_fracture_state = BoreholeFractureState.model_validate_json(
+                    zf.read("parameters/borehole_fracture_state.json").decode("utf-8")
+                )
+                state = project.borehole_fracture_state
+                state.archive_source = str(path)
+                selected = state.selected_realization_id
+                if selected is None and state.realizations:
+                    selected = state.realizations[0].realization_id
+                    state.selected_realization_id = selected
+                for realization in state.realizations:
+                    if realization.realization_id != selected:
+                        continue
+                    extracted = Path(zf.extract(realization.array_member, temporary_directory))
+                    with np.load(extracted, allow_pickle=False) as archive:
+                        realization.arrays = {name: archive[name].copy() for name in archive.files}
+                    from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
+
+                    BoreholeFractureService.validate_arrays(realization)
             if "parameters/m9_state.json" in zf.namelist():
                 from dfn_cave_studio.models.m9 import M9State
 
@@ -481,6 +534,26 @@ class ZipProjectStore:
             repository.migrate_orientation_completeness()
             repository.rebuild_formal_collection()
         return project
+
+    def load_borehole_fracture_arrays(self, project: "Project", path: Path, realization_id: str) -> None:
+        """Load one selected Phase 2A realization while leaving all others lazy."""
+        state = project.borehole_fracture_state
+        target = next((item for item in state.realizations if item.realization_id == realization_id), None)
+        if target is None:
+            raise KeyError(f"Unknown borehole fracture realization: {realization_id}")
+        with zipfile.ZipFile(path, "r") as zf, tempfile.TemporaryDirectory(prefix="dfn-bhf-load-") as directory:
+            if target.array_member not in zf.namelist():
+                raise ValueError(f"Borehole realization arrays are missing: {target.array_member}")
+            extracted = Path(zf.extract(target.array_member, directory))
+            with np.load(extracted, allow_pickle=False) as archive:
+                arrays = {name: archive[name].copy() for name in archive.files}
+        for item in state.realizations:
+            item.arrays = arrays if item is target else {}
+        state.selected_realization_id = realization_id
+        state.archive_source = str(path)
+        from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
+
+        BoreholeFractureService.validate_arrays(target)
 
     # ── Serialization Helpers ─────────────────────────────────────────────
 

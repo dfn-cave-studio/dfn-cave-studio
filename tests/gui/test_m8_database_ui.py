@@ -9,8 +9,10 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pandas as pd
+import numpy as np
 
 from dfn_cave_studio.models.bounds import ModelBounds, VoxelConfig
+from dfn_cave_studio.models.m9 import DensityMethod, DensitySettings, ScalarFieldMetadata, ScalarFieldResult
 from dfn_cave_studio.models.project import Project
 from dfn_cave_studio.persistence.project_store import ProjectStore
 from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
@@ -415,6 +417,61 @@ def test_new_project_save_routes_to_save_as(monkeypatch, qtbot) -> None:
     window.close()
 
 
+def test_auxiliary_database_callback_preserves_dfn_state_and_removes_only_orphaned_scalar_layer(qtbot) -> None:
+    from types import SimpleNamespace
+
+    from dfn_cave_studio.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._on_new_project()
+    project = window._project_store.current_project
+    field = ScalarFieldResult(
+        metadata=ScalarFieldMetadata(
+            field_id="ucs-field",
+            parameter_name="ucs",
+            unit="MPa",
+            method=DensityMethod.GLOBAL_CONSTANT,
+            shape=(1, 1, 1),
+            origin=(0, 0, 0),
+            spacing=(1, 1, 1),
+            array_names=["estimate"],
+            config_hash="unchanged",
+        ),
+        settings=DensitySettings(),
+        arrays={"estimate": np.asarray([[[1.0]]], dtype=np.float32)},
+    )
+    project.m9_state.scalar_fields = [field]
+    for step in ("explicit_dfn", "second_voxelization"):
+        window._workflow.complete_step(step)
+
+    class LayerManager:
+        def __init__(self):
+            self.layers = [
+                SimpleNamespace(layer_id="m9_slice:scalar_rmr-field_estimate:z:0:exact"),
+                SimpleNamespace(layer_id="m9_slice:p32_total:z:0"),
+            ]
+            self.removed = []
+
+        def list_layers(self):
+            return list(self.layers)
+
+        def remove(self, layer_id):
+            self.removed.append(layer_id)
+            self.layers = [item for item in self.layers if item.layer_id != layer_id]
+
+    manager = LayerManager()
+    window._m9_layer_manager = manager
+    window._on_database_changed({"rmr"})
+    assert [item.metadata.field_id for item in project.m9_state.scalar_fields] == ["ucs-field"]
+    assert manager.removed == ["m9_slice:scalar_rmr-field_estimate:z:0:exact"]
+    assert [item.layer_id for item in manager.layers] == ["m9_slice:p32_total:z:0"]
+    assert window._workflow.get_step("explicit_dfn").status == StepStatus.COMPLETED
+    assert window._workflow.get_step("second_voxelization").status == StepStatus.COMPLETED
+    window._project_store._dirty = False
+    window.close()
+
+
 def test_recent_dfnproj_uses_unified_load_and_restores_state(tmp_path: Path, monkeypatch, qtbot) -> None:
     from dfn_cave_studio.ui.main_window import MainWindow
 
@@ -466,7 +523,8 @@ def test_bounds_and_voxel_workflow_confirm_independently(monkeypatch, qtbot) -> 
     config = SpatialDomainService.build_config(analysis, voxel, "manual", 0, 2, 5)
 
     class FakeSpatialDialog:
-        def __init__(self, project, plotter, mode, parent):
+        def __init__(self, project, plotter, mode, borehole_display_manager=None, parent=None):
+            del project, plotter, borehole_display_manager, parent
             modes.append(mode)
 
         def exec(self):

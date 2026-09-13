@@ -73,6 +73,46 @@ def test_parameter_field_total_and_cell_states():
     assert zero_arrays["cell_state"][0, 0, 0] == CELL_STATE_CODES[VoxelCellState.TRUE_ZERO]
 
 
+def test_unresolved_representative_defaults_do_not_enter_m9_parameter_arrays():
+    joint_set = JointSetConfig(
+        set_id=1,
+        target_p32=0.5,
+        provenance={
+            "kappa_status": "UNRESOLVED",
+            "size_status": "UNRESOLVED",
+            "p32_status": "DERIVED_LATER_BY_M9",
+        },
+    )
+    estimate = P32Estimate(
+        domain_id=1,
+        set_id=1,
+        fracture_count=1,
+        raw_sample_length=1,
+        effective_sample_length=1,
+        mean_exposure=1,
+        p32=2.0,
+        observability="adequate",
+        random_seed=1,
+    )
+    _, arrays = ParameterFieldBuilder().build(
+        ModelBounds(x_min=0, x_max=1, y_min=0, y_max=1, z_min=0, z_max=1),
+        VoxelConfig(),
+        DensitySettings(method=DensityMethod.GLOBAL_CONSTANT),
+        [],
+        [estimate],
+        [joint_set],
+        [],
+        random_seed=1,
+        domain_at_point=lambda _point: 1,
+    )
+    assert arrays["set_1_p32"][0, 0, 0] == pytest.approx(2.0)
+    assert arrays["set_1_p32"][0, 0, 0] != joint_set.target_p32
+    assert np.isnan(arrays["set_1_dip_direction"][0, 0, 0])
+    assert np.isnan(arrays["set_1_dip"][0, 0, 0])
+    assert np.isnan(arrays["set_1_kappa"][0, 0, 0])
+    assert np.isnan(arrays["set_1_mean_radius"][0, 0, 0])
+
+
 def test_parameter_field_cancellation_and_memory_estimate():
     bounds = ModelBounds(x_min=0, x_max=100, y_min=0, y_max=100, z_min=0, z_max=100)
     estimated = ParameterFieldBuilder.estimate_bytes(bounds, VoxelConfig(), 3)

@@ -78,6 +78,7 @@ def _inject_fake_plotter_factory():
             self.name = name
             self.visible = True
             self._property = _FakeProperty(opacity)
+            self.pickable = True
 
         def SetVisibility(self, visible):
             self.visible = bool(visible)
@@ -87,6 +88,12 @@ def _inject_fake_plotter_factory():
 
         def GetProperty(self):
             return self._property
+
+        def SetPickable(self, pickable):
+            self.pickable = bool(pickable)
+
+        def GetPickable(self):
+            return self.pickable
 
     class _FakePlotter(QWidget):
         """Minimal fake 3D plotter — no VTK/OpenGL."""
@@ -102,6 +109,20 @@ def _inject_fake_plotter_factory():
             self._actors_by_name = {}
             self.renderer = SimpleNamespace(actors=self._actors_by_name)
             self._camera_actions = []
+            self.camera_position = [(10.0, 10.0, 10.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
+            self.parallel_projection = False
+            self._observers = {}
+            self._next_observer_id = 1
+            self.iren = SimpleNamespace(interactor=self)
+
+        def AddObserver(self, event, callback):
+            observer_id = self._next_observer_id
+            self._next_observer_id += 1
+            self._observers[observer_id] = (event, callback)
+            return observer_id
+
+        def RemoveObserver(self, observer_id):
+            self._observers.pop(observer_id, None)
 
         def add_mesh(self, *args, **kwargs):
             name = kwargs.get("name") or f"anonymous:{len(self._actors)}"
@@ -109,8 +130,26 @@ def _inject_fake_plotter_factory():
             if old is not None:
                 self.remove_actor(old, render=False)
             actor = _FakeActor(name, kwargs.get("opacity", 1.0))
+            actor.color = kwargs.get("color")
             self._actors.append(actor)
             self._actors_by_name[name] = actor
+            return actor
+
+        def add_point_labels(self, *args, **kwargs):
+            actor = self.add_mesh(*args, **kwargs)
+            actor.points = args[0]
+            actor.labels = args[1]
+            return actor
+
+        def add_points(self, *args, **kwargs):
+            return self.add_mesh(*args, **kwargs)
+
+        def add_text(self, *args, **kwargs):
+            return self.add_mesh(*args, **kwargs)
+
+        def add_legend(self, entries, **kwargs):
+            actor = self.add_mesh(name=kwargs.get("name") or f"legend:{len(self._actors)}")
+            actor.entries = list(entries)
             return actor
 
         def remove_actor(self, actor_or_name, render=True):
@@ -139,6 +178,17 @@ def _inject_fake_plotter_factory():
 
         def view_yz(self):
             self._camera_actions.append("view_yz")
+
+        def view_isometric(self):
+            self._camera_actions.append("view_isometric")
+
+        def enable_parallel_projection(self):
+            self.parallel_projection = True
+            self._camera_actions.append("parallel_on")
+
+        def disable_parallel_projection(self):
+            self.parallel_projection = False
+            self._camera_actions.append("parallel_off")
 
         def render(self):
             self._camera_actions.append("render")

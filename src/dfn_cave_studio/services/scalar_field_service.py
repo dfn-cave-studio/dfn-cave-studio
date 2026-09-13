@@ -203,12 +203,15 @@ class ScalarParameterFieldService:
         ]
         if not selected:
             raise ValueError(f"No samples exist for parameter {parameter_name!r}")
+        eligible, excluded_database_samples = self._exclude_unsupported_database_samples(selected)
         units = {item.unit for item in selected}
         if len(units) != 1:
             raise ValueError("A scalar parameter must have exactly one unit")
-        calibration, validation = self._partition_by_current_holdout(selected)
+        calibration, validation = self._partition_by_current_holdout(eligible)
         if not calibration:
-            raise ValueError("INSUFFICIENT_DATA: no Calibration samples are available")
+            reasons = sorted({item["reason"] for item in excluded_database_samples})
+            detail = f"; excluded database samples: {', '.join(reasons)}" if reasons else ""
+            raise ValueError(f"INSUFFICIENT_DATA: no eligible Calibration samples are available{detail}")
         groups: dict[int | None, list[ScalarParameterSample]] = {}
         for item in calibration:
             groups.setdefault(item.domain_id, []).append(item)
@@ -373,6 +376,7 @@ class ScalarParameterFieldService:
             provenance={
                 "calibration_sample_ids": [item.sample_id for item in calibration],
                 "validation_sample_ids_excluded_from_fit": [item.sample_id for item in validation],
+                "database_samples_excluded_from_fit_and_validation": excluded_database_samples,
                 "import_role_is_audit_snapshot": True,
                 "holdout_locked_at_build": True,
                 "domain_isolation": True,
@@ -417,7 +421,8 @@ class ScalarParameterFieldService:
             for item in self.project.m9_state.scalar_samples
             if canonical_parameter_name(item.parameter_name) == canonical_parameter_name(parameter_name)
         ]
-        samples, _ = self._partition_by_current_holdout(selected)
+        eligible, _ = self._exclude_unsupported_database_samples(selected)
+        samples, _ = self._partition_by_current_holdout(eligible)
         results: list[ScalarValidationResult] = []
         for hole_id in sorted({item.borehole_id for item in samples}):
             training = [item for item in samples if item.borehole_id != hole_id]
@@ -498,6 +503,40 @@ class ScalarParameterFieldService:
             [item for item in samples if item.borehole_id in calibration_ids],
             [item for item in samples if item.borehole_id in validation_ids],
         )
+
+    @staticmethod
+    def _exclude_unsupported_database_samples(
+        samples: list[ScalarParameterSample],
+    ) -> tuple[list[ScalarParameterSample], list[dict[str, str]]]:
+        """Exclude only ambiguous database interval projections.
+
+        Legacy/general scalar samples retain their established ``domain_id=None``
+        semantics.  The conservative rule applies only to RQD/RMR records
+        projected from the M8 database with explicit interval segments.
+        """
+        eligible: list[ScalarParameterSample] = []
+        excluded: list[dict[str, str]] = []
+        for sample in samples:
+            if sample.source_record_id is None or sample.domain_assignment_method != "explicit_segments":
+                eligible.append(sample)
+                continue
+            segments = sample.domain_segments
+            domains = {segment.get("domain_id") for segment in segments}
+            covered_length = sum(
+                max(0.0, float(segment["to_depth"]) - float(segment["from_depth"])) for segment in segments
+            )
+            expected_length = sample.to_depth - sample.from_depth
+            if not segments or None in domains or abs(covered_length - expected_length) > max(1e-9, expected_length * 1e-9):
+                reason = "partially_unassigned_domain"
+            elif len(domains) != 1:
+                reason = "crosses_multiple_domains"
+            elif sample.domain_id is None:
+                reason = "missing_single_domain_assignment"
+            else:
+                eligible.append(sample)
+                continue
+            excluded.append({"sample_id": sample.sample_id, "reason": reason})
+        return eligible, excluded
 
     @staticmethod
     def _validate(samples: list[ScalarParameterSample], predictors: dict[int | None, Any], settings: DensitySettings):

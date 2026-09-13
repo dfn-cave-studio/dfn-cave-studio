@@ -317,9 +317,17 @@ class M9ScalarFieldDialog(QDialog):
         bounds = [meta.origin[0], meta.origin[0] + meta.shape[0] * meta.spacing[0], meta.origin[1],
                   meta.origin[1] + meta.shape[1] * meta.spacing[1], meta.origin[2], meta.origin[2] + meta.shape[2] * meta.spacing[2]]
         for spin, value in zip(self.box_values, bounds): spin.setValue(value)
+        excluded = meta.provenance.get("database_samples_excluded_from_fit_and_validation", [])
+        excluded_reasons = sorted({item.get("reason", "unspecified") for item in excluded})
+        excluded_text = (
+            f" Database interval samples excluded={len(excluded)} ({', '.join(excluded_reasons)})."
+            if excluded
+            else ""
+        )
         self.summary.setText(f"{meta.parameter_name} [{meta.unit}] — {meta.method.value}; validation n={result.validation_summary.predicted_count}; "
                              f"rejected={meta.rejected_voxel_count}; clipped={meta.clipped_voxel_count}. "
-                             "Kriging variance is conditional on the fitted variogram, not total geological uncertainty.")
+                             "Kriging variance is conditional on the fitted variogram, not total geological uncertainty."
+                             f"{excluded_text}")
         diagnostics = next(iter(meta.variograms.values()), None)
         self.variogram_plot.set_diagnostics(diagnostics)
         if diagnostics is not None:

@@ -30,8 +30,19 @@ from dfn_cave_studio.models.borehole import BoreholeCollection, FractureObservat
 from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal, normal_to_dip_dir_dip
 
 
-SET_COLORS = ["#1976d2", "#388e3c", "#f57c00", "#d32f2f", "#7b1fa2",
-              "#0288d1", "#689f38", "#fbc02d", "#e64a19", "#5c6bc0"]
+SET_COLORS = [
+    "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F",
+    "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
+    "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+    "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
+]
+
+
+def joint_set_color(set_id: int) -> str:
+    """Return a stable categorical display colour for a positive set ID."""
+    if set_id < 1:
+        raise ValueError("set_id must be positive")
+    return SET_COLORS[(set_id - 1) % len(SET_COLORS)]
 
 INSUFFICIENT_ORIENTATIONS_MESSAGE = (
     "Cannot identify K non-empty joint sets:\n"
@@ -138,7 +149,7 @@ class JointSetService:
             js = JointSetConfig(
                 set_id=set_id,
                 name=f"Joint Set {set_id}",
-                color=SET_COLORS[(set_id - 1) % len(SET_COLORS)],
+                color=joint_set_color(set_id),
                 orientation=OrientationDistribution(
                     mean_dip_direction=round(dd, 1),
                     mean_dip=round(dip, 1),
@@ -146,6 +157,7 @@ class JointSetService:
                 ),
                 provenance={
                     "orientation": "imported",
+                    "kappa_status": "MEASURED_WITHIN_SET",
                     "orientation_fit_eligible": True,
                     "full_orientation_count": len(normals),
                     "dip_only_count": len(cal_dip_only[set_id]),
@@ -332,13 +344,18 @@ class JointSetService:
             js = JointSetConfig(
                 set_id=set_id,
                 name=f"Auto Set {set_id}",
-                color=SET_COLORS[k % len(SET_COLORS)],
+                color=joint_set_color(k + 1),
                 orientation=OrientationDistribution(
                     mean_dip_direction=round(dd % 360.0, 1) % 360.0,
                     mean_dip=round(dip, 1),
                     kappa=round(kappa, 1),
                 ),
-                provenance={"orientation": "automatic", "size": "user", "p32": "user"},
+                provenance={
+                    "orientation": "automatic",
+                    "kappa_status": "MEASURED_WITHIN_SET",
+                    "size": "user",
+                    "p32": "user",
+                },
             )
             js.provenance.update(
                 {

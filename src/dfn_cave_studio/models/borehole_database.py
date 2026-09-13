@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from dfn_cave_studio.models.observations import OrientationPointSummary
+
 
 class BoreholeDataType(StrEnum):
     """Built-in borehole data tables."""
@@ -17,7 +19,18 @@ class BoreholeDataType(StrEnum):
     SURVEYS = "surveys"
     FRACTURES = "fractures"
     RQD = "rqd"
+    RMR = "rmr"
     DOMAIN_INTERVALS = "domain_intervals"
+    ORIENTATION_POINTS = "orientation_points"
+
+
+class FractureObservationMode(StrEnum):
+    """Source observation contract used by the fracture import table."""
+
+    FULL_ORIENTATION = "full_orientation"
+    GLOBAL_DIP_ONLY = "global_dip_only"
+    INTERVAL_SPACING = "interval_spacing"
+    AXIS_PLANE_ANGLE = "axis_plane_angle"
 
 
 class RecordState(StrEnum):
@@ -80,6 +93,7 @@ class BoreholeRecord(BaseModel):
     duplicate_of: str | None = None
     modification_history: list[ModificationEvent] = Field(default_factory=list)
     exclusion_confirmed_at: datetime | None = None
+    import_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class BoreholeQualityIssue(BaseModel):
@@ -115,6 +129,7 @@ class BoreholeDatabase(BaseModel):
     quality_issues: list[BoreholeQualityIssue] = Field(default_factory=list)
     quality_confirmed_at: datetime | None = None
     quality_confirmation_note: str = ""
+    orientation_point_summaries: list[OrientationPointSummary] = Field(default_factory=list)
 
     def query(
         self,
@@ -153,6 +168,18 @@ class BoreholeDatabase(BaseModel):
             ),
             "dip_only": sum(record.values.get("orientation_completeness") == "dip_only" for record in records),
         }
+
+    def observation_mode_counts(self, state: RecordState | str | None = RecordState.FORMAL) -> dict[str, int]:
+        """Count source modes without changing the legacy orientation-count API."""
+        records = self.query(BoreholeDataType.FRACTURES, state=state, raw=state is None)
+        modes = {
+            mode.value: sum(record.values.get("observation_mode") == mode for record in records)
+            for mode in FractureObservationMode
+        }
+        modes["full_orientation"] = sum(
+            record.values.get("orientation_completeness") == "full_orientation" for record in records
+        )
+        return modes
 
     @property
     def unresolved_error_count(self) -> int:
