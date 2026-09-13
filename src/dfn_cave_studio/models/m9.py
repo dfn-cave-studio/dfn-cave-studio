@@ -308,6 +308,9 @@ class ScalarParameterSample(BaseModel):
     midpoint_z: float
     domain_id: int | None = None
     role: str = "calibration"
+    source_record_id: str | None = None
+    domain_segments: list[dict[str, Any]] = Field(default_factory=list)
+    domain_assignment_method: str = "midpoint"
 
     @model_validator(mode="after")
     def validate_interval(self) -> "ScalarParameterSample":

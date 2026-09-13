@@ -124,6 +124,133 @@ def test_auxiliary_scalar_import_does_not_invalidate_dfn_workflow() -> None:
     assert workflow.to_dict() == before
 
 
+def test_database_cross_domain_samples_are_reported_and_excluded_without_changing_legacy_none_domain() -> None:
+    project = _project()
+    project.m9_state.scalar_samples = [
+        ScalarParameterSample(
+            sample_id="db:eligible",
+            borehole_id="A",
+            from_depth=0,
+            to_depth=10,
+            parameter_name="RMR",
+            value=60,
+            unit="score",
+            midpoint_x=0,
+            midpoint_y=0,
+            midpoint_z=5,
+            domain_id=2,
+            source_record_id="eligible",
+            domain_segments=[{"from_depth": 0, "to_depth": 10, "domain_id": 2}],
+            domain_assignment_method="explicit_segments",
+        ),
+        ScalarParameterSample(
+            sample_id="db:cross-domain",
+            borehole_id="B",
+            from_depth=0,
+            to_depth=10,
+            parameter_name="RMR",
+            value=70,
+            unit="score",
+            midpoint_x=10,
+            midpoint_y=0,
+            midpoint_z=5,
+            domain_id=None,
+            source_record_id="cross-domain",
+            domain_segments=[
+                {"from_depth": 0, "to_depth": 4, "domain_id": 2},
+                {"from_depth": 4, "to_depth": 10, "domain_id": 4},
+            ],
+            domain_assignment_method="explicit_segments",
+        ),
+        ScalarParameterSample(
+            sample_id="db:unassigned",
+            borehole_id="C",
+            from_depth=0,
+            to_depth=10,
+            parameter_name="RMR",
+            value=80,
+            unit="score",
+            midpoint_x=0,
+            midpoint_y=10,
+            midpoint_z=5,
+            domain_id=None,
+            source_record_id="unassigned",
+            domain_segments=[
+                {"from_depth": 0, "to_depth": 5, "domain_id": 2},
+                {"from_depth": 5, "to_depth": 10, "domain_id": None},
+            ],
+            domain_assignment_method="explicit_segments",
+        ),
+        ScalarParameterSample(
+            sample_id="legacy:none-domain",
+            borehole_id="D",
+            from_depth=0,
+            to_depth=10,
+            parameter_name="RMR",
+            value=50,
+            unit="score",
+            midpoint_x=10,
+            midpoint_y=10,
+            midpoint_z=5,
+            domain_id=None,
+        ),
+        ScalarParameterSample(
+            sample_id="db:validation",
+            borehole_id="V",
+            from_depth=0,
+            to_depth=10,
+            parameter_name="RMR",
+            value=65,
+            unit="score",
+            midpoint_x=5,
+            midpoint_y=5,
+            midpoint_z=5,
+            domain_id=2,
+            source_record_id="validation",
+            domain_segments=[{"from_depth": 0, "to_depth": 10, "domain_id": 2}],
+            domain_assignment_method="explicit_segments",
+        ),
+    ]
+    result = ScalarParameterFieldService(project).build(
+        "RMR", DensitySettings(method=DensityMethod.GLOBAL_CONSTANT)
+    )
+    excluded = result.metadata.provenance["database_samples_excluded_from_fit_and_validation"]
+    assert excluded == [
+        {"sample_id": "db:cross-domain", "reason": "crosses_multiple_domains"},
+        {"sample_id": "db:unassigned", "reason": "partially_unassigned_domain"},
+    ]
+    assert result.metadata.provenance["calibration_sample_ids"] == ["db:eligible", "legacy:none-domain"]
+    assert result.metadata.provenance["validation_sample_ids_excluded_from_fit"] == ["db:validation"]
+    assert result.validation_summary.sample_count == 1
+
+
+def test_only_ambiguous_database_domain_samples_fail_with_auditable_reason() -> None:
+    project = _project()
+    project.m9_state.scalar_samples = [
+        ScalarParameterSample(
+            sample_id="db:cross-domain",
+            borehole_id="A",
+            from_depth=0,
+            to_depth=10,
+            parameter_name="RQD",
+            value=75,
+            unit="%",
+            midpoint_x=0,
+            midpoint_y=0,
+            midpoint_z=5,
+            domain_id=None,
+            source_record_id="cross-domain",
+            domain_segments=[
+                {"from_depth": 0, "to_depth": 5, "domain_id": 2},
+                {"from_depth": 5, "to_depth": 10, "domain_id": 4},
+            ],
+            domain_assignment_method="explicit_segments",
+        )
+    ]
+    with pytest.raises(ValueError, match="excluded database samples: crosses_multiple_domains"):
+        ScalarParameterFieldService(project).build("RQD", DensitySettings(method="global_constant"))
+
+
 def test_only_p32_field_commit_invalidates_m10_and_m11() -> None:
     project = _project()
     workflow = WorkflowController()

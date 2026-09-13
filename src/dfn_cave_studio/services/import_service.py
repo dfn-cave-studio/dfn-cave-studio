@@ -89,7 +89,7 @@ def read_input_table(
         if nrows is not None:
             kwargs["nrows"] = nrows
         try:
-            return pd.read_excel(path, **kwargs)
+            return sanitize_input_columns(pd.read_excel(path, **kwargs))
         except (OSError, ValueError, ImportError) as e:
             raise ValueError(f"Failed to read Excel file {path.name}: {e}") from e
     elif suffix == ".csv":
@@ -97,11 +97,26 @@ def read_input_table(
         if nrows is not None:
             kwargs["nrows"] = nrows
         try:
-            return pd.read_csv(path, **kwargs)
+            return sanitize_input_columns(pd.read_csv(path, **kwargs))
         except (OSError, ValueError, UnicodeError) as e:
             raise ValueError(f"Failed to read CSV file {path.name}: {e}") from e
     else:
         raise ValueError(f"Unsupported file type '{suffix}'. Supported: .csv, .xlsx, .xls")
+
+
+def sanitize_input_columns(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Drop empty unnamed columns while rejecting unnamed columns containing data."""
+    removable: list[object] = []
+    for column in dataframe.columns:
+        name = str(column).strip()
+        if not name.lower().startswith("unnamed:") and name:
+            continue
+        values = dataframe[column]
+        has_content = values.map(lambda value: pd.notna(value) and str(value).strip() != "").any()
+        if has_content:
+            raise ValueError(f"Unnamed input column '{column}' contains data and must be mapped explicitly")
+        removable.append(column)
+    return dataframe.drop(columns=removable) if removable else dataframe
 
 
 @dataclass

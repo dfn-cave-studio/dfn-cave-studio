@@ -267,7 +267,17 @@ class M9DensityDialog(_M9Dialog):
         state = self.project.m9_state
         calibration = sum(item.role == "calibration" for item in state.p10_intervals)
         validation = sum(item.role == "validation" for item in state.p10_intervals)
-        self.summary.setText(f"P10 intervals: calibration {calibration}, validation {validation}; P32 estimates {len(state.p32_estimates)}")
+        excluded = state.provenance.get("non_global_orientation_records_excluded_from_density_fit", {})
+        excluded_text = ""
+        if excluded.get("interval_spacing", 0) or excluded.get("axis_plane_angle", 0):
+            excluded_text = (
+                "; excluded from fit: interval spacing "
+                f"{excluded.get('interval_spacing', 0)}, borehole-relative angle {excluded.get('axis_plane_angle', 0)}"
+            )
+        self.summary.setText(
+            f"P10 intervals: calibration {calibration}, validation {validation}; "
+            f"P32 estimates {len(state.p32_estimates)}{excluded_text}"
+        )
         self.table.setRowCount(len(state.p32_estimates))
         for row, estimate in enumerate(state.p32_estimates):
             values = [

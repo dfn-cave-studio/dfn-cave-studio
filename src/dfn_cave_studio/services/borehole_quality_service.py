@@ -14,6 +14,7 @@ from dfn_cave_studio.models.borehole_database import (
     BoreholeDataType,
     BoreholeQualityIssue,
     BoreholeRecord,
+    FractureObservationMode,
     QualityIssueStatus,
     QualitySeverity,
     RecordState,
@@ -73,7 +74,8 @@ class BoreholeQualityService:
                 continue
 
             if record.state == RecordState.PENDING or (
-                record.data_type != BoreholeDataType.COLLARS and record.hole_id not in formal_collars
+                record.data_type not in {BoreholeDataType.COLLARS, BoreholeDataType.ORIENTATION_POINTS}
+                and record.hole_id not in formal_collars
             ):
                 issue = self._issue(
                     record,
@@ -93,10 +95,15 @@ class BoreholeQualityService:
                 self._check_fracture(record, detected)
             elif record.data_type == BoreholeDataType.RQD:
                 self._check_rqd(record, detected)
+            elif record.data_type == BoreholeDataType.RMR:
+                self._check_rmr(record, detected)
             elif record.data_type == BoreholeDataType.DOMAIN_INTERVALS:
                 self._check_domain(record, detected)
+            elif record.data_type == BoreholeDataType.ORIENTATION_POINTS:
+                self._check_orientation_point(record, detected)
 
         self._check_overlaps(BoreholeDataType.RQD, detected)
+        self._check_overlaps(BoreholeDataType.RMR, detected)
         self._check_overlaps(BoreholeDataType.DOMAIN_INTERVALS, detected)
         self._merge_findings(detected)
         if self.repository.database.counts()["pending"] or self.unresolved_error_count:
@@ -224,6 +231,7 @@ class BoreholeQualityService:
         return {
             "counts": database.counts(),
             "orientation_counts": database.orientation_counts(),
+            "observation_mode_counts": database.observation_mode_counts(),
             "unresolved_error_count": self.unresolved_error_count,
             "quality_confirmed_at": database.quality_confirmed_at,
             "quality_confirmation_note": database.quality_confirmation_note,
@@ -268,6 +276,32 @@ class BoreholeQualityService:
 
     def _check_fracture(self, record: BoreholeRecord, detected: dict[str, BoreholeQualityIssue]) -> None:
         values = record.values
+        mode = values.get("observation_mode")
+        if mode == FractureObservationMode.INTERVAL_SPACING:
+            for field in ("from_depth", "to_depth", "fracture_spacing"):
+                if not self.repository.is_number(values.get(field)):
+                    self._add(record, detected, "spacing_non_numeric", field, f"Spacing {field} must be numeric")
+                    return
+            if float(values["fracture_spacing"]) <= 0:
+                self._add(record, detected, "spacing_positive", "fracture_spacing", "fracture_spacing must be > 0")
+            self._check_interval(record, detected, "spacing")
+            return
+        if mode == FractureObservationMode.AXIS_PLANE_ANGLE:
+            for field in ("depth", "axis_plane_angle"):
+                if not self.repository.is_number(values.get(field)):
+                    self._add(record, detected, "axis_angle_non_numeric", field, f"{field} must be numeric")
+                    return
+            if not 0 <= float(values["axis_plane_angle"]) <= 90:
+                self._add(record, detected, "axis_angle_range", "axis_plane_angle", "axis_plane_angle must be in [0, 90]")
+            self._add(
+                record,
+                detected,
+                "borehole_relative_orientation",
+                "axis_plane_angle",
+                "Borehole-relative angle is retained but direction completion is not implemented.",
+                severity=QualitySeverity.INFO,
+            )
+            return
         for field in ("depth", "dip"):
             if not self.repository.is_number(values.get(field)):
                 self._add(record, detected, "fracture_non_numeric", field, f"Fracture {field} must be numeric")
@@ -326,6 +360,33 @@ class BoreholeQualityService:
         if not 0 <= float(values["rqd"]) <= 100:
             self._add(record, detected, "rqd_range", "rqd", "RQD must be in [0, 100]")
         self._check_interval(record, detected, "rqd")
+
+    def _check_rmr(self, record: BoreholeRecord, detected: dict[str, BoreholeQualityIssue]) -> None:
+        values = record.values
+        for field in ("from_depth", "to_depth", "rmr"):
+            if not self.repository.is_number(values.get(field)):
+                self._add(record, detected, "rmr_non_numeric", field, f"RMR {field} must be numeric")
+                return
+        if not 0 <= float(values["rmr"]) <= 100:
+            self._add(record, detected, "rmr_range", "rmr", "RMR must be in [0, 100]")
+        self._check_interval(record, detected, "rmr")
+
+    def _check_orientation_point(
+        self, record: BoreholeRecord, detected: dict[str, BoreholeQualityIssue]
+    ) -> None:
+        values = record.values
+        if not str(values.get("observation_id", "")).strip():
+            self._add(record, detected, "orientation_observation_id", "observation_id", "observation_id is required")
+        if not str(values.get("point_id", "")).strip():
+            self._add(record, detected, "orientation_point_id", "point_id", "point_id is required")
+        for field in ("x", "y", "z"):
+            if not self.repository.is_number(values.get(field)):
+                self._add(record, detected, "orientation_point_non_numeric", field, f"{field} must be numeric")
+                return
+        state, reason = self.repository._classify(BoreholeDataType.ORIENTATION_POINTS, values)
+        if state == RecordState.EXCLUDED and reason:
+            field = reason.split("field ", 1)[1].split(" ", 1)[0] if "field " in reason else "*"
+            self._add(record, detected, "orientation_point_contract", field, reason)
 
     def _check_domain(self, record: BoreholeRecord, detected: dict[str, BoreholeQualityIssue]) -> None:
         values = record.values

@@ -33,6 +33,7 @@ COLLAR_FIELD_ALIASES: dict[str, list[str]] = {
         "length",
         "eoh",
     ],
+    "domain_id": ["domain_id", "domain", "structural_domain_id"],
 }
 
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Phase 2A measured-point constrained borehole realizations
+
+- Added stable weighted axial clustering from complete P/Z representative orientations, preserving local-to-global set mappings without treating local set labels as mine-wide IDs.
+- Added deterministic 3-D IDW component constraints in which P spacing supplies intensity, Z supplies direction only, and unreported random components remain missing rather than zero.
+- Added an extensible `HOMOGENEOUS_POISSON` measured-depth sampler using `N ~ Poisson(L/S)`, half-open intervals, real survey trajectories, stable seeded substreams, dominant-set directions, and isotropic random background.
+- Added compact columnar multi-realization NPZ persistence, selected-realization lazy loading, input hashes, diagnostics, cancellation without partial commit, bounded point preview, and an independent transactional UI.
+- Phase 2A results remain separate from Formal observations and are not automatically passed to M9, M10, or M11.
+
+## Unreleased — Multi-source observation import, phase 1
+
+- Added audited fracture import contracts for full global orientation, legacy global dip-only observations, interval-average fracture spacing, and borehole-relative plane angle.
+- Added RMR interval and located orientation-point tables to the canonical `BoreholeDatabase`; RQD/RMR reuse the existing generic scalar-field sample path.
+- Preserved optional collar `domain_id`, skipped wholly blank rows with a reported count, and rejected non-empty unnamed columns instead of silently discarding data.
+- Added explicit cross-domain interval associations and stable observation IDs without synthesizing fracture positions, directions, joint sets, or deterministic M10 disks.
+- Conservatively exclude cross-domain or partly unassigned database RQD/RMR samples from scalar fitting and validation while retaining their original interval and domain segments for audit.
+- Invalidate only an RQD/RMR scalar field whose projected value, interval, position, or domain association actually changed; unchanged synchronization and unrelated M10/M11 results remain intact.
+- Import/storage/display access is implemented. Direction completion, observation weighting, and conditional sampling are not implemented in this phase.
+
 ## Unreleased — M9 Ordinary Kriging and generic scalar parameter fields
 
 - Added deterministic three-dimensional isotropic Ordinary Kriging with spherical, exponential, and Gaussian semivariograms, manual or automatic fitting, local `cKDTree` searches, variance diagnostics, progress, and cancellation.

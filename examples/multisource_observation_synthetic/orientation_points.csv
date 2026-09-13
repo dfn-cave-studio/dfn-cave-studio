@@ -1,0 +1,4 @@
+observation_id,point_id,x,y,z,dip,dip_direction,local_set_id,joint_spacing_m,joint_num
+P001-A,001,1005,2005,140,50,130,A,0.5,3
+P001-R,001,1005,2005,140,,,RANDOM,1.0,2
+Z001-A,001,1005,2005,140,60,220,A,,

@@ -59,6 +59,8 @@ class MainWindow(QMainWindow):
         self._m9_layer_manager = None
         self._dfn_layer_manager = None
         self._m11_layer_manager = None
+        self._borehole_display_manager = None
+        self._borehole_fracture_renderer = None
         self._m11_visualization_panel = None
         self._database_panel = None
 
@@ -159,6 +161,13 @@ class MainWindow(QMainWindow):
             self._dfn_menu, "&Joint Set Manager...", None, self._on_joint_set_manager, "Manage fracture sets"
         )
         self._add_menu_action(
+            self._dfn_menu,
+            "Generate Borehole Fracture Realizations...",
+            None,
+            self._on_borehole_fracture_realizations,
+            "Generate Phase 2A along-hole realizations from P/Z site constraints",
+        )
+        self._add_menu_action(
             self._dfn_menu, "&Explicit DFN Generation...", None, self._on_generate_dfn, "Generate M10 conditional explicit DFN"
         )
 
@@ -180,9 +189,35 @@ class MainWindow(QMainWindow):
         # === Visualization Menu ===
         self._vis_menu = menu_bar.addMenu("&Visualization")
         self._add_menu_action(self._vis_menu, "&Reset View", "R", self._on_reset_view, "Reset 3D camera view")
-        self._add_menu_action(self._vis_menu, "Top &View", "T", self._on_top_view, "Switch to top-down view")
-        self._add_menu_action(self._vis_menu, "&Front View", "F", self._on_front_view, "Switch to front view")
-        self._add_menu_action(self._vis_menu, "&Left View", "L", self._on_left_view, "Switch to left view")
+        self._add_menu_action(self._vis_menu, "Current / 当前", None, self._on_current_view, "Fit current view")
+        self._add_menu_action(self._vis_menu, "Top / 俯视", "T", self._on_top_view, "View along -Z; north is up")
+        self._add_menu_action(self._vis_menu, "Front / 前视", "F", self._on_front_view, "View along -Y")
+        self._add_menu_action(self._vis_menu, "Side / 侧视", "L", self._on_left_view, "View along -X")
+        self._add_menu_action(self._vis_menu, "Isometric / 等轴测", "I", self._on_isometric_view, "Isometric view")
+        self._vis_menu.addSeparator()
+        self._borehole_labels_action = QAction("Show borehole names / 显示钻孔名称", self)
+        self._borehole_labels_action.setCheckable(True)
+        self._borehole_labels_action.setChecked(True)
+        self._borehole_labels_action.setEnabled(False)
+        self._borehole_labels_action.toggled.connect(self._on_borehole_labels_toggled)
+        self._vis_menu.addAction(self._borehole_labels_action)
+        self._point_labels_action = QAction("Show Point Labels / 显示测点名称", self)
+        self._point_labels_action.setCheckable(True)
+        self._point_labels_action.setChecked(True)
+        self._point_labels_action.setEnabled(False)
+        self._point_labels_action.toggled.connect(self._on_point_labels_toggled)
+        self._vis_menu.addAction(self._point_labels_action)
+        self._projection_group = QActionGroup(self)
+        self._projection_group.setExclusive(True)
+        self._perspective_action = QAction("Perspective / 透视", self)
+        self._orthographic_action = QAction("Orthographic / 正交", self)
+        for action, enabled in ((self._perspective_action, False), (self._orthographic_action, True)):
+            action.setCheckable(True)
+            action.setData(enabled)
+            action.triggered.connect(lambda checked=False, value=enabled: self._on_projection_selected(value))
+            self._projection_group.addAction(action)
+            self._vis_menu.addAction(action)
+        self._perspective_action.setChecked(True)
 
         # === Export Menu ===
         self._export_menu = menu_bar.addMenu("E&xport")
@@ -536,9 +571,17 @@ class MainWindow(QMainWindow):
         """Clear renderer bookkeeping and every actor in the active plotter."""
         if self._plotter is None:
             return
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.reset_for_project()
+        self._borehole_labels_action.setChecked(True)
+        self._borehole_labels_action.setEnabled(False)
+        self._point_labels_action.setChecked(True)
+        self._point_labels_action.setEnabled(False)
         self._clear_m9_layers()
         self._clear_dfn_layers()
         self._clear_m11_layers()
+        if self._borehole_fracture_renderer is not None:
+            self._borehole_fracture_renderer.clear()
         if self._dfn_renderer is not None:
             try:
                 self._dfn_renderer.clear(self._plotter)
@@ -548,6 +591,28 @@ class MainWindow(QMainWindow):
             self._plotter.clear()
         except (AttributeError, RuntimeError, TypeError, ValueError):
             self.log_warning("Failed to clear plotter actors")
+
+    def _get_borehole_display_manager(self):
+        """Return the shared session-only controller for existing borehole actors."""
+        if self._plotter is None:
+            return None
+        if self._borehole_display_manager is None or self._borehole_display_manager.plotter is not self._plotter:
+            from dfn_cave_studio.visualization.borehole_display_manager import BoreholeDisplayManager
+
+            self._borehole_display_manager = BoreholeDisplayManager(
+                self._plotter, on_preview_state_changed=self._on_borehole_preview_state_changed
+            )
+        return self._borehole_display_manager
+
+    def _get_borehole_fracture_renderer(self):
+        """Return the session-only Phase 2A point-preview renderer."""
+        if self._plotter is None:
+            return None
+        if self._borehole_fracture_renderer is None or self._borehole_fracture_renderer.plotter is not self._plotter:
+            from dfn_cave_studio.visualization.borehole_fracture_renderer import BoreholeFractureRenderer
+
+            self._borehole_fracture_renderer = BoreholeFractureRenderer(self._plotter)
+        return self._borehole_fracture_renderer
 
     def _get_m9_layer_manager(self):
         """Return the main-window-owned, session-only M9 slice registry."""
@@ -696,18 +761,15 @@ class MainWindow(QMainWindow):
         self._database_panel.raise_()
 
     def _render_boreholes(self, collection) -> None:
-        """Render borehole trajectories in 3D view."""
+        """Render borehole geometry without creating preview-only display controls."""
         if not self._plotter:
             return
         try:
-            import pyvista as pv
+            if self._dfn_renderer is None:
+                from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
 
-            for bh in collection:
-                points, _ = bh.compute_trajectory(step_length=2.0)
-                if len(points) >= 2:
-                    line = pv.PolyData(points)
-                    tube = line.tube(radius=0.3)
-                    self._plotter.add_mesh(tube, color="cyan", name=f"BH-{bh.borehole_id}")
+                self._dfn_renderer = DFNRenderer()
+            self._dfn_renderer.render_boreholes(collection, self._plotter)
             self._plotter.reset_camera()
         except Exception as e:
             self.log_warning(f"Borehole rendering: {e}")
@@ -737,7 +799,13 @@ class MainWindow(QMainWindow):
             "voxel_config": project.voxel_config.model_dump(mode="json"),
         }
         workflow_before = self._workflow.to_dict()
-        m8_dialog = M8SpatialGridDialog(project, plotter=self._plotter, mode=mode, parent=self)
+        m8_dialog = M8SpatialGridDialog(
+            project,
+            plotter=self._plotter,
+            mode=mode,
+            borehole_display_manager=self._get_borehole_display_manager(),
+            parent=self,
+        )
         if m8_dialog.exec() == QDialog.DialogCode.Accepted:
             config = m8_dialog.get_config()
             project.spatial_grid_config = config
@@ -802,16 +870,67 @@ class MainWindow(QMainWindow):
             model_volume=project.model_bounds.volume,
             parent=self,
             borehole_collection=project.borehole_collection,
+            project=project,
         )
         if dlg.exec() == JointSetManagerDialog.DialogCode.Accepted:
-            project.joint_sets = dlg.get_joint_sets()
+            new_sets = dlg.get_joint_sets()
+            new_fit = dlg.get_global_fit()
+            sets_changed = project.joint_sets != new_sets
+            fit_changed = project.borehole_fracture_state.global_fit != new_fit
+            if not sets_changed and not fit_changed:
+                return
+            if sets_changed:
+                project.joint_sets = [item.model_copy(deep=True) for item in new_sets]
+            state = project.borehole_fracture_state
+            config = state.config.model_copy(
+                update={
+                    "number_of_sets": max(len(new_sets), 1),
+                    "use_confirmed_global_fit": bool(new_sets),
+                }
+            )
+            project.borehole_fracture_state = state.model_copy(
+                update={
+                    "config": config,
+                    "global_fit": new_fit,
+                    "realizations": [],
+                    "selected_realization_id": None,
+                    "archive_source": None,
+                }
+            )
+            if self._borehole_fracture_renderer is not None:
+                self._borehole_fracture_renderer.clear()
             self._project_store.mark_dirty()
-            self.log_message(f"Updated {len(project.joint_sets)} joint sets")
+            if sets_changed:
+                self._workflow.complete_step("joint_sets")
+                self._invalidate_m9_state()
+            self.log_message(
+                f"Confirmed {len(project.joint_sets)} global joint sets and "
+                f"{0 if new_fit is None else len(new_fit.mappings)} representative mappings"
+            )
             self._update_project_tree_from_project(project)
 
     def _on_generate_dfn(self) -> None:
         """Open the M10 explicit DFN workflow entry."""
         self._m7_explicit_dfn()
+
+    def _on_borehole_fracture_realizations(self) -> None:
+        """Open the independent Phase 2A along-hole realization workflow."""
+        if not self._project_store.has_project:
+            QMessageBox.warning(self, "No Project", "Open or create a project first.")
+            return
+        from dfn_cave_studio.ui.dialogs.borehole_fracture_dialog import BoreholeFractureDialog
+
+        project = self._project_store.current_project
+        dialog = BoreholeFractureDialog(
+            project,
+            self._get_borehole_fracture_renderer(),
+            self._project_store.current_path,
+            self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.committed_changes:
+            self._project_store.mark_dirty()
+            self._update_project_tree_from_project(project)
+            self.log_message("Phase 2A borehole fracture realizations updated; M9 was not started.")
 
     def _on_generate_dfn_legacy(self) -> None:
         """Run full computation pipeline: DFN → Voxel → Connectivity."""
@@ -917,7 +1036,7 @@ class MainWindow(QMainWindow):
                         from dfn_cave_studio.visualization.dfn_renderer import DFNRenderer
 
                         self._dfn_renderer = DFNRenderer()
-                    self._dfn_renderer.render_boreholes(project.borehole_collection, self._plotter)
+                    self._render_boreholes(project.borehole_collection)
                     self._dfn_renderer.render_fracture_observations(project.borehole_collection, self._plotter)
                 except Exception as e:
                     self.log_error(f"Borehole rendering failed: {e}")
@@ -1090,6 +1209,22 @@ class MainWindow(QMainWindow):
         """Open M9 P10/P32 density modelling."""
         from dfn_cave_studio.ui.dialogs.m9_dialogs import M9DensityDialog
 
+        if self._project_store.has_project:
+            project = self._project_store.current_project
+            compatible_count = sum(len(hole.fracture_observations) for hole in project.borehole_collection)
+            if compatible_count == 0 and project.borehole_database.counts("fractures")["raw"]:
+                counts = project.borehole_database.observation_mode_counts()
+                QMessageBox.information(
+                    self,
+                    "Direction constraints required / 需要方向约束",
+                    "The imported observations are retained, but the existing P32 workflow requires global fracture "
+                    "orientation constraints.\n\n"
+                    f"Interval spacing: {counts.get('interval_spacing', 0)}\n"
+                    f"Borehole-relative axis angle: {counts.get('axis_plane_angle', 0)}\n\n"
+                    "Direction completion for these observation types is not implemented in this phase. "
+                    "This does not treat missing direction as zero P32.",
+                )
+                return
         self._open_m9_dialog(M9DensityDialog, "density")
 
     def _m7_size(self) -> None:
@@ -1202,23 +1337,74 @@ class MainWindow(QMainWindow):
             self._plotter.reset_camera()
         self.log_message("View reset")
 
+    def _on_current_view(self) -> None:
+        """Fit the scene without changing the current camera direction."""
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_view("current")
+        elif self._plotter:
+            self._plotter.reset_camera()
+        self.log_message("Current view")
+
     def _on_top_view(self) -> None:
         """Switch to top view."""
-        if self._plotter:
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_view("top")
+        elif self._plotter:
             self._plotter.view_xy()
         self.log_message("Top view")
 
     def _on_front_view(self) -> None:
         """Switch to front view."""
-        if self._plotter:
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_view("front")
+        elif self._plotter:
             self._plotter.view_xz()
         self.log_message("Front view")
 
     def _on_left_view(self) -> None:
         """Switch to left view."""
-        if self._plotter:
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_view("side")
+        elif self._plotter:
             self._plotter.view_yz()
-        self.log_message("Left view")
+        self.log_message("Side view")
+
+    def _on_isometric_view(self) -> None:
+        """Switch to an isometric camera view."""
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_view("isometric")
+        elif self._plotter and hasattr(self._plotter, "view_isometric"):
+            self._plotter.view_isometric()
+        self.log_message("Isometric view")
+
+    def _on_borehole_labels_toggled(self, visible: bool) -> None:
+        """Toggle session-only camera-facing collar labels."""
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_labels_visible(visible)
+
+    def _on_point_labels_toggled(self, visible: bool) -> None:
+        """Toggle session-only camera-facing P/Z measurement-point labels."""
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_point_labels_visible(visible)
+
+    def _on_borehole_preview_state_changed(self, active: bool) -> None:
+        """Enable label controls only while a successful M8 preview owns them."""
+        self._borehole_labels_action.setEnabled(bool(active))
+        manager = self._borehole_display_manager
+        self._point_labels_action.setEnabled(bool(active and manager is not None and manager.has_point_labels))
+
+    def _on_projection_selected(self, orthographic: bool) -> None:
+        """Toggle projection without moving the current camera."""
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.set_parallel_projection(orthographic)
+            return
+        if self._plotter:
+            camera_position = getattr(self._plotter, "camera_position", None)
+            method = "enable_parallel_projection" if orthographic else "disable_parallel_projection"
+            if hasattr(self._plotter, method):
+                getattr(self._plotter, method)()
+            if camera_position is not None:
+                self._plotter.camera_position = camera_position
 
     def _on_export_3dec(self) -> None:
         """Export for 3DEC."""
@@ -1339,6 +1525,10 @@ class MainWindow(QMainWindow):
                 return
 
         self._auto_save_timer.stop()
+        if self._borehole_display_manager is not None:
+            self._borehole_display_manager.clear()
+        if self._borehole_fracture_renderer is not None:
+            self._borehole_fracture_renderer.clear()
         settings = QSettings("DFNCaveStudio", "MainWindow")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
@@ -1432,7 +1622,7 @@ class MainWindow(QMainWindow):
 
             # Render boreholes
             if project.borehole_collection:
-                self._dfn_renderer.render_boreholes(project.borehole_collection, self._plotter)
+                self._render_boreholes(project.borehole_collection)
                 self._dfn_renderer.render_fracture_observations(project.borehole_collection, self._plotter)
 
             # Render DFN
@@ -1500,12 +1690,25 @@ class MainWindow(QMainWindow):
             ],
         )
         QTreeWidgetItem(data, [f"Deterministic Fractures ({len(project.deterministic_fractures)})"])
+        phase2a = project.borehole_fracture_state
+        QTreeWidgetItem(
+            data,
+            [
+                f"Borehole fracture realizations ({len(phase2a.realizations)}; "
+                f"{sum(item.fracture_count for item in phase2a.realizations):,} generated rows)"
+            ],
+        )
 
         # DFN section
         dfn_node = QTreeWidgetItem(root, ["DFN"])
         QTreeWidgetItem(dfn_node, [f"Joint Sets ({len(project.joint_sets)})"])
         for js in project.joint_sets:
-            QTreeWidgetItem(dfn_node, [f"  {js.name} (P32={js.target_p32})"])
+            p32_text = (
+                "P32=Derived later by M9"
+                if js.provenance.get("p32_status") == "DERIVED_LATER_BY_M9"
+                else f"P32={js.target_p32}"
+            )
+            QTreeWidgetItem(dfn_node, [f"  {js.name} ({p32_text})"])
         QTreeWidgetItem(dfn_node, [f"Realizations ({len(project.dfn_realizations)})"])
 
         m9_node = QTreeWidgetItem(root, ["M9 Parameter Field"])
@@ -1554,11 +1757,20 @@ class MainWindow(QMainWindow):
         else:
             self._database_panel.set_project(project)
 
-    def _on_database_changed(self) -> None:
+    def _on_database_changed(self, changed_data_types: set[str] | None = None) -> None:
         """Apply project lifecycle effects after an accepted database change."""
         if not self._project_store.has_project:
             return
         project = self._project_store.current_project
+        phase2a_inputs = {"collars", "surveys", "fractures", "orientation_points"}
+        if changed_data_types is None or changed_data_types & phase2a_inputs:
+            if self._borehole_fracture_renderer is not None:
+                self._borehole_fracture_renderer.clear()
+        if self._borehole_display_manager is not None and self._borehole_display_manager.preview_active:
+            from dfn_cave_studio.visualization.m8_spatial_preview import M8SpatialPreviewRenderer
+
+            self._borehole_display_manager.clear()
+            M8SpatialPreviewRenderer.clear(self._plotter)
         counts = project.borehole_database.counts()
         from dfn_cave_studio.services.workflow_controller import StepStatus
 
@@ -1577,7 +1789,20 @@ class MainWindow(QMainWindow):
                 self._workflow.mark_ready("holdout")
         elif clean_step is None or clean_step.status != StepStatus.STALE:
             self._workflow.mark_ready("clean")
-        self._invalidate_m9_state()
+        auxiliary_types = {"rqd", "rmr"}
+        if changed_data_types is not None and changed_data_types <= auxiliary_types:
+            # Repository synchronization already removed only scalar fields
+            # whose projected RQD/RMR inputs actually changed.  Dispose any
+            # now-orphaned session layers without touching M10/M11.
+            if self._m9_layer_manager is not None:
+                valid_field_ids = {field.metadata.field_id for field in project.m9_state.scalar_fields}
+                for layer in list(self._m9_layer_manager.list_layers()):
+                    if layer.layer_id.startswith("m9_slice:scalar_") and not any(
+                        f"m9_slice:scalar_{field_id}_" in layer.layer_id for field_id in valid_field_ids
+                    ):
+                        self._m9_layer_manager.remove(layer.layer_id)
+        else:
+            self._invalidate_m9_state()
         self._project_store.mark_dirty()
         self._update_project_tree_from_project(project)
 

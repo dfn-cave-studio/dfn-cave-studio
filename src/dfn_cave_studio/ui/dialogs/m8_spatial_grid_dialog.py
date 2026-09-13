@@ -25,12 +25,20 @@ from dfn_cave_studio.ui.qt_adapter import (
 class M8SpatialGridDialog(QDialog):
     """Define and validate the two M8 domains before allocating any grid."""
 
-    def __init__(self, project, plotter=None, mode: str = "voxel", parent=None):
+    def __init__(
+        self,
+        project,
+        plotter=None,
+        mode: str = "voxel",
+        borehole_display_manager=None,
+        parent=None,
+    ):
         super().__init__(parent)
         if mode not in {"bounds", "voxel"}:
             raise ValueError("mode must be 'bounds' or 'voxel'")
         self._project = project
         self._plotter = plotter
+        self._borehole_display_manager = borehole_display_manager
         self._dialog_mode = mode
         self._accepted_config = None
         self.setWindowTitle("M8 Model Boundary" if mode == "bounds" else "M8 Voxel Grid Preview and Confirmation")
@@ -165,9 +173,14 @@ class M8SpatialGridDialog(QDialog):
         automatic = self._mode.currentData() == "auto"
         for spin in self._bounds.values():
             spin.setEnabled(not automatic)
-        if automatic and len(self._project.borehole_collection):
+        extra_points = self._extra_points()
+        if automatic and (len(self._project.borehole_collection) or extra_points):
             try:
-                bounds = SpatialDomainService.automatic_bounds(self._project.borehole_collection, self._margin.value())
+                bounds = SpatialDomainService.automatic_bounds(
+                    self._project.borehole_collection,
+                    self._margin.value(),
+                    (point for _, point in extra_points),
+                )
                 for key, spin in self._bounds.items():
                     spin.setValue(getattr(bounds, key))
             except ValueError:
@@ -177,9 +190,41 @@ class M8SpatialGridDialog(QDialog):
     def _analysis_bounds(self) -> ModelBounds:
         if self._dialog_mode == "voxel":
             return self._project.model_bounds
-        if self._mode.currentData() == "auto" and len(self._project.borehole_collection):
-            return SpatialDomainService.automatic_bounds(self._project.borehole_collection, self._margin.value())
+        extra_points = self._extra_points()
+        if self._mode.currentData() == "auto" and (len(self._project.borehole_collection) or extra_points):
+            return SpatialDomainService.automatic_bounds(
+                self._project.borehole_collection,
+                self._margin.value(),
+                (point for _, point in extra_points),
+            )
         return ModelBounds(**{key: spin.value() for key, spin in self._bounds.items()})
+
+    def _extra_points(self) -> list[tuple[str, tuple[float, float, float]]]:
+        """Return non-legacy observation coordinates for bounds and preview."""
+        from dfn_cave_studio.services.observation_service import ObservationService
+
+        service = ObservationService(self._project)
+        points = [
+            (item.point_id, (item.x, item.y, item.z))
+            for item in service.orientation_points()
+        ]
+        points.extend(
+            (item.hole_id, (item.x, item.y, item.z))
+            for item in service.axis_plane_angle_observations()
+        )
+        return points
+
+    def _point_labels(self) -> list[tuple[str, str, tuple[float, float, float]]]:
+        """Return one stable label anchor for each imported P/Z measurement point."""
+        from dfn_cave_studio.services.observation_service import ObservationService
+
+        unique: dict[str, tuple[str, str, tuple[float, float, float]]] = {}
+        for item in ObservationService(self._project).orientation_points():
+            unique.setdefault(
+                item.point_key,
+                (item.point_key, item.point_id, (item.x, item.y, item.z)),
+            )
+        return list(unique.values())
 
     def _voxel(self) -> VoxelConfig:
         return VoxelConfig(cell_size_x=self._dx.value(), cell_size_y=self._dy.value(), cell_size_z=self._dz.value())
@@ -210,7 +255,9 @@ class M8SpatialGridDialog(QDialog):
 
     def _check_coverage(self):
         try:
-            report = SpatialDomainService.check_bounds(self._analysis_bounds(), self._project.borehole_collection)
+            report = SpatialDomainService.check_bounds(
+                self._analysis_bounds(), self._project.borehole_collection, self._extra_points()
+            )
         except ValueError as error:
             QMessageBox.warning(self, "Invalid boundary", str(error))
             return None
@@ -236,16 +283,30 @@ class M8SpatialGridDialog(QDialog):
             generation,
             voxel,
             self._project.borehole_collection,
+            extra_points=self._extra_points(),
+            point_labels=self._point_labels(),
             opacity=self._opacity.value(),
             show_sampled_wireframe=self._wireframe.isChecked(),
             slice_axis=self._slice_axis.currentData(),
             slice_fraction=self._slice_percent.value() / 100.0,
+            borehole_display_manager=self._borehole_display_manager,
+            domain_by_hole=self._collar_domains(),
         )
+
+    def _collar_domains(self) -> dict[str, int | None]:
+        from dfn_cave_studio.models.borehole_database import BoreholeDataType, RecordState
+        from dfn_cave_studio.services.borehole_repository import BoreholeRepository
+
+        repository = BoreholeRepository(self._project)
+        return {
+            record.hole_id: repository.optional_int(record.values.get("domain_id"))
+            for record in repository.query(BoreholeDataType.COLLARS, RecordState.FORMAL)
+        }
 
     def _accept(self) -> None:
         try:
             bounds = self._analysis_bounds()
-            report = SpatialDomainService.check_bounds(bounds, self._project.borehole_collection)
+            report = SpatialDomainService.check_bounds(bounds, self._project.borehole_collection, self._extra_points())
             if report.has_violations and not self._clip.isChecked():
                 answer = QMessageBox.question(
                     self,

@@ -1,5 +1,24 @@
 # DFN Cave Studio v0.11.0-M11.1 使用说明书
 
+## 多类型观测导入（第一阶段）
+
+在 `Borehole Database / 钻孔数据库` 中点击 `Import / Append…`。`collars` 的 `domain_id` 可以缺列或为空；软件保留“未指定”，不会自动填为1。完全空白行会跳过并在结果中计数，部分必填字段为空仍会进入明确错误/排除记录。
+
+`fractures` 导入前请选择观测模式：
+
+- `A — Full orientation / 完整产状`：`hole_id, measured_depth, dip_direction, dip`，`set_id`可选。
+- `B — Interval spacing / 区间间距`：`hole_id, from_depth, to_depth, fracture_spacing`，并确认mm/cm/m及`measurement_basis`（`BOREHOLE_ALONG_HOLE` / `TRUE_NORMAL` / `SCANLINE_APPARENT`）。本阶段保存原始间距基准并派生对应测线的`1/spacing(m)`，不生成虚构裂隙、方向、组号或P32。只有`TRUE_NORMAL`可在明确假设下使用`P32≈1/spacing`；沿孔或测线观测必须先做方向校正。
+- `C — Borehole-axis angle / 孔轴夹角`：`hole_id, measured_depth, axis_plane_angle`。角度是裂隙面与局部孔轴的0–90°锐夹角，位置按真实测斜轨迹计算；保存为`BOREHOLE_RELATIVE`，不会写成全局dip或随机补倾向。
+- `Legacy — Global orientation (dip direction optional)`：保留既有`GLOBAL_DIP_ONLY`兼容路径。
+
+`rmr`模板为`hole_id, from_depth, to_depth, rmr`，与RQD一样允许0–100（含端点）。两者通过现有通用物理参数场的IDW/Ordinary Kriging、显示、保存和导出路径使用；它们不会自动控制P32，也不会仅因辅助场更新使M10/M11失效。
+
+`orientation_points`模板为`point_id, x, y, z, dip, dip_direction`，E/N/R及easting/northing/elevation可映射为X/Y/Z；`domain_id, set_id, site_id, source, quality, observation_id, observation_kind`可选。同一坐标可保存多条独立产状，缺少`observation_id`时生成稳定ID。无钻孔编号的点保持`UNASSIGNED`，不自动进入Calibration，也不自动变成M10有限面积圆盘。
+
+跨结构域的区间仍是一条原始观测；数据库访问接口另存明确的分段关联，不用中点掩盖跨域，也不把分段计作额外独立样本。第一阶段会从RQD/RMR标量拟合和验证中排除跨域或部分未分配的数据库样本，并在结果来源信息中报告原因；原始样本和分段仍完整保存，供以后区间支撑建模使用。只有合法全局产状会进入旧三维方向计算。仅有间距或孔轴夹角时，M9会说明缺少哪类方向约束；混合导入时也会明确报告未参与拟合的记录数。Phase 2A测点约束钻孔裂隙生成已实现，但尚未接入旧M9 P10/P32流程。
+
+`Joint Set Management`会分别显示`Imported Local Representatives`和`Confirmed Global Joint Sets`：前者可以有15条或更多，后者数量始终严格等于用户确认的全局K，并显示local→global映射。每条P/Z代表产状仍是独立的`Local Orientation Component`，映射到同一全矿组也不会被删除或物理合并。P/Z代表产状不包含尺寸证据，因此Size显示`UNRESOLVED`；其P32显示`Derived later by M9`，不把占位的0.5当作拟合结果。单一代表方向的Kappa为`UNRESOLVED`，多测点仅可标记`SITE_MEAN_DISPERSION`。P点spacing只控制Phase 2A局部分量/随机背景分配概率，钻孔区间spacing只决定`Poisson(L/S)`总数，两者不叠加成另一个P32。
+
 ## M11.1 精确第二次体素化（步骤13）
 
 完成并保存M10显式DFN后，打开`M11.1 Exact Second Voxelization`，选择实现并开始计算。软件使用解析圆盘—体素面积求交生成稀疏`fracture_ordinal / voxel_flat_index / intersection_area`记录，并输出全部节理组及单组的`P32_explicit_intersection`、`P32_subgrid`和`P32_total`。取消不会提交部分结果；保存`.dfnproj`后，稀疏结果、数组、守恒诊断和失效状态可重开恢复。
@@ -641,6 +660,20 @@ Raw 是不可静默修改的审计层。Excluded 表示不参与正式计算，�
 9. 重启软件并重新打开项目后问题是否仍然存在。
 
 报告问题时建议同时提供：软件版本、项目文件格式、操作步骤、日志信息、相关来源文件名和 `source_row`。不要发送无法脱敏的敏感工程数据。
+
+## 19. Phase 2A：测点约束下的钻孔裂隙随机补全
+
+完成P/Z测点和`Interval Spacing`钻孔区间导入后，选择 `DFN → Generate Borehole Fracture Realizations...`。
+
+1. 先在`Joint Set Management`中设置并确认全矿节理组数量`K`，检查局部分量到全矿组的权威映射。生成窗口只读显示已确认K、seed和映射状态，不会再次隐藏聚类。不同测点中相同的`local_set_id`不会被假定为同一全矿组。
+2. 检查点云测点的随机组状态。有`RANDOM`行时自动显示`REPORTED_PRESENT`；没有时为`NOT_REPORTED`。只有有现场依据时才选择测点并确认`REPORTED_ABSENT`。
+3. 设置实现数量、IDW幂、搜索模式、半径、最大/最小邻点和内存预算。邻点配额按P测点而不是记录行计算；选中一个测点后纳入该点全部有效优势分量和RANDOM分量。`All P sites`属于远距离外推，诊断会记录最近/最远距离。方向可选择`Local representative`、`Spatially fitted within global set`或旧兼容的`Fixed global-set mean`；所有方向平均均使用轴向极点。
+4. `Current Realization`只选择一次Monte Carlo实现；`Visible Joint Sets`控制显示哪些全矿组，`Random Background`可独立显示。局部分量继承所属全矿组在`Joint Set Management`中保存的颜色，随机背景固定为中性灰色。
+4. 点击 `Generate batch`。进度区显示当前间距区间；`Cancel computation`不会提交部分结果，晚到的后台结果也会被丢弃。
+5. 结果只显示实现、孔、区间和全矿组统计，不为每条裂隙创建表格行。选择实现后可点击 `Preview selected realization`查看有上限的三维点预览。
+6. 点击OK才提交完整结果并标记项目已修改；Cancel会恢复在本窗口中修改的随机组声明。保存为`.dfnproj`后，所有实现都保存在NPZ中，重开时仅载入当前选择的实现。
+
+以下情况会明确阻止对应区间：附近没有有效P间距强度约束、K超过有效不同轴向代表方向数量，或估算内存超过预算。Z摄像记录不会提供密度；`NOT_REPORTED`不会被当作零；结果不会自动写回Formal observations，也不会自动启动M9。
 ## M11 三维 P32 云图与交互侧栏
 
 完成 M11.1 精确第二次体素化后，在 `M11.1 Exact Second Voxelization` 窗口的三维显示区域选择字段、节理组和显示方式，然后点击 `Render Cloud`。

@@ -28,11 +28,10 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 
-import numpy as np
 from pydantic import BaseModel, Field, ConfigDict
 
 from dfn_cave_studio.models.bounds import ModelBounds, VoxelConfig
-from dfn_cave_studio.models.fracture import DeterministicFracture, StochasticFracture
+from dfn_cave_studio.models.fracture import DeterministicFracture
 from dfn_cave_studio.models.fracture_set import JointSetConfig
 from dfn_cave_studio.models.dfn_realization import DFNRealization
 from dfn_cave_studio.models.borehole import BoreholeCollection
@@ -45,6 +44,7 @@ from dfn_cave_studio.models.spatial_grid import SpatialGridConfig
 from dfn_cave_studio.models.m9 import M9State
 from dfn_cave_studio.models.m10 import M10State
 from dfn_cave_studio.models.m11 import M11State
+from dfn_cave_studio.models.borehole_fracture_realization import BoreholeFractureState
 
 
 # =============================================================================
@@ -132,6 +132,7 @@ class Project(BaseModel):
     m9_state: M9State = Field(default_factory=M9State)
     m10_state: M10State = Field(default_factory=M10State)
     m11_state: M11State = Field(default_factory=M11State)
+    borehole_fracture_state: BoreholeFractureState = Field(default_factory=BoreholeFractureState)
     structural_domains: StructuralDomainCollection = Field(
         default_factory=StructuralDomainCollection
     )
@@ -324,7 +325,7 @@ class Project(BaseModel):
     def create_sample_project(self) -> None:
         """Populate with reasonable sample data for quick start."""
         from dfn_cave_studio.models.fracture_set import (
-            OrientationDistribution, SizeDistribution, SpatialDistribution
+            OrientationDistribution, SizeDistribution
         )
         from dfn_cave_studio.models.enums import SizeDistributionType
 

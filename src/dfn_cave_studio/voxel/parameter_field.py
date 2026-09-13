@@ -551,9 +551,11 @@ class ParameterFieldBuilder:
             arrays[f"set_{set_id}_p32"] = np.full(shape, np.nan, dtype=np.float32)
             if settings.method == DensityMethod.ORDINARY_KRIGING:
                 arrays[f"set_{set_id}_kriging_variance"] = np.full(shape, np.nan, dtype=np.float32)
-            default_direction = np.nan if explicit_orientation_models else sets[set_id].orientation.mean_dip_direction
-            default_dip = np.nan if explicit_orientation_models else sets[set_id].orientation.mean_dip
-            default_kappa = np.nan if explicit_orientation_models else sets[set_id].orientation.kappa
+            unresolved_representative_kappa = sets[set_id].provenance.get("kappa_status") == "UNRESOLVED"
+            use_project_orientation = not explicit_orientation_models and not unresolved_representative_kappa
+            default_direction = sets[set_id].orientation.mean_dip_direction if use_project_orientation else np.nan
+            default_dip = sets[set_id].orientation.mean_dip if use_project_orientation else np.nan
+            default_kappa = sets[set_id].orientation.kappa if use_project_orientation else np.nan
             arrays[f"set_{set_id}_dip_direction"] = np.full(shape, default_direction, dtype=np.float32)
             arrays[f"set_{set_id}_dip"] = np.full(shape, default_dip, dtype=np.float32)
             arrays[f"set_{set_id}_kappa"] = np.full(shape, default_kappa, dtype=np.float32)

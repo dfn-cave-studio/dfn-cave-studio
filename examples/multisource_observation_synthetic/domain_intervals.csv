@@ -1,0 +1,3 @@
+hole_id,from_depth,to_depth,domain_id,domain_name
+SYN-A,0,15,2,Synthetic upper
+SYN-A,15,30,4,Synthetic lower
