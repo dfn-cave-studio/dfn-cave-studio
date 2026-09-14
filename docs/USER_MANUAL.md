@@ -15,7 +15,7 @@
 
 `orientation_points`模板为`point_id, x, y, z, dip, dip_direction`，E/N/R及easting/northing/elevation可映射为X/Y/Z；`domain_id, set_id, site_id, source, quality, observation_id, observation_kind`可选。同一坐标可保存多条独立产状，缺少`observation_id`时生成稳定ID。无钻孔编号的点保持`UNASSIGNED`，不自动进入Calibration，也不自动变成M10有限面积圆盘。
 
-跨结构域的区间仍是一条原始观测；数据库访问接口另存明确的分段关联，不用中点掩盖跨域，也不把分段计作额外独立样本。第一阶段会从RQD/RMR标量拟合和验证中排除跨域或部分未分配的数据库样本，并在结果来源信息中报告原因；原始样本和分段仍完整保存，供以后区间支撑建模使用。只有合法全局产状会进入旧三维方向计算。仅有间距或孔轴夹角时，M9会说明缺少哪类方向约束；混合导入时也会明确报告未参与拟合的记录数。Phase 2A测点约束钻孔裂隙生成已实现，但尚未接入旧M9 P10/P32流程。
+跨结构域的区间仍是一条原始观测；数据库访问接口另存明确的分段关联，不用中点掩盖跨域，也不把分段计作额外独立样本。第一阶段会从RQD/RMR标量拟合和验证中排除跨域或部分未分配的数据库样本，并在结果来源信息中报告原因；原始样本和分段仍完整保存，供以后区间支撑建模使用。只有合法全局产状会进入旧三维方向计算。仅有间距或孔轴夹角时，M9会说明缺少哪类方向约束；混合导入时也会明确报告未参与拟合的记录数。Phase 2A测点约束钻孔裂隙生成已实现；用户现在可以明确选择一个已保存实现作为M9密度输入，旧Formal完整产状路径仍保持独立可用。
 
 `Joint Set Management`会分别显示`Imported Local Representatives`和`Confirmed Global Joint Sets`：前者可以有15条或更多，后者数量始终严格等于用户确认的全局K，并显示local→global映射。每条P/Z代表产状仍是独立的`Local Orientation Component`，映射到同一全矿组也不会被删除或物理合并。P/Z代表产状不包含尺寸证据，因此Size显示`UNRESOLVED`；其P32显示`Derived later by M9`，不把占位的0.5当作拟合结果。单一代表方向的Kappa为`UNRESOLVED`，多测点仅可标记`SITE_MEAN_DISPERSION`。P点spacing只控制Phase 2A局部分量/随机背景分配概率，钻孔区间spacing只决定`Poisson(L/S)`总数，两者不叠加成另一个P32。
 
@@ -47,7 +47,7 @@ M10按每个体素、每个节理组使用`N~Poisson(P32·V/(πE[R²]))`。Calib
 
 M9 在 M8 七步流程之后增加四步。开始前确认数据质量完成、Validation Holdout 已锁定、Formal 裂隙/结构域/节理组可用，且 Voxel Analysis Domain 与 dx/dy/dz 已确认。Validation 孔只用于最后评价。
 
-1. `Fracture Density Model`：选择固定长度或结构域区间、GLOBAL_CONSTANT/IDW/ORDINARY_KRIGING 和随机种子，点击 `Calculate P10 / P32`。半开区间避免边界重复计数；低可观测性不输出不稳定 P32。
+1. `Fracture Density Model`：先在`M9 density input`中互斥选择`Formal fracture observations`，或手动指定一个已保存的`Phase 2A borehole-fracture realization`；软件不会自动选择最新实现，也不会混合两种来源。然后选择固定长度或结构域区间、GLOBAL_CONSTANT/IDW/ORDINARY_KRIGING 和随机种子，点击 `Calculate P10 / P32`。半开区间避免边界重复计数；低可观测性不输出不稳定 P32。
 2. `Fracture Size Distribution`：只有真实 radius/diameter/trace_length/mapped_length 才允许自动拟合；否则设置 FIXED、UNIFORM 或三种截断分布并保留 ASSUMED/USER_DEFINED 来源。当前自动截断分布拟合必须视为 EXPERIMENTAL：截断边界使用样本极值，截断对数正态尚非完整截断似然优化。界面和项目文件保存收敛状态、优化器消息和样本量。演示固定半径 2 m 始终标记为 ASSUMED。不会从 aperture、RQD 或 set_id 推导尺寸。
 3. `First Voxel Parameter Field`：后台按块生成，可显示进度并取消。NO_DATA、TRUE_ZERO、OUTSIDE_MODEL 和 MODELED_VALUE 独立保存；本步骤不生成显式裂隙面。
 4. `Validation`：从参数场提取预测 P32，按留出孔真实局部轨迹换算预测 P10，报告 MAE、RMSE、Bias、可用时的 R²/相关系数；样本不足显示 INSUFFICIENT_VALIDATION。
@@ -673,7 +673,9 @@ Raw 是不可静默修改的审计层。Excluded 表示不参与正式计算，�
 5. 结果只显示实现、孔、区间和全矿组统计，不为每条裂隙创建表格行。选择实现后可点击 `Preview selected realization`查看有上限的三维点预览。
 6. 点击OK才提交完整结果并标记项目已修改；Cancel会恢复在本窗口中修改的随机组声明。保存为`.dfnproj`后，所有实现都保存在NPZ中，重开时仅载入当前选择的实现。
 
-以下情况会明确阻止对应区间：附近没有有效P间距强度约束、K超过有效不同轴向代表方向数量，或估算内存超过预算。Z摄像记录不会提供密度；`NOT_REPORTED`不会被当作零；结果不会自动写回Formal observations，也不会自动启动M9。
+以下情况会明确阻止对应区间：附近没有有效P间距强度约束、K超过有效不同轴向代表方向数量，或估算内存超过预算。Z摄像记录不会提供密度；`NOT_REPORTED`不会被当作零；结果不会自动写回Formal observations，也不会自动启动M9。生成并保存后，用户可在M9密度界面明确选择其中一个实现。适配器按实现中的测深、真实测斜轨迹、方向和已确认global `set_id`构造P10及方向校正P32输入；`RANDOM_BACKGROUND`不强行归组，仅Z支持而没有P强度约束的组保持`NO_DATA`。
+
+Phase 2A实现源自各孔自己的间距，因此Validation孔虽然仍按锁定的整孔Holdout排除在拟合之外，但它与该实现的比较只属于`internal consistency / 内部一致性`，不是独立验证，也不是实测P32真值。实现ID、generator版本、seed、输入hash、排除的RANDOM数量和逐组支持状态随M9结果保存；源数据或权威映射变化导致hash不一致时会拒绝继续使用旧实现。
 ## M11 三维 P32 云图与交互侧栏
 
 完成 M11.1 精确第二次体素化后，在 `M11.1 Exact Second Voxelization` 窗口的三维显示区域选择字段、节理组和显示方式，然后点击 `Render Cloud`。

@@ -19,6 +19,8 @@ from dfn_cave_studio.models.fracture_set import JointSetConfig, OrientationDistr
 from dfn_cave_studio.models.m9 import (
     DensitySettings,
     DomainOrientationModel,
+    M9DensityInputMode,
+    M9State,
     ParameterFieldMetadata,
     ValidationIntervalResult,
     ValidationState,
@@ -99,8 +101,21 @@ class M9Service:
             for hole in self.project.borehole_collection.boreholes
         }
 
-    def calculate_density(self, settings: DensitySettings | None = None, *, progress=None, cancelled=None) -> None:
-        """Compute P10 and direction-corrected P32 with no validation leakage."""
+    def calculate_density(
+        self,
+        settings: DensitySettings | None = None,
+        *,
+        input_mode: M9DensityInputMode | str | None = None,
+        realization_id: str | None = None,
+        random_seed: int | None = None,
+        progress=None,
+        cancelled=None,
+        commit: bool = True,
+    ) -> M9State:
+        """Compute P10/P32 from exactly one selected source without validation leakage."""
+        mode = M9DensityInputMode(input_mode or self.project.m9_state.density_input_mode)
+        settings = settings or self.project.m9_state.density_settings
+        seed = self.project.m9_state.random_seed if random_seed is None else int(random_seed)
         compatible_count = sum(
             len(hole.fracture_observations) for hole in self.project.borehole_collection.boreholes
         )
@@ -108,27 +123,51 @@ class M9Service:
         counts = database.observation_mode_counts() if database is not None else {}
         spacing = int(counts.get("interval_spacing", 0))
         relative = int(counts.get("axis_plane_angle", 0))
-        if compatible_count == 0:
+        if mode == M9DensityInputMode.FORMAL_OBSERVATIONS and compatible_count == 0:
             raise ValueError(
                 "No global fracture orientations are available for the existing P32 workflow. "
                 f"Imported interval-spacing records={spacing}; borehole-relative angle records={relative}. "
                 "Their import and derived metrics are retained, but direction completion is not implemented in this phase."
             )
-        settings = settings or self.project.m9_state.density_settings
         roles = self._roles()
-        intervals = build_p10_intervals(
-            self.project.borehole_collection,
-            roles,
-            get_domain_intervals(self.project),
-            interval_length=settings.interval_length,
-            interval_mode=settings.interval_mode,
-            set_ids=[item.set_id for item in self.project.joint_sets],
-        )
-        orientation_models, domain_sets = self._fit_domain_orientations(roles)
+        if mode == M9DensityInputMode.FORMAL_OBSERVATIONS:
+            intervals = build_p10_intervals(
+                self.project.borehole_collection,
+                roles,
+                get_domain_intervals(self.project),
+                interval_length=settings.interval_length,
+                interval_mode=settings.interval_mode,
+                set_ids=[item.set_id for item in self.project.joint_sets],
+            )
+            orientation_models, domain_sets = self._fit_domain_orientations(roles)
+            input_provenance = {
+                "source_mode": mode.value,
+                "realization_id": None,
+                "validation_semantics": "independent whole-borehole holdout",
+            }
+            selected_realization_id = None
+        else:
+            if not realization_id:
+                raise ValueError("Select one saved Phase 2A borehole-fracture realization for M9")
+            from dfn_cave_studio.services.m9_phase2a_adapter import Phase2AM9Adapter
+
+            adapted = Phase2AM9Adapter(self.project).build(
+                realization_id,
+                roles,
+                interval_mode=settings.interval_mode,
+                interval_length=settings.interval_length,
+                cancelled=cancelled,
+            )
+            intervals = adapted.intervals
+            orientation_models = adapted.orientation_models
+            domain_sets = adapted.domain_sets
+            input_provenance = adapted.provenance
+            selected_realization_id = realization_id
+        eligible_intervals = [item for item in intervals if item.p10 is not None]
         estimates = estimate_p32(
-            intervals,
+            eligible_intervals,
             self.project.joint_sets,
-            random_seed=self.project.m9_state.random_seed,
+            random_seed=seed,
             sample_count=settings.monte_carlo_samples,
             low_observability_threshold=settings.low_observability_threshold,
             joint_sets_by_domain=domain_sets,
@@ -137,25 +176,38 @@ class M9Service:
         )
         if cancelled and cancelled():
             raise InterruptedError("density estimation cancelled")
-        self.project.m9_state.density_settings = settings
-        self.project.m9_state.p10_intervals = intervals
-        self.project.m9_state.p32_estimates = estimates
-        self.project.m9_state.orientation_models = orientation_models
-        self.project.m9_state.parameter_field_metadata = None
-        self.project.m9_state.parameter_field_arrays = {}
-        self.project.m9_state.validation_results = []
-        self.project.m9_state.validation_summary = ValidationSummary()
-        self.project.m9_state.provenance["density_fit_holes"] = sorted(
+        state = self.project.m9_state.model_copy(deep=False)
+        state.density_settings = settings
+        state.density_input_mode = mode
+        state.density_input_realization_id = selected_realization_id
+        state.random_seed = seed
+        state.p10_intervals = intervals
+        state.p32_estimates = estimates
+        state.orientation_models = orientation_models
+        state.parameter_field_metadata = None
+        state.parameter_field_arrays = {}
+        state.validation_results = []
+        state.validation_summary = ValidationSummary()
+        state.provenance = dict(self.project.m9_state.provenance)
+        state.provenance["density_input"] = input_provenance
+        state.provenance["density_fit_holes"] = sorted(
             hole_id for hole_id, role in roles.items() if role == "calibration"
         )
-        self.project.m9_state.provenance["validation_holes_excluded"] = sorted(
+        state.provenance["validation_holes_excluded"] = sorted(
             hole_id for hole_id, role in roles.items() if role == "validation"
         )
-        self.project.m9_state.provenance["non_global_orientation_records_excluded_from_density_fit"] = {
+        state.provenance["non_global_orientation_records_excluded_from_density_fit"] = {
             "interval_spacing": spacing,
             "axis_plane_angle": relative,
-            "reason": "direction completion is not implemented in this phase",
+            "reason": (
+                "direction completion is not implemented in this phase"
+                if mode == M9DensityInputMode.FORMAL_OBSERVATIONS
+                else "Phase 2A source selected exclusively; raw non-global observations are not mixed"
+            ),
         }
+        if commit:
+            self.project.m9_state = state
+        return state
 
     def _fit_domain_orientations(self, roles: dict[str, str]):
         """Fit Fisher orientation per domain/set from Calibration observations."""
@@ -303,6 +355,7 @@ class M9Service:
             raise RuntimeError("Calculate the density model first")
         if not self.project.m9_state.size_models:
             raise RuntimeError("Set fracture-size models first")
+        self._validate_selected_density_input()
         builder = ParameterFieldBuilder()
         metadata, arrays = builder.build(
             self.project.spatial_grid_config.analysis_domain,
@@ -320,6 +373,9 @@ class M9Service:
             orientation_models=self.project.m9_state.orientation_models,
         )
         metadata.provenance["domain_assignment"] = "nearest_calibration_domain_interval_center"
+        metadata.provenance["density_input"] = dict(
+            self.project.m9_state.provenance.get("density_input", {})
+        )
         if cancelled is not None and cancelled():
             raise InterruptedError("parameter field generation cancelled")
         if commit:
@@ -332,6 +388,7 @@ class M9Service:
         state = self.project.m9_state
         if state.parameter_field_metadata is None:
             raise RuntimeError("Build the parameter field before validation")
+        self._validate_selected_density_input()
         domain_orientations = {
             (item.domain_id, item.set_id): JointSetConfig(
                 set_id=item.set_id,
@@ -378,14 +435,39 @@ class M9Service:
                     predicted_p32=predicted_p32,
                     absolute_error=error,
                     relative_error=relative,
-                    data_state="no_data" if predicted_p10 is None else row.data_state,
+                    calibration_or_validation=(
+                        "internal_consistency_not_independent"
+                        if state.density_input_mode == M9DensityInputMode.PHASE2A_REALIZATION
+                        else "validation"
+                    ),
+                    data_state=(
+                        "internal_consistency_only"
+                        if state.density_input_mode == M9DensityInputMode.PHASE2A_REALIZATION
+                        and predicted_p10 is not None
+                        else ("no_data" if predicted_p10 is None else row.data_state)
+                    ),
                 )
             )
             if progress:
                 progress(row_index + 1, len(validation_rows))
         valid = [item for item in results if item.predicted_p10 is not None and item.observed_p10 is not None]
         no_data = len(results) - len(valid)
-        if len(valid) < 2:
+        if state.density_input_mode == M9DensityInputMode.PHASE2A_REALIZATION:
+            summary = ValidationSummary(
+                state=ValidationState.NOT_VALIDATED,
+                valid_interval_count=len(valid),
+                no_data_interval_count=no_data,
+            )
+            state.provenance["validation_interpretation"] = {
+                "classification": "internal_consistency_not_independent",
+                "reason": (
+                    "Each held-out borehole realization was generated from that borehole's own spacing interval; "
+                    "it is excluded from fitting but is not independent validation ground truth."
+                ),
+                "raw_spacing_may_validate": "P10/count only under a separately demonstrated independence design",
+                "p32_ground_truth": False,
+            }
+        elif len(valid) < 2:
             summary = ValidationSummary(
                 state=ValidationState.INSUFFICIENT_VALIDATION,
                 valid_interval_count=len(valid),
@@ -412,6 +494,27 @@ class M9Service:
         state.validation_results = results
         state.validation_summary = summary
         return summary
+
+    def _validate_selected_density_input(self) -> None:
+        """Reject stale or missing Phase 2A lineage before downstream M9 work."""
+        state = self.project.m9_state
+        if state.density_input_mode != M9DensityInputMode.PHASE2A_REALIZATION:
+            return
+        realization_id = state.density_input_realization_id
+        realization = next(
+            (
+                item
+                for item in self.project.borehole_fracture_state.realizations
+                if item.realization_id == realization_id
+            ),
+            None,
+        )
+        if realization is None:
+            raise RuntimeError("The selected Phase 2A realization no longer exists")
+        from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
+
+        if realization.input_hash != BoreholeFractureService(self.project).authoritative_confirmed_fit().input_hash:
+            raise RuntimeError("The selected Phase 2A realization is stale and cannot be reused by M9")
 
     def _field_value(self, interval, set_id: int) -> float | None:
         """Read a validation prediction from the generated voxel field."""

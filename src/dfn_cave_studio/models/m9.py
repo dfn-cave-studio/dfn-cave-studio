@@ -91,6 +91,13 @@ class ValidationState(StrEnum):
     NOT_VALIDATED = "not_validated"
 
 
+class M9DensityInputMode(StrEnum):
+    """Exclusive source used to construct M9 P10/P32 inputs."""
+
+    FORMAL_OBSERVATIONS = "formal_observations"
+    PHASE2A_REALIZATION = "phase2a_realization"
+
+
 class DensitySettings(BaseModel):
     """P10 interval, directional correction, and interpolation settings."""
 
@@ -393,6 +400,8 @@ class M9State(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     density_settings: DensitySettings = Field(default_factory=DensitySettings)
+    density_input_mode: M9DensityInputMode = M9DensityInputMode.FORMAL_OBSERVATIONS
+    density_input_realization_id: str | None = None
     p10_intervals: list[P10Interval] = Field(default_factory=list)
     p32_estimates: list[P32Estimate] = Field(default_factory=list)
     orientation_models: list[DomainOrientationModel] = Field(default_factory=list)
