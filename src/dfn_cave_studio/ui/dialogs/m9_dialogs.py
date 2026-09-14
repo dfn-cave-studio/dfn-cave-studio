@@ -10,6 +10,7 @@ from dfn_cave_studio.models.m9 import (
     DensityMethod,
     DensitySettings,
     KrigingSettings,
+    M9DensityInputMode,
     NonNegativePolicy,
     VariogramMode,
     VariogramModel,
@@ -91,6 +92,35 @@ class M9DensityDialog(_M9Dialog):
         layout = QVBoxLayout(content)
         scroll.setWidget(content)
         root_layout.addWidget(scroll)
+        source_group = QGroupBox("M9 density input (choose exactly one)")
+        source_form = QFormLayout(source_group)
+        self.input_mode = QComboBox()
+        self.input_mode.addItem("Formal fracture observations", M9DensityInputMode.FORMAL_OBSERVATIONS.value)
+        self.input_mode.addItem(
+            "Saved Phase 2A borehole-fracture realization",
+            M9DensityInputMode.PHASE2A_REALIZATION.value,
+        )
+        self.realization = QComboBox()
+        self.realization.addItem("Select one saved realization...", None)
+        for item in project.borehole_fracture_state.realizations:
+            self.realization.addItem(
+                f"{item.realization_id} — {item.fracture_count:,} fractures — seed {item.master_seed}",
+                item.realization_id,
+            )
+        saved_mode = project.m9_state.density_input_mode.value
+        self.input_mode.setCurrentIndex(max(0, self.input_mode.findData(saved_mode)))
+        saved_realization = project.m9_state.density_input_realization_id
+        if saved_realization is not None:
+            self.realization.setCurrentIndex(max(0, self.realization.findData(saved_realization)))
+        self.input_notice = QLabel(
+            "Phase 2A input is an internal stochastic realization of along-hole spacing. "
+            "It is not observed P32 ground truth and is never mixed into Formal observations or global-K fitting."
+        )
+        self.input_notice.setWordWrap(True)
+        source_form.addRow("Input source", self.input_mode)
+        source_form.addRow("Realization", self.realization)
+        source_form.addRow(self.input_notice)
+        layout.addWidget(source_group)
         form = QFormLayout()
         self.interval_mode = QComboBox()
         self.interval_mode.addItem("Fixed length", "fixed")
@@ -172,7 +202,13 @@ class M9DensityDialog(_M9Dialog):
         self._update_method_controls()
         self.calculate_button = QPushButton("Calculate P10 / P32")
         self.calculate_button.clicked.connect(self._calculate)
-        layout.addWidget(self.calculate_button)
+        self.cancel_calculation_button = QPushButton("Cancel computation")
+        self.cancel_calculation_button.clicked.connect(self._cancel_computation)
+        self.cancel_calculation_button.setEnabled(False)
+        calculate_row = QHBoxLayout()
+        calculate_row.addWidget(self.calculate_button)
+        calculate_row.addWidget(self.cancel_calculation_button)
+        layout.addLayout(calculate_row)
         self.progress = QProgressBar(); self.progress.setVisible(False)
         layout.addWidget(self.progress)
         self.summary = QLabel()
@@ -194,11 +230,19 @@ class M9DensityDialog(_M9Dialog):
             ]
         )
         layout.addWidget(self.table)
-        layout.addWidget(self._buttons())
+        self.dialog_buttons = self._buttons()
+        layout.addWidget(self.dialog_buttons)
+        self._discarded_worker_ids: set[int] = set()
+        self.input_mode.currentIndexChanged.connect(self._update_input_controls)
+        self._update_input_controls()
         self._refresh()
 
     def _calculate(self) -> None:
         try:
+            input_mode = M9DensityInputMode(self.input_mode.currentData())
+            realization_id = self.realization.currentData()
+            if input_mode == M9DensityInputMode.PHASE2A_REALIZATION and realization_id is None:
+                raise ValueError("Select one saved Phase 2A realization; M9 never selects the latest one automatically")
             settings = DensitySettings(
                 interval_mode=self.interval_mode.currentData(),
                 interval_length=self.interval_length.value(),
@@ -221,22 +265,25 @@ class M9DensityDialog(_M9Dialog):
                     non_negative_policy=self.nonnegative_policy.currentData(),
                 ),
             )
-            self.project.m9_state.random_seed = self.seed.value()
-            self.calculate_button.setEnabled(False)
-            self.progress.setVisible(True)
-            self._worker = M9Worker(
+            worker = M9Worker(
                 lambda progress, cancelled: self.service.calculate_density(
                     settings,
+                    input_mode=input_mode,
+                    realization_id=realization_id,
+                    random_seed=self.seed.value(),
                     progress=progress,
                     cancelled=cancelled,
+                    commit=False,
                 )
             )
-            self._worker.signals.progress.connect(lambda current, total: self.progress.setRange(0, total))
-            self._worker.signals.progress.connect(lambda current, total: self.progress.setValue(current))
-            self._worker.signals.finished.connect(self._calculation_done)
-            self._worker.signals.cancelled.connect(self._calculation_cancelled)
-            self._worker.signals.failed.connect(self._calculation_failed)
-            QThreadPool.globalInstance().start(self._worker)
+            self._worker = worker
+            self._set_calculation_running(True)
+            worker.signals.progress.connect(lambda current, total: self.progress.setRange(0, total))
+            worker.signals.progress.connect(lambda current, total: self.progress.setValue(current))
+            worker.signals.finished.connect(lambda result, owner=worker: self._calculation_done(result, owner))
+            worker.signals.cancelled.connect(lambda owner=worker: self._calculation_cancelled(owner))
+            worker.signals.failed.connect(lambda message, owner=worker: self._calculation_failed(message, owner))
+            QThreadPool.globalInstance().start(worker)
         except Exception as exc:
             self._fail(str(exc))
 
@@ -247,21 +294,53 @@ class M9DensityDialog(_M9Dialog):
         for widget in (self.nugget, self.sill, self.variogram_range):
             widget.setEnabled(manual)
 
-    def _calculation_done(self, _result) -> None:
+    def _update_input_controls(self) -> None:
+        phase2a = self.input_mode.currentData() == M9DensityInputMode.PHASE2A_REALIZATION.value
+        self.realization.setEnabled(phase2a)
+
+    def _cancel_computation(self) -> None:
+        if self._worker is not None:
+            self._discarded_worker_ids.add(id(self._worker))
+            self._worker.cancel()
+
+    def _set_calculation_running(self, running: bool) -> None:
+        """Prevent dialog acceptance while a worker still owns a candidate."""
+        self.calculate_button.setEnabled(not running)
+        self.cancel_calculation_button.setEnabled(running)
+        self.progress.setVisible(running)
+        ok_button = self.dialog_buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_button is not None:
+            ok_button.setEnabled(not running)
+
+    def _calculation_done(self, result, worker=None) -> None:
+        if worker is not None and id(worker) in self._discarded_worker_ids:
+            self._discarded_worker_ids.discard(id(worker))
+            if worker is self._worker:
+                self._calculation_cancelled(worker)
+            return
+        if worker is not None and worker is not self._worker:
+            return
+        self.project.m9_state = result
         self._worker = None
-        self.calculate_button.setEnabled(True)
-        self.progress.setVisible(False)
+        self._set_calculation_running(False)
         self.committed_changes = True
         self._refresh()
 
-    def _calculation_cancelled(self) -> None:
+    def _calculation_cancelled(self, worker=None) -> None:
+        if worker is not None and worker is not self._worker:
+            return
+        if worker is not None:
+            self._discarded_worker_ids.discard(id(worker))
         self._worker = None
-        self.calculate_button.setEnabled(True)
-        self.progress.setVisible(False)
+        self._set_calculation_running(False)
 
-    def _calculation_failed(self, message: str) -> None:
-        self._calculation_cancelled()
-        self._fail(message)
+    def _calculation_failed(self, message: str, worker=None) -> None:
+        discarded = worker is not None and id(worker) in self._discarded_worker_ids
+        if worker is not None:
+            self._discarded_worker_ids.discard(id(worker))
+        self._calculation_cancelled(worker)
+        if not discarded:
+            self._fail(message)
 
     def _refresh(self) -> None:
         state = self.project.m9_state
@@ -274,8 +353,11 @@ class M9DensityDialog(_M9Dialog):
                 "; excluded from fit: interval spacing "
                 f"{excluded.get('interval_spacing', 0)}, borehole-relative angle {excluded.get('axis_plane_angle', 0)}"
             )
+        source = state.density_input_mode.value
+        if state.density_input_realization_id:
+            source += f" ({state.density_input_realization_id})"
         self.summary.setText(
-            f"P10 intervals: calibration {calibration}, validation {validation}; "
+            f"Input: {source}; P10 intervals: calibration {calibration}, validation {validation}; "
             f"P32 estimates {len(state.p32_estimates)}{excluded_text}"
         )
         self.table.setRowCount(len(state.p32_estimates))
@@ -304,6 +386,10 @@ class M9DensityDialog(_M9Dialog):
             self.workflow.complete_step("density")
             self.workflow.mark_ready("size")
         super().accept()
+
+    def reject(self) -> None:
+        self._cancel_computation()
+        super().reject()
 
 
 class M9SizeDialog(_M9Dialog):

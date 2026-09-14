@@ -555,6 +555,26 @@ class ZipProjectStore:
 
         BoreholeFractureService.validate_arrays(target)
 
+    def read_borehole_fracture_arrays(
+        self, project: "Project", path: Path, realization_id: str
+    ) -> dict[str, np.ndarray]:
+        """Read one Phase 2A realization without changing the selected/resident realization."""
+        state = project.borehole_fracture_state
+        target = next((item for item in state.realizations if item.realization_id == realization_id), None)
+        if target is None:
+            raise KeyError(f"Unknown borehole fracture realization: {realization_id}")
+        with zipfile.ZipFile(path, "r") as zf, tempfile.TemporaryDirectory(prefix="dfn-bhf-read-") as directory:
+            if target.array_member not in zf.namelist():
+                raise ValueError(f"Borehole realization arrays are missing: {target.array_member}")
+            extracted = Path(zf.extract(target.array_member, directory))
+            with np.load(extracted, allow_pickle=False) as archive:
+                arrays = {name: archive[name].copy() for name in archive.files}
+        from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
+
+        probe = target.model_copy(update={"arrays": arrays})
+        BoreholeFractureService.validate_arrays(probe)
+        return arrays
+
     # ── Serialization Helpers ─────────────────────────────────────────────
 
     def _serialize_project_core(self, project) -> dict:

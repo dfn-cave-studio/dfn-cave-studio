@@ -1212,7 +1212,8 @@ class MainWindow(QMainWindow):
         if self._project_store.has_project:
             project = self._project_store.current_project
             compatible_count = sum(len(hole.fracture_observations) for hole in project.borehole_collection)
-            if compatible_count == 0 and project.borehole_database.counts("fractures")["raw"]:
+            phase2a_count = len(project.borehole_fracture_state.realizations)
+            if compatible_count == 0 and phase2a_count == 0 and project.borehole_database.counts("fractures")["raw"]:
                 counts = project.borehole_database.observation_mode_counts()
                 QMessageBox.information(
                     self,
