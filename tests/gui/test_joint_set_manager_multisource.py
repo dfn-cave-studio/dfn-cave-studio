@@ -7,6 +7,8 @@ import pytest
 
 from dfn_cave_studio.models.borehole_database import BoreholeDataType
 from dfn_cave_studio.models.fracture_set import JointSetConfig, OrientationDistribution
+from dfn_cave_studio.models.borehole_fracture_realization import BoreholeFractureGenerationConfig
+from dfn_cave_studio.models.m9 import M9DensityInputMode
 from dfn_cave_studio.models.project import Project
 from dfn_cave_studio.persistence.zip_project_store import ZipProjectStore
 from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
@@ -115,6 +117,40 @@ def test_joint_set_manager_recognizes_complete_legacy_orientation(qtbot) -> None
     dialog.reject()
 
 
+def test_joint_set_manager_small_window_scrolls_without_changing_numeric_inputs(qtbot) -> None:
+    project = _synthetic_project()
+    project.joint_sets = [_joint_set(set_id, (set_id * 31.0) % 360.0, 40.0) for set_id in range(1, 16)]
+    dialog = JointSetManagerDialog(
+        joint_sets=project.joint_sets,
+        model_volume=project.model_bounds.volume,
+        borehole_collection=project.borehole_collection,
+        project=project,
+    )
+    qtbot.addWidget(dialog)
+    dialog.resize(560, 380)
+    dialog.show()
+    qtbot.wait(20)
+
+    assert dialog._data_status.isVisible()
+    assert dialog._button_box.isVisible()
+    assert dialog._scroll_area.verticalScrollBar().maximum() > 0
+    before = dialog._global_k_spin.value()
+
+    class WheelEvent:
+        ignored = False
+
+        def ignore(self) -> None:
+            self.ignored = True
+
+    event = WheelEvent()
+    dialog._global_k_spin.wheelEvent(event)
+    assert event.ignored
+    assert dialog._global_k_spin.value() == before
+    dialog._scroll_area.verticalScrollBar().setValue(dialog._scroll_area.verticalScrollBar().maximum())
+    assert dialog._mapping_table.isVisible()
+    dialog.reject()
+
+
 def test_main_window_joint_set_entry_constructs_safely(monkeypatch, qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
@@ -146,6 +182,7 @@ def test_imported_representatives_fit_confirm_persist_and_cancel(monkeypatch, qt
     assert "strictly selected K=2" in preview._count_summary.text()
     assert len(preview.get_joint_sets()) == preview._global_k_spin.value()
     assert all(item.provenance["size_status"] == "UNRESOLVED" for item in preview.get_joint_sets())
+    assert project.m9_state.size_models == []
     assert all(item.provenance["p32_status"] == "DERIVED_LATER_BY_M9" for item in preview.get_joint_sets())
     assert all(item.target_p32 == pytest.approx(0.5) for item in preview.get_joint_sets())
     assert not preview._p32_spin.isVisible()
@@ -291,5 +328,109 @@ def test_joint_set_confirmation_requires_fitting_available_candidates(qtbot) -> 
     qtbot.addWidget(dialog)
     dialog._on_accept()
     assert dialog.result() == QDialog.DialogCode.Rejected
-    assert "Fit and review" in dialog._fit_status.text()
+    assert "Prepare and review" in dialog._fit_status.text()
     assert dialog.get_joint_sets() == []
+
+
+def test_local_component_mapping_is_explicit_and_merge_preserves_rows(qtbot) -> None:
+    dialog = JointSetManagerDialog(project=_synthetic_project())
+    qtbot.addWidget(dialog)
+    assert dialog._representative_table.rowCount() == 3
+    qtbot.mouseClick(dialog._prepare_mapping_button, Qt.MouseButton.LeftButton)
+    assert dialog._list.count() == 3
+    assert dialog._mapping_table.rowCount() == 3
+    assert dialog.get_global_fit().algorithm == "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING"
+    z_set_id = next(
+        item.global_set_id for item in dialog.get_global_fit().mappings if item.observation_id == "Z-C-1"
+    )
+    z_index = next(index for index, item in enumerate(dialog.get_joint_sets()) if item.set_id == z_set_id)
+    dialog._list.setCurrentRow(z_index)
+    assert "NO_DATA, not true zero" in dialog._intensity_status_label.text()
+
+    suggestion_row = next(
+        row
+        for row, item in enumerate(dialog._mapping_suggestions)
+        if {item.point_a, item.point_b} == {"A", "C"}
+    )
+    dialog._suggestion_table.selectRow(suggestion_row)
+    qtbot.mouseClick(dialog._merge_suggestion_button, Qt.MouseButton.LeftButton)
+    assert dialog._list.count() == 2
+    assert dialog._mapping_table.rowCount() == 3
+    assert dialog._representative_table.rowCount() == 3
+    dialog._on_accept()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.get_global_fit().provenance["confirmation_status"] == "USER_CONFIRMED"
+
+
+def test_user_mapping_generation_uses_spatial_pz_influence_mode(qtbot) -> None:
+    project = _synthetic_project()
+    service = BoreholeFractureService(project)
+    fit = service.build_local_component_mapping(user_confirmed=True)
+    project.joint_sets = [
+        JointSetConfig(
+            set_id=item.global_set_id,
+            orientation=OrientationDistribution(
+                mean_dip_direction=item.mean_dip_direction,
+                mean_dip=item.mean_dip,
+                kappa=item.kappa,
+            ),
+        )
+        for item in fit.sets
+    ]
+    project.borehole_fracture_state = project.borehole_fracture_state.model_copy(update={"global_fit": fit})
+    dialog = BoreholeFractureDialog(project)
+    qtbot.addWidget(dialog)
+    assert dialog.direction_combo.currentData() == "SPATIALLY_FITTED_WITHIN_GLOBAL_SET"
+    assert not dialog.direction_combo.isEnabled()
+    assert dialog.generate_button.isEnabled()
+
+
+def test_confirmed_mapping_change_invalidates_realizations_and_phase2a_m9(monkeypatch, qtbot) -> None:
+    project = _synthetic_project()
+    service = BoreholeFractureService(project)
+    fit = service.build_local_component_mapping(user_confirmed=True)
+    project.joint_sets = [
+        JointSetConfig(
+            set_id=item.global_set_id,
+            orientation=OrientationDistribution(
+                mean_dip_direction=item.mean_dip_direction,
+                mean_dip=item.mean_dip,
+                kappa=item.kappa,
+            ),
+        )
+        for item in fit.sets
+    ]
+    project.borehole_fracture_state = project.borehole_fracture_state.model_copy(update={"global_fit": fit})
+    candidate = service.build_candidate(
+        BoreholeFractureGenerationConfig(
+            number_of_sets=len(fit.sets),
+            use_confirmed_global_fit=True,
+            direction_mode="SPATIALLY_FITTED_WITHIN_GLOBAL_SET",
+        )
+    )
+    project.borehole_fracture_state = candidate
+    project.m9_state.density_input_mode = M9DensityInputMode.PHASE2A_REALIZATION
+    project.m9_state.provenance = {"synthetic_marker": "must be invalidated"}
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._project_store._current_project = project
+
+    def merge_and_accept(dialog):
+        dialog._prepare_local_mapping()
+        target = next(
+            row
+            for row, item in enumerate(dialog._mapping_suggestions)
+            if {item.point_a, item.point_b} == {"A", "C"}
+        )
+        dialog._suggestion_table.selectRow(target)
+        dialog._merge_selected_suggestion()
+        dialog._on_accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(JointSetManagerDialog, "exec", merge_and_accept)
+    window._on_joint_set_manager()
+    assert project.borehole_fracture_state.realizations == []
+    assert project.m9_state.density_input_mode == M9DensityInputMode.FORMAL_OBSERVATIONS
+    assert project.m9_state.provenance == {}
+    assert window._project_store.is_dirty

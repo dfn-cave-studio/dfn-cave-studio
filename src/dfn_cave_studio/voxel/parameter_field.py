@@ -43,7 +43,17 @@ SIZE_TYPE_CODES = {
     "truncated_power_law": 3,
     "truncated_exponential": 4,
 }
-SIZE_SOURCE_CODES = {"fitted": 0, "size_proxy": 1, "assumed": 2, "user_defined": 3, "experimental": 4}
+SIZE_SOURCE_CODES = {
+    "fitted": 0,
+    "size_proxy": 1,
+    "assumed": 2,
+    "user_defined": 3,
+    "experimental": 4,
+    "manual_fixed": 5,
+    "manual_distribution": 6,
+    "fitted_from_trace_data": 7,
+    "assumed_scenario": 8,
+}
 DENSITY_METHOD_CODES = {DensityMethod.GLOBAL_CONSTANT: 0, DensityMethod.IDW: 1, DensityMethod.ORDINARY_KRIGING: 2}
 SIZE_PARAMETER_ORDER = {
     "fixed": ["radius"],

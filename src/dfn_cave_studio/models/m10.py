@@ -33,7 +33,7 @@ class M10GenerationConfig(BaseModel):
     condition_calibration_observations: bool = True
     deterministic_structures_reduce_budget: bool = False
     experimental_size_models_confirmed: bool = False
-    maximum_fractures: int = Field(default=1_000_000, ge=1)
+    maximum_fractures: int = Field(default=1_000_000, ge=1, le=2_000_000_000)
     memory_warning_bytes: int = Field(default=512 * 1024**2, ge=1)
     disk_sides: int = Field(default=32, ge=12, le=128)
     validation_warning_acknowledged: bool = False

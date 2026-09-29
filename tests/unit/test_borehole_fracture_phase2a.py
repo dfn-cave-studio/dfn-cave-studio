@@ -85,6 +85,7 @@ def _synthetic_project(*, include_random: bool = True) -> Project:
         {
             "observation_id": "Z-C-1",
             "point_id": "C",
+            "borehole_id": "SYN-A",
             "x": 20.0,
             "y": 10.0,
             "z": 80.0,

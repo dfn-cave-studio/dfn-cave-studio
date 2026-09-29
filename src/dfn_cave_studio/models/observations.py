@@ -67,6 +67,7 @@ class OrientationPointObservation(BaseModel):
     point_key: str
     record_id: str
     source_kind: Literal["POINT_CLOUD", "BOREHOLE_CAMERA"]
+    borehole_id: str | None = None
     x: float
     y: float
     z: float

@@ -2,6 +2,12 @@
 
 ## Unreleased — Phase 2A measured-point constrained borehole realizations
 
+- Enforce the current locked whole-hole Holdout before Phase 2A fitting/generation and add auditable, Calibration-only along-hole P10 validation; legacy self-informed results remain internal consistency rather than independent P32/DFN validation.
+- Make the Joint Set Manager's variable-length content scrollable while keeping status and confirmation controls visible, and prevent page-wheel gestures from changing scientific spin-box values.
+
+- Added a user-confirmed preserved-component mapping workflow for imported P/Z representative orientations: identity groups are created first, axial-angle suggestions remain advisory, and only explicit merges change the authoritative global-set mapping.
+- Preserved legacy explicit-K weighted K-means behavior, while new local mappings retain separate P/Z spatial direction influence and P-component intensity provenance.
+
 - Added stable weighted axial clustering from complete P/Z representative orientations, preserving local-to-global set mappings without treating local set labels as mine-wide IDs.
 - Added deterministic 3-D IDW component constraints in which P spacing supplies intensity, Z supplies direction only, and unreported random components remain missing rather than zero.
 - Added an extensible `HOMOGENEOUS_POISSON` measured-depth sampler using `N ~ Poisson(L/S)`, half-open intervals, real survey trajectories, stable seeded substreams, dominant-set directions, and isotropic random background.

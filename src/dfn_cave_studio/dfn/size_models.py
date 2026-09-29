@@ -145,6 +145,9 @@ class MLESizeModelFitter(SizeModelFitter):
             converged=selected.converged,
             optimizer_message=selected.optimizer_message,
             provenance={
+                "size_status": "FITTED_FROM_TRACE_DATA",
+                "radius_unit": "m",
+                "radius_semantics": "circular disk radius; diameter=2R",
                 "calibration_only": True,
                 "measurement_is_radius": not proxy,
                 "size_proxy": proxy,
@@ -273,6 +276,14 @@ def assumed_size_model(
 ) -> SizeModel:
     """Create a clearly labelled manual/assumed model without fake fitting."""
     mean, mean2 = size_moments(distribution_type, parameters, lower, upper)
+    manual_status = "MANUAL_FIXED" if distribution_type == "fixed" else "MANUAL_DISTRIBUTION"
+    source = (
+        SizeModelSource.MANUAL_FIXED
+        if user_defined and distribution_type == "fixed"
+        else SizeModelSource.MANUAL_DISTRIBUTION
+        if user_defined
+        else SizeModelSource.ASSUMED
+    )
     return SizeModel(
         domain_id=domain_id,
         set_id=set_id,
@@ -282,7 +293,13 @@ def assumed_size_model(
         max_radius=upper,
         mean_radius=mean,
         mean_squared_radius=mean2,
-        source=SizeModelSource.USER_DEFINED if user_defined else SizeModelSource.ASSUMED,
+        source=source,
         fit_status="assumed" if not user_defined else "user_defined",
-        provenance={"automatic_fit": False, "reliability": "ASSUMED" if not user_defined else "USER_DEFINED"},
+        provenance={
+            "automatic_fit": False,
+            "reliability": "ASSUMED" if not user_defined else "USER_DEFINED",
+            "size_status": manual_status if user_defined else "ASSUMED_SCENARIO",
+            "radius_unit": "m",
+            "radius_semantics": "circular disk radius; diameter=2R",
+        },
     )

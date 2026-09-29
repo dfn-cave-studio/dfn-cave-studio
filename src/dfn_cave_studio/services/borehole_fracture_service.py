@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
@@ -24,6 +25,7 @@ from dfn_cave_studio.models.borehole_fracture_realization import (
     RandomComponentStatus,
 )
 from dfn_cave_studio.services.joint_set_service import INSUFFICIENT_ORIENTATIONS_MESSAGE, JointSetService
+from dfn_cave_studio.services.m7_state import get_holdout
 from dfn_cave_studio.services.observation_service import ObservationService
 from dfn_cave_studio.voxel.resource_estimate import (
     available_system_memory_bytes,
@@ -33,6 +35,21 @@ from dfn_cave_studio.voxel.resource_estimate import (
 
 class BoreholeGenerationCancelled(RuntimeError):
     """Raised internally when a Phase 2A calculation is cancelled."""
+
+
+@dataclass(frozen=True)
+class LocalMappingSuggestion:
+    """Advisory axial-angle comparison; it never changes a mapping."""
+
+    component_a: str
+    point_a: str
+    source_a: str
+    domain_a: int | None
+    component_b: str
+    point_b: str
+    source_b: str
+    domain_b: int | None
+    axial_angle_deg: float
 
 
 class FracturePositionSampler(Protocol):
@@ -180,15 +197,7 @@ class BoreholeFractureService:
 
     def fit_global_sets(self, number_of_sets: int, random_seed: int) -> GlobalJointSetFit:
         """Cluster complete P/Z representative orientations with explicit weights."""
-        rows = [
-            item
-            for item in self.observations.orientation_points()
-            if item.component_type == "LOCAL_DOMINANT_SET"
-            and item.orientation_status == "COMPLETE"
-            and item.dip is not None
-            and item.dip_direction is not None
-        ]
-        rows.sort(key=lambda item: item.observation_id)
+        rows = self._complete_representatives()
         if number_of_sets < 1 or len(rows) < number_of_sets:
             raise ValueError(INSUFFICIENT_ORIENTATIONS_MESSAGE)
         normals = np.asarray([dip_dir_dip_to_normal(item.dip_direction, item.dip) for item in rows])
@@ -247,12 +256,211 @@ class BoreholeFractureService:
                 "random_and_missing_directions_excluded": True,
                 "axial_plane_normals": True,
                 "kappa_semantics": "UNRESOLVED for one representative; otherwise SITE_MEAN_DISPERSION",
+                "validation_isolation": self._validation_isolation_provenance(),
                 "intensity_semantics": (
                     "P-site reciprocal spacing supplies relative group/random allocation only; borehole interval "
                     "spacing alone controls Poisson total count; neither is automatically converted to P32"
                 ),
             },
         )
+
+    def build_local_component_mapping(
+        self,
+        assignments: dict[str, int] | None = None,
+        *,
+        user_confirmed: bool = False,
+    ) -> GlobalJointSetFit:
+        """Preserve each imported representative and apply only an explicit component mapping.
+
+        With no assignments, each complete P/Z representative receives its own
+        stable global group.  Repeated global IDs express user-reviewed merges;
+        local labels are never used as grouping keys.
+        """
+        rows = self._complete_representatives()
+        if not rows:
+            raise ValueError("No complete P/Z representative orientations are available for local-component mapping")
+        component_rows = sorted(((self._component_id(item), item) for item in rows), key=lambda value: value[0])
+        component_ids = [component_id for component_id, _item in component_rows]
+        identity = {component_id: index for index, component_id in enumerate(component_ids, start=1)}
+        selected = identity if assignments is None else {str(key): int(value) for key, value in assignments.items()}
+        if set(selected) != set(component_ids):
+            missing = sorted(set(component_ids) - set(selected))
+            extra = sorted(set(selected) - set(component_ids))
+            raise ValueError(f"Component mapping must cover every representative exactly once; missing={missing}, extra={extra}")
+        if any(value <= 0 for value in selected.values()):
+            raise ValueError("Global set IDs in a component mapping must be positive")
+
+        mappings: list[GlobalSetMapping] = []
+        normals_by_set: dict[int, list[np.ndarray]] = defaultdict(list)
+        weights_by_set: dict[int, list[int]] = defaultdict(list)
+        for component_id, item in component_rows:
+            weight = item.joint_num if item.source_kind == "POINT_CLOUD" and item.joint_num is not None else 1
+            global_set_id = selected[component_id]
+            mappings.append(
+                GlobalSetMapping(
+                    observation_id=item.observation_id,
+                    component_id=component_id,
+                    point_key=item.point_key,
+                    local_set_id=item.local_set_id,
+                    source_kind=item.source_kind,
+                    global_set_id=global_set_id,
+                    sample_weight=int(weight),
+                )
+            )
+            normals_by_set[global_set_id].append(dip_dir_dip_to_normal(item.dip_direction, item.dip))
+            weights_by_set[global_set_id].append(int(weight))
+
+        models: list[GlobalJointSetModel] = []
+        members: dict[str, list[str]] = {}
+        intensity_support: dict[str, str] = {}
+        for set_id in sorted(normals_by_set):
+            normals = np.asarray(normals_by_set[set_id], dtype=np.float64)
+            weights = np.asarray(weights_by_set[set_id], dtype=np.int64)
+            if len(normals) == 1:
+                dd, dip = normal_to_dip_dir_dip(normals[0])
+                kappa = 1.0  # Required inactive placeholder; status prevents it being represented as fitted.
+                kappa_status = "UNRESOLVED"
+            else:
+                dd, dip, kappa = self._weighted_fisher(normals, weights)
+                kappa_status = "SITE_MEAN_DISPERSION"
+            group_members = [item.component_id for item in mappings if item.global_set_id == set_id]
+            members[str(set_id)] = group_members
+            group_observations = {item.observation_id for item in mappings if item.global_set_id == set_id}
+            has_p_spacing = any(
+                item.observation_id in group_observations
+                and item.source_kind == "POINT_CLOUD"
+                and item.joint_spacing_m is not None
+                for _component_id, item in component_rows
+            )
+            intensity_support[str(set_id)] = (
+                "P_SPACING_SUPPORTED" if has_p_spacing else "Z_DIRECTION_ONLY_NO_P_INTENSITY"
+            )
+            models.append(
+                GlobalJointSetModel(
+                    global_set_id=set_id,
+                    mean_dip_direction=dd % 360.0,
+                    mean_dip=dip,
+                    kappa=kappa,
+                    kappa_status=kappa_status,
+                    representative_count=len(normals),
+                    weighted_count=int(weights.sum()),
+                )
+            )
+        mapping_payload = {
+            "representative_input_hash": self.input_hash(),
+            "component_to_global": {key: selected[key] for key in sorted(selected)},
+        }
+        mapping_hash = hashlib.sha256(
+            json.dumps(mapping_payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return GlobalJointSetFit(
+            number_of_sets=len(models),
+            random_seed=0,
+            sets=models,
+            mappings=mappings,
+            local_components=self._local_components(mappings),
+            input_hash=mapping_hash,
+            algorithm="USER_CONFIRMED_LOCAL_COMPONENT_MAPPING",
+            provenance={
+                "workflow": "local_representatives_preserved_then_user_mapped",
+                "confirmation_status": "USER_CONFIRMED" if user_confirmed else "PENDING_REVIEW",
+                "representative_input_hash": mapping_payload["representative_input_hash"],
+                "mapping_hash": mapping_hash,
+                "pre_merge_component_to_global": identity,
+                "confirmed_component_to_global": {key: selected[key] for key in sorted(selected)},
+                "members_by_global_set": members,
+                "intensity_support_by_global_set": intensity_support,
+                "pre_merge_group_count": len(identity),
+                "post_merge_group_count": len(models),
+                "representatives_preserved": True,
+                "same_local_set_labels_are_not_grouping_keys": True,
+                "suggestions_are_advisory_only": True,
+                "weighting": "P representative joint_num; Z representative weight 1",
+                "kappa_semantics": "UNRESOLVED for one representative; merged site means use SITE_MEAN_DISPERSION",
+                "required_direction_mode": "SPATIALLY_FITTED_WITHIN_GLOBAL_SET",
+                "validation_isolation": self._validation_isolation_provenance(),
+                "intensity_semantics": (
+                    "each P local component retains reciprocal-spacing contribution before aggregation by global set; "
+                    "Z supplies direction only; RANDOM remains background"
+                ),
+            },
+        )
+
+    def local_mapping_suggestions(self) -> list[LocalMappingSuggestion]:
+        """Rank all representative pairs by axial angle without auto-merging them."""
+        rows = self._complete_representatives()
+        components = [(self._component_id(item), item, dip_dir_dip_to_normal(item.dip_direction, item.dip)) for item in rows]
+        suggestions: list[LocalMappingSuggestion] = []
+        for left in range(len(components)):
+            component_a, item_a, normal_a = components[left]
+            for right in range(left + 1, len(components)):
+                component_b, item_b, normal_b = components[right]
+                angle = float(np.degrees(np.arccos(np.clip(abs(float(normal_a @ normal_b)), -1.0, 1.0))))
+                suggestions.append(
+                    LocalMappingSuggestion(
+                        component_a=component_a,
+                        point_a=item_a.point_id,
+                        source_a=item_a.source_kind,
+                        domain_a=item_a.domain_id,
+                        component_b=component_b,
+                        point_b=item_b.point_id,
+                        source_b=item_b.source_kind,
+                        domain_b=item_b.domain_id,
+                        axial_angle_deg=angle,
+                    )
+                )
+        return sorted(suggestions, key=lambda item: (item.axial_angle_deg, item.component_a, item.component_b))
+
+    def _complete_representatives(self) -> list[Any]:
+        _calibration, validation, locked = self._holdout_partition()
+        validation_keys = {self._hole_key(item) for item in validation}
+        rows = [
+            item
+            for item in self.observations.orientation_points()
+            if item.component_type == "LOCAL_DOMINANT_SET"
+            and item.orientation_status == "COMPLETE"
+            and item.dip is not None
+            and item.dip_direction is not None
+            and not (
+                locked
+                and item.source_kind == "BOREHOLE_CAMERA"
+                and (item.borehole_id is None or self._hole_key(item.borehole_id) in validation_keys)
+            )
+        ]
+        return sorted(rows, key=lambda item: item.observation_id)
+
+    def _holdout_partition(self) -> tuple[set[str], set[str], bool]:
+        """Return current locked whole-hole roles; imported role snapshots are audit-only."""
+        holdout = get_holdout(self.project)
+        if holdout is None or not holdout.is_locked:
+            return set(), set(), False
+        return set(holdout.calibration_holes), set(holdout.validation_holes), True
+
+    def _validation_isolation_provenance(self) -> dict[str, Any]:
+        """Describe which borehole-camera constraints can be audited against the holdout."""
+        calibration, validation, locked = self._holdout_partition()
+        validation_keys = {self._hole_key(item) for item in validation}
+        z_rows = [
+            item
+            for item in self.observations.orientation_points()
+            if item.source_kind == "BOREHOLE_CAMERA" and item.component_type == "LOCAL_DOMINANT_SET"
+        ]
+        return {
+            "locked_holdout": locked,
+            "calibration_holes": sorted(calibration),
+            "validation_holes": sorted(validation),
+            "excluded_validation_z_observations": sorted(
+                item.observation_id
+                for item in z_rows
+                if locked and item.borehole_id is not None and self._hole_key(item.borehole_id) in validation_keys
+            ),
+            "excluded_unassociated_z_observations": sorted(
+                item.observation_id for item in z_rows if locked and item.borehole_id is None
+            ),
+            "unassociated_z_observations": sorted(
+                item.observation_id for item in z_rows if locked and item.borehole_id is None
+            ),
+        }
 
     def use_confirmed_project_sets(self, joint_sets: list[Any] | None = None) -> GlobalJointSetFit:
         """Use confirmed project sets and map P/Z representatives by axial proximity."""
@@ -262,15 +470,7 @@ class BoreholeFractureService:
                 "No confirmed project joint sets are available. Fit global groups from P/Z representative "
                 "orientations instead."
             )
-        rows = [
-            item
-            for item in self.observations.orientation_points()
-            if item.component_type == "LOCAL_DOMINANT_SET"
-            and item.orientation_status == "COMPLETE"
-            and item.dip is not None
-            and item.dip_direction is not None
-        ]
-        rows.sort(key=lambda item: item.observation_id)
+        rows = self._complete_representatives()
         weights = np.asarray(
             [item.joint_num if item.source_kind == "POINT_CLOUD" and item.joint_num is not None else 1 for item in rows],
             dtype=np.int64,
@@ -349,6 +549,7 @@ class BoreholeFractureService:
                 "random_and_missing_directions_excluded": True,
                 "no_orientation_was_invented": True,
                 "kappa_semantics": "read from each confirmed project joint-set provenance",
+                "validation_isolation": self._validation_isolation_provenance(),
             },
         )
 
@@ -365,15 +566,24 @@ class BoreholeFractureService:
         if not project_sets:
             return self.use_confirmed_project_sets(project_sets)
         saved = self.project.borehole_fracture_state.global_fit
-        rows = [
-            item
-            for item in self.observations.orientation_points()
-            if item.component_type == "LOCAL_DOMINANT_SET"
-            and item.orientation_status == "COMPLETE"
-            and item.dip is not None
-            and item.dip_direction is not None
-        ]
+        rows = self._complete_representatives()
         expected_observation_ids = {item.observation_id for item in rows}
+        if saved is not None and saved.algorithm == "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING":
+            assignments = {item.component_id: item.global_set_id for item in saved.mappings}
+            current = self.build_local_component_mapping(assignments, user_confirmed=True)
+            if current.input_hash != saved.input_hash:
+                raise ValueError("Imported representatives or Phase 2A inputs changed; reconfirm the local mapping")
+            saved_models = {item.global_set_id: item for item in saved.sets}
+            if {item.set_id for item in project_sets} != set(saved_models):
+                raise ValueError("Confirmed global set IDs changed; reconfirm the local mapping")
+            if any(
+                abs(item.orientation.mean_dip_direction - saved_models[item.set_id].mean_dip_direction) > 1e-10
+                or abs(item.orientation.mean_dip - saved_models[item.set_id].mean_dip) > 1e-10
+                or abs(item.orientation.kappa - saved_models[item.set_id].kappa) > 1e-10
+                for item in project_sets
+            ):
+                raise ValueError("Confirmed global orientation summaries changed; reconfirm the local mapping")
+            return saved.model_copy(deep=True)
         if saved is not None and len(saved.sets) == len(project_sets):
             saved_models = {item.global_set_id: item for item in saved.sets}
             set_models_match = all(
@@ -452,9 +662,17 @@ class BoreholeFractureService:
             fit = self.authoritative_confirmed_fit()
         else:
             fit = self.fit_global_sets(config.number_of_sets, config.master_seed)
+        if (
+            fit.algorithm == "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING"
+            and config.direction_mode != "SPATIALLY_FITTED_WITHIN_GLOBAL_SET"
+        ):
+            raise ValueError(
+                "User-confirmed local-component mappings require SPATIALLY_FITTED_WITHIN_GLOBAL_SET direction "
+                "mode so every preserved P/Z representative can influence direction by position"
+            )
         if not fit.local_components:
             fit.local_components = self._local_components(fit.mappings)
-        intervals = self.observations.spacing_observations()
+        intervals = self._calibration_spacing_observations()
         effective_radius = np.inf if config.idw_search_mode == "ALL_WITHIN_DOMAIN" else config.search_radius
         idw = StableIDW(config.idw_power, effective_radius, config.max_neighbors, config.min_neighbors)
         constraints = self._intensity_constraints(fit)
@@ -512,7 +730,7 @@ class BoreholeFractureService:
 
     def estimate(self, config: BoreholeFractureGenerationConfig) -> dict[str, int | float]:
         """Preview expected ownership before stochastic counts are available."""
-        intervals = self.observations.spacing_observations()
+        intervals = self._calibration_spacing_observations()
         expected_per_realization = sum((item.to_depth - item.from_depth) * item.derived_p10 for item in intervals)
         return self._resource_details(
             config,
@@ -555,12 +773,53 @@ class BoreholeFractureService:
 
     def input_hash(self) -> str:
         """Hash only formal Phase 2A inputs in stable scientific order."""
-        orientation = [item.model_dump(mode="json") for item in self.observations.orientation_points()]
-        spacing = [item.model_dump(mode="json") for item in self.observations.spacing_observations()]
+        calibration, validation, locked = self._holdout_partition()
+        orientation_rows = self.observations.orientation_points()
+        if locked:
+            validation_keys = {self._hole_key(value) for value in validation}
+            orientation_rows = [
+                item
+                for item in orientation_rows
+                if not (
+                    item.source_kind == "BOREHOLE_CAMERA"
+                    and (
+                        item.borehole_id is None
+                        or self._hole_key(item.borehole_id) in validation_keys
+                    )
+                )
+            ]
+        orientation = []
+        for item in orientation_rows:
+            values = item.model_dump(mode="json")
+            if values.get("borehole_id") is None:
+                values.pop("borehole_id", None)
+            orientation.append(values)
+        spacing_rows = self.observations.spacing_observations()
+        if locked:
+            calibration_keys = {self._hole_key(item) for item in calibration}
+            spacing_rows = [item for item in spacing_rows if self._hole_key(item.hole_id) in calibration_keys]
+        spacing = [item.model_dump(mode="json") for item in spacing_rows]
         statuses = [item.model_dump(mode="json") for item in self.observations.orientation_point_summaries()]
         payload = {"orientation_points": orientation, "spacing_intervals": spacing, "random_status": statuses}
+        if locked:
+            payload["locked_holdout"] = {
+                "calibration_holes": sorted(calibration),
+                "validation_holes": sorted(validation),
+            }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
+
+    def _calibration_spacing_observations(self) -> list[Any]:
+        """Exclude current Validation holes from newly generated model-input realizations."""
+        calibration, _validation, locked = self._holdout_partition()
+        rows = self.observations.spacing_observations()
+        calibration_keys = {self._hole_key(item) for item in calibration}
+        return [item for item in rows if self._hole_key(item.hole_id) in calibration_keys] if locked else rows
+
+    @staticmethod
+    def _hole_key(value: Any) -> str:
+        """Canonical comparison key without changing the persisted borehole identifier."""
+        return str(value).strip().casefold()
 
     @classmethod
     def validate_arrays(cls, realization: BoreholeFractureRealization) -> None:

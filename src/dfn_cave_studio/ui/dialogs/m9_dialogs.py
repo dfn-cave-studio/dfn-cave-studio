@@ -29,9 +29,12 @@ from dfn_cave_studio.ui.qt_adapter import (
     QHeaderView,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSettings,
+    QSignalBlocker,
     QSpinBox,
     Qt,
     QTableWidget,
@@ -76,6 +79,16 @@ class _M9Dialog(QDialog):
 
     def _fail(self, message: str) -> None:
         QMessageBox.critical(self, "M9 operation failed", message)
+
+
+class _NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """Ignore page scrolling unless the numeric editor explicitly has focus."""
+
+    def wheelEvent(self, event) -> None:
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
 
 
 class M9DensityDialog(_M9Dialog):
@@ -398,7 +411,17 @@ class M9SizeDialog(_M9Dialog):
     def __init__(self, project, workflow, parent=None) -> None:
         super().__init__(project, workflow, parent)
         self.setWindowTitle("M9 Fracture Size Distribution")
-        layout = QVBoxLayout(self)
+        self.resize(720, 560)
+        root_layout = QVBoxLayout(self)
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        root_layout.addWidget(self.summary)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        self.scroll_area.setWidget(content)
+        root_layout.addWidget(self.scroll_area, 1)
         layout.addWidget(QLabel("Automatic fitting is allowed only for radius, diameter, trace_length, or mapped_length."))
         limitation = QLabel(
             "Automatic truncated-distribution fits are EXPERIMENTAL: sample extrema are used as truncation "
@@ -421,22 +444,45 @@ class M9SizeDialog(_M9Dialog):
         self.lower = QDoubleSpinBox(); self.lower.setRange(0.0001, 1e6); self.lower.setValue(1.0)
         self.upper = QDoubleSpinBox(); self.upper.setRange(0.0001, 1e6); self.upper.setValue(5.0)
         self.manual_source = QComboBox()
-        self.manual_source.addItem("User defined", "user_defined")
-        self.manual_source.addItem("Assumed", "assumed")
+        self.manual_source.addItem("Manual — explicitly specified", "user_defined")
+        self.manual_source.addItem("Assumed scenario", "assumed")
         row.addWidget(self.distribution); row.addWidget(self.lower); row.addWidget(self.upper); row.addWidget(self.manual_source)
         layout.addLayout(row)
+        self.editor_status = QLabel()
+        self.editor_status.setWordWrap(True)
+        layout.addWidget(self.editor_status)
+        radius_note = QLabel(
+            "R is circular-disc radius in metres; diameter = 2R. P/Z orientations and spacing do not determine R."
+        )
+        radius_note.setWordWrap(True)
+        layout.addWidget(radius_note)
+        self.confirm_size = QCheckBox("I confirm the radius unit, source, and model are intentional")
+        layout.addWidget(self.confirm_size)
         self.apply_button = QPushButton("Apply user-defined size model")
         self.apply_button.clicked.connect(self._apply)
         layout.addWidget(self.apply_button)
-        self.summary = QLabel()
-        layout.addWidget(self.summary)
-        layout.addWidget(self._buttons())
+        layout.addWidget(QLabel("Domain × Joint Set model details"))
+        self.details = QPlainTextEdit()
+        self.details.setReadOnly(True)
+        self.details.setMinimumHeight(120)
+        self.details.setMaximumHeight(180)
+        layout.addWidget(self.details)
+        layout.addStretch(1)
+        self.pending_status = QLabel()
+        self.pending_status.setWordWrap(True)
+        self.pending_status.setStyleSheet("font-weight: bold; color: #9a6700;")
+        root_layout.addWidget(self.pending_status)
+        self.button_box = self._buttons()
+        root_layout.addWidget(self.button_box)
         self._refresh()
 
     def _apply(self) -> None:
         dtype = self.distribution.currentData()
         lower, upper = self.lower.value(), self.upper.value()
-        if upper <= lower:
+        if not self.confirm_size.isChecked():
+            self._fail("Confirm that the circular-disc radius model and metre unit are intentional")
+            return
+        if dtype != "fixed" and upper <= lower:
             self._fail("Maximum radius must be greater than minimum radius")
             return
         parameters = {
@@ -447,15 +493,21 @@ class M9SizeDialog(_M9Dialog):
             "truncated_exponential": {"rate": 2 / (lower + upper)},
         }[dtype]
         try:
-            self.service.set_assumed_sizes(
+            changed = self.service.set_assumed_sizes(
                 dtype,
                 parameters,
                 lower,
                 upper,
                 user_defined=self.manual_source.currentData() == "user_defined",
             )
-            self.committed_changes = True
+            self.committed_changes = self.committed_changes or changed
             self._refresh()
+            if changed:
+                self.pending_status.setText(
+                    f"Pending size model: {lower:g}–{upper:g} m. Press OK to commit; Cancel discards changes."
+                )
+            else:
+                self.pending_status.setText("No size-model values changed; there is nothing new to commit.")
         except Exception as exc:
             self._fail(str(exc))
 
@@ -464,17 +516,117 @@ class M9SizeDialog(_M9Dialog):
             self.service.fit_sizes(self.measurement_field.currentData())
             self.committed_changes = True
             self._refresh()
+            self.pending_status.setText(
+                "Pending fitted size model. Press OK to commit; Cancel discards changes."
+            )
         except Exception as exc:
             self._fail(str(exc))
 
     def _refresh(self) -> None:
         models = self.project.m9_state.size_models
-        sources = sorted({item.source.value for item in models})
+        editor_message = self._restore_editor_from_models(models)
         experimental = sum(item.fit_status == "experimental" for item in models)
-        self.summary.setText(
-            f"Size models: {len(models)}; sources: {', '.join(sources) if sources else 'not set'}; "
-            f"experimental fits: {experimental}"
-        )
+        usable_sets = {item.set_id for item in models if item.is_usable_for_explicit_dfn}
+        unresolved_sets = [
+            item.set_id
+            for item in self.project.joint_sets
+            if item.provenance.get("size_status") == "UNRESOLVED" and item.set_id not in usable_sets
+        ]
+        details = []
+        for item in models:
+            if item.is_usable_for_explicit_dfn:
+                std = max(0.0, item.mean_squared_radius - item.mean_radius**2) ** 0.5
+                details.append(
+                    f"Set {item.set_id}: {item.scientific_status.value}/{item.source.value}, "
+                    f"{item.distribution_type}, R min/mean/max/std="
+                    f"{item.min_radius:.6g}/{item.mean_radius:.6g}/{item.max_radius:.6g}/{std:.6g} m"
+                )
+        if not models:
+            compact = "Size models: 0 | Distribution: not set | Radius: — | Source: not set"
+        elif editor_message == "Multiple existing size models.":
+            compact = f"Size models: {len(models)} | Multiple existing size models"
+        else:
+            first = models[0]
+            if first.distribution_type == "fixed":
+                radius = float(first.parameters.get("radius", first.min_radius))
+                radius_text = f"{radius:g} m"
+            else:
+                radius_text = f"{first.min_radius:g}–{first.max_radius:g} m"
+            compact = (
+                f"Size models: {len(models)} | Distribution: {first.distribution_type} | "
+                f"Radius: {radius_text} | Source: {first.source.value}"
+            )
+        self.summary.setText(compact)
+        detail_lines = []
+        if editor_message:
+            detail_lines.append(editor_message)
+        detail_lines.append(f"Experimental fits: {experimental}")
+        if unresolved_sets:
+            detail_lines.append(
+                f"Unresolved sets {unresolved_sets}: size is unresolved; M10 generation is blocked."
+            )
+        detail_lines.extend(details)
+        self.details.setPlainText("\n".join(detail_lines))
+
+    @staticmethod
+    def _manual_source_value(model) -> str | None:
+        """Map persisted scientific provenance to the two global editor choices."""
+        if model.source.value in {"manual_fixed", "manual_distribution", "user_defined"}:
+            return "user_defined"
+        if model.source.value in {"assumed", "assumed_scenario"}:
+            return "assumed"
+        return None
+
+    def _restore_editor_from_models(self, models) -> str:
+        """Restore one representable global model without mutating project state."""
+        if not models:
+            self.apply_button.setEnabled(True)
+            self.editor_status.setText("No existing size model; showing new-model defaults (1–5 m).")
+            return ""
+
+        signatures = []
+        for model in models:
+            source = self._manual_source_value(model)
+            if model.distribution_type == "fixed":
+                radius = float(model.parameters.get("radius", model.min_radius))
+                bounds = (radius, radius)
+            else:
+                bounds = (float(model.min_radius), float(model.max_radius))
+            signatures.append((model.distribution_type, *bounds, source))
+        first = signatures[0]
+        homogeneous = all(item == first for item in signatures)
+        representable = first[3] is not None
+        if not homogeneous:
+            self.apply_button.setEnabled(False)
+            self.editor_status.setText(
+                "Multiple existing size models — the global editor is disabled because one set of controls cannot "
+                "represent the saved Domain × Joint Set models. The displayed defaults are not project values."
+            )
+            return "Multiple existing size models."
+        if not representable:
+            self.apply_button.setEnabled(False)
+            self.editor_status.setText(
+                "The existing fitted/experimental model is not editable in the global manual editor."
+            )
+            return "Existing size model is fitted or experimental."
+
+        blockers = [
+            QSignalBlocker(self.distribution),
+            QSignalBlocker(self.lower),
+            QSignalBlocker(self.upper),
+            QSignalBlocker(self.manual_source),
+        ]
+        try:
+            distribution, lower, upper, source = first
+            self.distribution.setCurrentIndex(self.distribution.findData(distribution))
+            self.lower.setValue(lower)
+            self.upper.setValue(upper)
+            self.manual_source.setCurrentIndex(self.manual_source.findData(source))
+        finally:
+            blockers.clear()
+        self.apply_button.setEnabled(True)
+        self.editor_status.setText("Loaded the common saved size model. Re-apply requires explicit confirmation.")
+        return ""
 
     def accept(self) -> None:
         if self.committed_changes:
@@ -482,13 +634,25 @@ class M9SizeDialog(_M9Dialog):
             self.workflow.mark_ready("parameter_field")
         super().accept()
 
+    def closeEvent(self, event) -> None:
+        """Treat the title-bar close action as transactional Cancel."""
+        if self.result() != QDialog.DialogCode.Accepted:
+            self.project.m9_state = self._state_before
+            self.workflow.from_dict(self._workflow_before)
+            self.committed_changes = False
+        super().closeEvent(event)
+
 
 class M9ParameterFieldDialog(_M9Dialog):
     """Generate and inspect the first voxelized input parameter field."""
 
-    def __init__(self, project, workflow, parent=None) -> None:
+    MEMORY_BUDGET_KEY = "m9/parameter_field_memory_budget_gib"
+    DEFAULT_MEMORY_BUDGET_GIB = 2.0
+
+    def __init__(self, project, workflow, parent=None, settings: QSettings | None = None) -> None:
         super().__init__(project, workflow, parent)
         self.setWindowTitle("M9 First Voxel Parameter Field")
+        self._preferences = settings if settings is not None else QSettings("DFNCaveStudio", "Preferences")
         self._layer_manager = self._resolve_layer_manager(parent)
         self._discarded_worker_ids: set[int] = set()
         self._last_resource_estimate = None
@@ -497,11 +661,12 @@ class M9ParameterFieldDialog(_M9Dialog):
         layout.addWidget(self.summary)
         budget_row = QHBoxLayout()
         budget_row.addWidget(QLabel("Safe memory budget (GiB)"))
-        self.memory_budget_gib = QDoubleSpinBox()
+        self.memory_budget_gib = _NoWheelDoubleSpinBox()
         self.memory_budget_gib.setRange(0.25, 512.0)
-        self.memory_budget_gib.setValue(2.0)
         self.memory_budget_gib.setDecimals(2)
+        self._load_memory_budget_preference()
         self.memory_budget_gib.valueChanged.connect(lambda _value: self._update_resource_summary())
+        self.memory_budget_gib.editingFinished.connect(self._save_memory_budget_preference)
         budget_row.addWidget(self.memory_budget_gib)
         self.resource_details_button = QPushButton("Details...")
         self.resource_details_button.clicked.connect(self._show_resource_details)
@@ -554,6 +719,30 @@ class M9ParameterFieldDialog(_M9Dialog):
         self._update_resource_summary()
         self._refresh_layers_table()
 
+    def _load_memory_budget_preference(self) -> None:
+        """Load a finite machine-local memory budget without changing project state."""
+        raw = self._preferences.value(self.MEMORY_BUDGET_KEY, self.DEFAULT_MEMORY_BUDGET_GIB)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = self.DEFAULT_MEMORY_BUDGET_GIB
+        if not np.isfinite(value):
+            value = self.DEFAULT_MEMORY_BUDGET_GIB
+        value = min(self.memory_budget_gib.maximum(), max(self.memory_budget_gib.minimum(), value))
+        blocker = QSignalBlocker(self.memory_budget_gib)
+        try:
+            self.memory_budget_gib.setValue(value)
+        finally:
+            del blocker
+
+    def _save_memory_budget_preference(self) -> None:
+        """Persist the current machine preference, never project scientific state."""
+        value = float(self.memory_budget_gib.value())
+        if not np.isfinite(value):
+            return
+        self._preferences.setValue(self.MEMORY_BUDGET_KEY, value)
+        self._preferences.sync()
+
     @staticmethod
     def _resolve_layer_manager(parent):
         if parent is None:
@@ -603,6 +792,7 @@ class M9ParameterFieldDialog(_M9Dialog):
         return group
 
     def _generate(self) -> None:
+        self._save_memory_budget_preference()
         try:
             from dfn_cave_studio.voxel.parameter_field import ParameterFieldBuilder
 
@@ -941,6 +1131,7 @@ class M9ParameterFieldDialog(_M9Dialog):
             self._fail(str(exc))
 
     def accept(self) -> None:
+        self._save_memory_budget_preference()
         if self._worker is not None:
             self._fail("Wait for generation to finish or cancel it")
             return
@@ -963,7 +1154,30 @@ class M9ValidationDialog(_M9Dialog):
         self.progress = QProgressBar(); self.progress.setVisible(False)
         layout.addWidget(self.progress)
         self.summary = QLabel()
+        self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
+        self.interpretation = QLabel()
+        self.interpretation.setWordWrap(True)
+        layout.addWidget(self.interpretation)
+        self.pipeline_diagnostics = QLabel()
+        self.pipeline_diagnostics.setWordWrap(True)
+        layout.addWidget(self.pipeline_diagnostics)
+        self.results_table = QTableWidget(0, 9)
+        self.results_table.setHorizontalHeaderLabels(
+            [
+                "Borehole",
+                "From MD (m)",
+                "To MD (m)",
+                "Observed P10 (m^-1)",
+                "Predicted P10 (m^-1)",
+                "Signed error",
+                "Status",
+                "Observation source",
+                "Reason",
+            ]
+        )
+        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self.results_table)
         layout.addWidget(self._buttons())
         self._refresh()
 
@@ -1001,7 +1215,66 @@ class M9ValidationDialog(_M9Dialog):
 
     def _refresh(self) -> None:
         summary = self.project.m9_state.validation_summary
-        self.summary.setText(f"{summary.state.value}: valid={summary.valid_interval_count}, no data={summary.no_data_interval_count}, MAE={summary.mae}, RMSE={summary.rmse}, bias={summary.bias}")
+        self.summary.setText(
+            f"{summary.state.value}: valid={summary.valid_interval_count}, no data={summary.no_data_interval_count}, "
+            f"MAE={summary.mae}, RMSE={summary.rmse}, bias={summary.bias}"
+        )
+        details = self.project.m9_state.provenance.get("validation_interpretation", {})
+        classification = details.get("classification", "not_run")
+        if classification == "independent_holdout_along_hole_frequency":
+            text = (
+                "Independent held-out along-hole frequency validation (P10 only). This is not independent "
+                "validation of P32, joint-set orientation, block size, or the complete DFN."
+            )
+            if details.get("blocked_reason"):
+                text += f" Blocked: {details['blocked_reason']}"
+        elif classification == "internal_consistency_not_independent":
+            text = (
+                "Internal consistency only: the borehole's own spacing contributed to its realization. "
+                "This is not independent validation."
+            )
+        else:
+            text = "Run validation to classify independent holdout support and exclusions."
+        self.interpretation.setText(text)
+        pipeline = details.get("pipeline_diagnostics", {})
+        if pipeline:
+            stages = (
+                f"Spacing audit: raw={pipeline.get('raw_spacing_records', 0)}, "
+                f"Calibration={pipeline.get('holdout_calibration_records', 0)}, "
+                f"Validation={pipeline.get('holdout_validation_records', 0)}, "
+                f"qualified Calibration/Validation={pipeline.get('qualified_calibration_records', 0)}/"
+                f"{pipeline.get('qualified_validation_records', 0)}, "
+                f"support/target segments={pipeline.get('calibration_support_segments', 0)}/"
+                f"{pipeline.get('validation_target_segments', 0)}."
+            )
+            methods = []
+            for method, outcome in pipeline.get("methods", {}).items():
+                reasons = ", ".join(
+                    f"{reason}={count}" for reason, count in outcome.get("no_data_reasons", {}).items()
+                ) or "none"
+                methods.append(
+                    f"{method}: valid={outcome.get('valid', 0)}, no_data={outcome.get('no_data', 0)} "
+                    f"({reasons})"
+                )
+            self.pipeline_diagnostics.setText(stages + " " + "; ".join(methods))
+        else:
+            self.pipeline_diagnostics.setText("No validation pipeline audit is available yet.")
+        rows = self.project.m9_state.validation_results
+        self.results_table.setRowCount(len(rows))
+        for row, item in enumerate(rows):
+            values = (
+                item.hole_id,
+                item.from_depth,
+                item.to_depth,
+                item.observed_p10,
+                item.predicted_p10,
+                item.signed_error,
+                item.data_state,
+                item.observation_source,
+                item.exclusion_reason or "",
+            )
+            for column, value in enumerate(values):
+                self.results_table.setItem(row, column, QTableWidgetItem("—" if value is None else str(value)))
 
     def accept(self) -> None:
         if self._worker is not None:

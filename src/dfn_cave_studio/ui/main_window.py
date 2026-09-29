@@ -879,6 +879,9 @@ class MainWindow(QMainWindow):
             fit_changed = project.borehole_fracture_state.global_fit != new_fit
             if not sets_changed and not fit_changed:
                 return
+            phase2a_m9_depends_on_mapping = (
+                project.m9_state.density_input_mode.value == "phase2a_realization"
+            )
             if sets_changed:
                 project.joint_sets = [item.model_copy(deep=True) for item in new_sets]
             state = project.borehole_fracture_state
@@ -902,6 +905,8 @@ class MainWindow(QMainWindow):
             self._project_store.mark_dirty()
             if sets_changed:
                 self._workflow.complete_step("joint_sets")
+                self._invalidate_m9_state()
+            elif fit_changed and phase2a_m9_depends_on_mapping:
                 self._invalidate_m9_state()
             self.log_message(
                 f"Confirmed {len(project.joint_sets)} global joint sets and "

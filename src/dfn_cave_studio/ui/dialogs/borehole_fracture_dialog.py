@@ -331,9 +331,26 @@ class BoreholeFractureDialog(QDialog):
             self.confirmed_fit_label.setText(
                 f"{fit.algorithm} | seed={fit.random_seed} | mapping=CONFIRMED ({len(fit.mappings)} rows)"
             )
+            local_mapping = fit.algorithm == "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING"
+            if local_mapping:
+                blocker = QSignalBlocker(self.direction_combo)
+                try:
+                    self.direction_combo.setCurrentIndex(
+                        self.direction_combo.findData("SPATIALLY_FITTED_WITHIN_GLOBAL_SET")
+                    )
+                finally:
+                    del blocker
+                self.direction_combo.setToolTip(
+                    "Required for this mapping: axial directions are interpolated from the preserved P/Z local "
+                    "representatives inside each confirmed global set; merging never overwrites source rows."
+                )
+            else:
+                self.direction_combo.setToolTip("")
+            self.direction_combo.setEnabled(not local_mapping)
             ready = True
         except ValueError as exc:
             self.confirmed_fit_label.setText(f"mapping=NOT CONFIRMED — {exc}")
+            self.direction_combo.setEnabled(False)
             ready = False
         self.generate_button.setEnabled(ready and self._worker is None)
         self._refresh_fit()

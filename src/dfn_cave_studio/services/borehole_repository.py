@@ -56,6 +56,7 @@ _ALIASES: dict[str, dict[str, str]] = {
     BoreholeDataType.RMR: {"borehole_id": "hole_id"},
     BoreholeDataType.DOMAIN_INTERVALS: {"borehole_id": "hole_id"},
     BoreholeDataType.ORIENTATION_POINTS: {
+        "hole_id": "borehole_id",
         "easting": "x",
         "northing": "y",
         "elevation": "z",
