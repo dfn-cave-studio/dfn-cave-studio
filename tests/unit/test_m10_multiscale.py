@@ -113,6 +113,24 @@ def test_default_omits_small_and_preserves_its_target_as_subgrid() -> None:
     assert result.quality.p32_target_conservation_error == pytest.approx(0.0, abs=1e-12)
 
 
+def test_large_only_estimate_counts_only_large_and_preserves_other_p32_as_subgrid() -> None:
+    generator = _generator(M10GenerationConfig(base_seed=42, enabled_size_classes=["LARGE"]))
+    estimate = generator.estimate_details()
+    large_expected = sum(
+        item["expected_count"]
+        for target in estimate["targets"]
+        for item in target["classes"]
+        if item["size_class"] == "LARGE"
+    )
+    assert estimate["expected_fractures"] == pytest.approx(large_expected)
+
+    result = generator.generate(0)
+    stochastic = result.geometry_arrays["source_code"] == 0
+    assert np.all(result.geometry_arrays["size_class"][stochastic] == int(SizeClass.LARGE))
+    assert result.quality.p32_subgrid > 0.0
+    assert result.quality.p32_target_conservation_error == pytest.approx(0.0, abs=1e-12)
+
+
 def test_enabling_all_classes_removes_subgrid_and_is_seed_reproducible() -> None:
     config = M10GenerationConfig(base_seed=9, enabled_size_classes=["SMALL", "MEDIUM", "LARGE"])
     first = _generator(config).generate(0)

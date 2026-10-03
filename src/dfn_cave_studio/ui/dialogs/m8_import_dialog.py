@@ -190,6 +190,7 @@ class M8ImportDialog(QDialog):
             BoreholeDataType.ORIENTATION_POINTS: [
                 "observation_id",
                 "point_id",
+                "borehole_id",
                 "x",
                 "y",
                 "z",

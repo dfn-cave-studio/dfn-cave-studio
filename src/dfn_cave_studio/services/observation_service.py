@@ -97,6 +97,7 @@ class ObservationService:
                     point_key=str(values.get("point_key") or f"{source_kind}:{values['point_id']}"),
                     record_id=record.record_id,
                     source_kind=str(source_kind),
+                    borehole_id=self._optional_text(values.get("borehole_id") or values.get("hole_id")),
                     x=float(values["x"]),
                     y=float(values["y"]),
                     z=float(values["z"]),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass, field
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -16,7 +17,9 @@ from dfn_cave_studio.dfn.intensity import build_p10_intervals, domain_at_depth, 
 from dfn_cave_studio.dfn.size_models import MLESizeModelFitter, assumed_size_model
 from dfn_cave_studio.geometry.coordinate import dip_dir_dip_to_normal, normal_to_dip_dir_dip
 from dfn_cave_studio.models.fracture_set import JointSetConfig, OrientationDistribution
+from dfn_cave_studio.models.borehole_database import BoreholeDataType, FractureObservationMode
 from dfn_cave_studio.models.m9 import (
+    DensityMethod,
     DensitySettings,
     DomainOrientationModel,
     M9DensityInputMode,
@@ -27,7 +30,9 @@ from dfn_cave_studio.models.m9 import (
     ValidationSummary,
 )
 from dfn_cave_studio.services.m7_state import get_domain_intervals, get_holdout
-from dfn_cave_studio.voxel.parameter_field import ParameterFieldBuilder
+from dfn_cave_studio.services.observation_service import ObservationService
+from dfn_cave_studio.voxel.ordinary_kriging import OrdinaryKrigingInterpolator, fit_variogram
+from dfn_cave_studio.voxel.parameter_field import IDWInterpolator, ParameterFieldBuilder, SpatialSample
 
 
 @dataclass(frozen=True)
@@ -276,12 +281,16 @@ class M9Service:
         upper: float,
         *,
         user_defined: bool = True,
-    ) -> None:
+    ) -> bool:
         """Set manual size models for every available domain/set combination."""
         combinations = {(item.domain_id, item.set_id) for item in self.project.m9_state.p32_estimates}
         if not combinations:
             raise RuntimeError("Calculate P10/P32 before defining size models")
-        self.project.m9_state.size_models = [
+        if distribution_type == "fixed":
+            radius = float(parameters["radius"])
+            lower = radius
+            upper = radius
+        models = [
             assumed_size_model(
                 domain_id=domain_id,
                 set_id=set_id,
@@ -293,6 +302,10 @@ class M9Service:
             )
             for domain_id, set_id in sorted(combinations, key=str)
         ]
+        if models == self.project.m9_state.size_models:
+            return False
+        self.project.m9_state.size_models = models
+        return True
 
     def fit_sizes(self, source_field: str) -> None:
         """Fit real calibration size measurements; never substitutes aperture or RQD."""
@@ -389,6 +402,8 @@ class M9Service:
         if state.parameter_field_metadata is None:
             raise RuntimeError("Build the parameter field before validation")
         self._validate_selected_density_input()
+        if state.density_input_mode == M9DensityInputMode.PHASE2A_REALIZATION:
+            return self._validate_phase2a_holdout_p10(progress=progress, cancelled=cancelled)
         domain_orientations = {
             (item.domain_id, item.set_id): JointSetConfig(
                 set_id=item.set_id,
@@ -495,6 +510,444 @@ class M9Service:
         state.validation_summary = summary
         return summary
 
+    def _validate_phase2a_holdout_p10(self, *, progress=None, cancelled=None) -> ValidationSummary:
+        """Compare calibration-only field predictions with held-out along-hole spacing observations."""
+        state = self.project.m9_state
+        holdout = get_holdout(self.project)
+        if holdout is None or not holdout.is_locked:
+            raise RuntimeError("A locked whole-borehole Validation Holdout is required")
+        validation_holes = set(holdout.validation_holes)
+        calibration_holes = set(holdout.calibration_holes)
+        validation_keys = {self._hole_key(item) for item in validation_holes}
+        realization = next(
+            item
+            for item in self.project.borehole_fracture_state.realizations
+            if item.realization_id == state.density_input_realization_id
+        )
+        fit = self.project.borehole_fracture_state.global_fit
+        isolation = {} if fit is None else dict(fit.provenance.get("validation_isolation", {}))
+        uncertain_z = list(isolation.get("unassociated_z_observations", []))
+        mapped_ids = {item.observation_id for item in fit.mappings} if fit is not None else set()
+        leaked_uncertain_z = sorted(set(uncertain_z) & mapped_ids)
+        leaked_intervals = sorted(
+            {
+                item.hole_id
+                for item in realization.interval_diagnostics
+                if self._hole_key(item.hole_id) in validation_keys
+            }
+        )
+        blocked_reason = None
+        if leaked_uncertain_z:
+            blocked_reason = (
+                "stale_input_hash: an older global fit used BOREHOLE_CAMERA representatives without an explicit "
+                "borehole_id; recompute the mapping and realization before independent validation"
+            )
+        elif leaked_intervals:
+            blocked_reason = (
+                "The selected realization contains intervals generated from current Validation-hole spacing; "
+                "recompute it with the locked holdout before independent validation"
+            )
+
+        all_spacing = ObservationService(self.project).spacing_observations()
+        spacing_rows = [item for item in all_spacing if self._hole_key(item.hole_id) in validation_keys]
+        predictors, calibration_input_hash, calibration_exclusions, predictor_failures = self._calibration_spacing_p10_predictors(
+            calibration_holes
+        )
+        results: list[ValidationIntervalResult] = []
+        holes = {self._hole_key(item.borehole_id): item for item in self.project.borehole_collection.boreholes}
+        reason_counts: dict[str, int] = {}
+        validation_segment_count = 0
+        for row_index, observation in enumerate(spacing_rows):
+            if cancelled and cancelled():
+                raise InterruptedError("validation cancelled")
+            exclusion_reason = blocked_reason
+            predicted_p10 = None
+            segments, segment_reason = self._spacing_domain_segments(observation)
+            validation_segment_count += len(segments)
+            if observation.measurement_basis != "BOREHOLE_ALONG_HOLE":
+                exclusion_reason = "unknown_or_invalid_basis"
+            elif self._hole_key(observation.hole_id) not in holes:
+                exclusion_reason = "invalid_trajectory"
+            elif segment_reason is not None:
+                exclusion_reason = segment_reason
+            elif exclusion_reason is None:
+                predicted_p10, exclusion_reason = self._integrated_total_p10_prediction(
+                    holes[self._hole_key(observation.hole_id)], segments, predictors, predictor_failures
+                )
+            if predicted_p10 is None:
+                category = exclusion_reason or "other_no_data"
+                reason_counts[category] = reason_counts.get(category, 0) + 1
+            observed_p10 = observation.derived_p10
+            signed_error = predicted_p10 - observed_p10 if predicted_p10 is not None else None
+            results.append(
+                ValidationIntervalResult(
+                    hole_id=observation.hole_id,
+                    from_depth=observation.from_depth,
+                    to_depth=observation.to_depth,
+                    domain_id=None,
+                    set_id=0,
+                    observed_count=None,
+                    observed_p10=observed_p10,
+                    predicted_p10=predicted_p10,
+                    predicted_p32=None,
+                    absolute_error=abs(signed_error) if signed_error is not None else None,
+                    signed_error=signed_error,
+                    relative_error=(abs(signed_error) / observed_p10 if signed_error is not None else None),
+                    calibration_or_validation="independent_holdout_along_hole_p10",
+                    data_state="modeled_value" if predicted_p10 is not None else "no_data",
+                    observation_source="validation_interval_spacing_reciprocal",
+                    prediction_source="calibration_only_along_hole_p10_spatial_predictor_trajectory_integral",
+                    exclusion_reason=exclusion_reason,
+                )
+            )
+            if progress:
+                progress(row_index + 1, len(spacing_rows))
+
+        valid = [item for item in results if item.predicted_p10 is not None]
+        no_data = len(results) - len(valid)
+        if valid:
+            residual = np.asarray([item.signed_error for item in valid], dtype=np.float64)
+            summary = ValidationSummary(
+                state=ValidationState.COMPLETE,
+                mae=float(np.mean(np.abs(residual))),
+                rmse=float(np.sqrt(np.mean(residual**2))),
+                bias=float(np.mean(residual)),
+                valid_interval_count=len(valid),
+                no_data_interval_count=no_data,
+            )
+        else:
+            summary = ValidationSummary(
+                state=ValidationState.INSUFFICIENT_VALIDATION,
+                valid_interval_count=0,
+                no_data_interval_count=no_data,
+            )
+        config_payload = {
+            "density_settings": state.density_settings.model_dump(mode="json"),
+            "density_input": state.provenance.get("density_input", {}),
+            "parameter_field": (
+                None
+                if state.parameter_field_metadata is None
+                else {
+                    "shape": state.parameter_field_metadata.shape,
+                    "origin": state.parameter_field_metadata.origin,
+                    "spacing": state.parameter_field_metadata.spacing,
+                    "fields": state.parameter_field_metadata.field_names,
+                }
+            ),
+        }
+        if cancelled and cancelled():
+            raise InterruptedError("validation cancelled")
+        pipeline = self._phase2a_validation_pipeline_diagnostics(
+            all_spacing,
+            calibration_holes,
+            validation_holes,
+            spacing_rows,
+            validation_segment_count,
+            selected_valid=len(valid),
+            selected_no_data=no_data,
+            selected_reasons=reason_counts,
+            blocked_reason=blocked_reason,
+        )
+        state.provenance["validation_interpretation"] = {
+            "classification": "independent_holdout_along_hole_frequency",
+            "scope": "P10 along-hole frequency only; not P32, set orientation, block size, or complete DFN validation",
+            "locked_calibration_holes": sorted(calibration_holes),
+            "locked_validation_holes": sorted(validation_holes),
+            "model_config_id": hashlib.sha256(
+                json.dumps(config_payload, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+            "realization_id": realization.realization_id,
+            "realization_input_hash": realization.input_hash,
+            "calibration_spacing_input_hash": calibration_input_hash,
+            "calibration_spacing_exclusions": calibration_exclusions,
+            "excluded_validation_z_observations": isolation.get("excluded_validation_z_observations", []),
+            "unassociated_z_observations": uncertain_z,
+            "excluded_unassociated_z_observations": isolation.get("excluded_unassociated_z_observations", []),
+            "blocked_reason": blocked_reason,
+            "pipeline_diagnostics": pipeline,
+            "observed_count_semantics": "not reported; L/S is an expectation and is not stored as an exact count",
+        }
+        state.validation_results = results
+        state.validation_summary = summary
+        return summary
+
+    def _calibration_spacing_p10_predictors(
+        self, calibration_holes: set[str], settings: DensitySettings | None = None
+    ) -> tuple[dict[int | None, Any], str, list[dict[str, str]], dict[int | None, str]]:
+        """Fit along-hole P10 predictors exclusively from current Calibration spacing."""
+        state = self.project.m9_state
+        observations = ObservationService(self.project).spacing_observations()
+        holes = {self._hole_key(item.borehole_id): item for item in self.project.borehole_collection.boreholes}
+        calibration_keys = {self._hole_key(item) for item in calibration_holes}
+        grouped: dict[int | None, list[SpatialSample]] = {}
+        audit_rows: list[dict[str, Any]] = []
+        exclusions: list[dict[str, str]] = []
+        failures: dict[int | None, str] = {}
+        for observation in observations:
+            if self._hole_key(observation.hole_id) not in calibration_keys:
+                continue
+            if observation.measurement_basis != "BOREHOLE_ALONG_HOLE":
+                exclusions.append(
+                    {"observation_id": observation.observation_id, "reason": "not_borehole_along_hole"}
+                )
+                continue
+            hole = holes.get(self._hole_key(observation.hole_id))
+            if hole is None:
+                exclusions.append({"observation_id": observation.observation_id, "reason": "missing_trajectory"})
+                continue
+            segments, reason = self._spacing_domain_segments(observation)
+            if reason is not None:
+                exclusions.append({"observation_id": observation.observation_id, "reason": reason})
+                continue
+            points, measured_depths = hole.compute_trajectory(step_length=0.5)
+            for segment in segments:
+                midpoint = (segment.from_depth + segment.to_depth) / 2.0
+                xyz = tuple(float(np.interp(midpoint, measured_depths, points[:, axis])) for axis in range(3))
+                grouped.setdefault(segment.domain_id, []).append(
+                    SpatialSample(*xyz, observation.derived_p10, segment.domain_id)
+                )
+                audit_rows.append(
+                    {
+                        "observation_id": observation.observation_id,
+                        "hole_id": observation.hole_id,
+                        "from_depth": segment.from_depth,
+                        "to_depth": segment.to_depth,
+                        "p10": observation.derived_p10,
+                        "domain_id": segment.domain_id,
+                        "xyz": xyz,
+                    }
+                )
+
+        predictors: dict[int | None, Any] = {}
+        settings = settings or state.density_settings
+        for domain_id, samples in grouped.items():
+            coordinates = np.asarray([(item.x, item.y, item.z) for item in samples], dtype=np.float64)
+            values = np.asarray([item.value for item in samples], dtype=np.float64)
+            if settings.method.value == "global_constant":
+                predictors[domain_id] = float(np.mean(values))
+            elif settings.method.value == "idw":
+                fallback = {domain_id: float(np.mean(values))} if settings.global_fallback else None
+                predictors[domain_id] = IDWInterpolator(
+                    samples,
+                    power=settings.power,
+                    search_radius=settings.search_radius,
+                    min_neighbors=settings.min_neighbors,
+                    max_neighbors=settings.max_neighbors,
+                    anisotropy=(settings.anisotropy_x, settings.anisotropy_y, settings.anisotropy_z),
+                    fallback_by_domain=fallback,
+                )
+            else:
+                if len(np.unique(coordinates, axis=0)) < settings.kriging.minimum_neighbors:
+                    failures[domain_id] = "insufficient_neighbors"
+                    exclusions.append(
+                        {"observation_id": f"domain:{domain_id}", "reason": "insufficient_kriging_locations"}
+                    )
+                    continue
+                try:
+                    diagnostics = fit_variogram(coordinates, values, settings.kriging)
+                except ValueError as error:
+                    failures[domain_id] = "variogram_fit_failed"
+                    exclusions.append({"observation_id": f"domain:{domain_id}", "reason": str(error)})
+                    continue
+                predictors[domain_id] = OrdinaryKrigingInterpolator(
+                    coordinates, values, diagnostics, settings.kriging
+                )
+        input_hash = hashlib.sha256(
+            json.dumps(audit_rows, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return predictors, input_hash, exclusions, failures
+
+    def _spacing_domain_segments(self, observation) -> tuple[list[Any], str | None]:
+        """Return authoritative assigned subsegments; a cross-domain source row remains one observation."""
+        rows_for_hole = [
+            item
+            for item in get_domain_intervals(self.project)
+            if self._hole_key(item.hole_id) == self._hole_key(observation.hole_id)
+        ]
+        segments = list(observation.domain_segments)
+        expected = observation.to_depth - observation.from_depth
+        covered = sum(item.to_depth - item.from_depth for item in segments)
+        tolerance = max(1e-9, expected * 1e-9)
+        if abs(covered - expected) > tolerance:
+            return segments, "unassigned_domain"
+        if rows_for_hole and any(item.domain_id is None for item in segments):
+            return segments, "unassigned_domain"
+        return segments, None
+
+    def _integrated_total_p10_prediction(
+        self,
+        hole,
+        domain_segments: list[Any],
+        predictors: dict[int | None, Any],
+        predictor_failures: dict[int | None, str] | None = None,
+    ) -> tuple[float | None, str | None]:
+        """Integrate a Calibration-only along-hole P10 predictor on the real survey trajectory."""
+        state = self.project.m9_state
+        metadata = state.parameter_field_metadata
+        if metadata is None or not domain_segments:
+            return None, "invalid_trajectory"
+        predictor_failures = predictor_failures or {}
+        if not predictors:
+            reason = next(
+                (predictor_failures[item.domain_id] for item in domain_segments if item.domain_id in predictor_failures),
+                "no_calibration_spacing",
+            )
+            return None, reason
+        points, measured_depths = hole.compute_trajectory(step_length=0.5)
+
+        def point_at(depth: float) -> np.ndarray:
+            return np.asarray(
+                [np.interp(depth, measured_depths, points[:, axis]) for axis in range(3)],
+                dtype=np.float64,
+            )
+
+        weighted_prediction = 0.0
+        total_length = 0.0
+        analysis_domain = self.project.spatial_grid_config.analysis_domain
+        step = max(min(metadata.spacing) * 0.5, 1e-6)
+        for segment in domain_segments:
+            if segment.domain_id not in predictors:
+                return None, predictor_failures.get(segment.domain_id, "no_same_domain_support")
+            cuts = np.linspace(
+                segment.from_depth,
+                segment.to_depth,
+                max(1, int(math.ceil((segment.to_depth - segment.from_depth) / step))) + 1,
+            )
+            predictor = predictors[segment.domain_id]
+            for left, right in zip(cuts[:-1], cuts[1:]):
+                midpoint = float((left + right) / 2.0)
+                first = point_at(float(left))
+                last = point_at(float(right))
+                length = float(np.linalg.norm(last - first))
+                if length <= 1e-12:
+                    continue
+                point = point_at(midpoint)
+                if not analysis_domain.contains_point(*point):
+                    return None, "outside_analysis_domain"
+                if not self.project.rock_mask.contains_point(*point) or self.project.excavation_mask.is_excavated(*point):
+                    return None, "outside_active_model"
+                if isinstance(predictor, float):
+                    predicted = predictor
+                elif isinstance(predictor, OrdinaryKrigingInterpolator):
+                    result = predictor.predict(point)
+                    predicted = result.estimate
+                    if predicted is None:
+                        reason = (
+                            "outside_search_radius"
+                            if predictor.settings.search_radius is not None
+                            else "insufficient_neighbors"
+                        )
+                        return None, reason
+                else:
+                    result = predictor.predict(point, segment.domain_id)
+                    predicted = result.value
+                    if predicted is None:
+                        reason = (
+                            "outside_search_radius"
+                            if predictor.search_radius is not None and result.nearest_distance > predictor.search_radius
+                            else "insufficient_neighbors"
+                        )
+                        return None, reason
+                if predicted is None or not math.isfinite(predicted):
+                    return None, "other_non_finite_prediction"
+                weighted_prediction += float(predicted) * length
+                total_length += length
+        return (weighted_prediction / total_length, None) if total_length > 0 else (None, "invalid_trajectory")
+
+    @staticmethod
+    def _hole_key(value: Any) -> str:
+        """Match imported and holdout hole identifiers without changing their persisted spelling."""
+        return str(value).strip().casefold()
+
+    def _phase2a_validation_pipeline_diagnostics(
+        self,
+        all_spacing: list[Any],
+        calibration_holes: set[str],
+        validation_holes: set[str],
+        validation_rows: list[Any],
+        validation_segment_count: int,
+        *,
+        selected_valid: int,
+        selected_no_data: int,
+        selected_reasons: dict[str, int],
+        blocked_reason: str | None,
+    ) -> dict[str, Any]:
+        """Persist anonymous stage counts and method outcomes for validation troubleshooting."""
+        calibration_keys = {self._hole_key(item) for item in calibration_holes}
+        validation_keys = {self._hole_key(item) for item in validation_holes}
+        calibration_rows = [item for item in all_spacing if self._hole_key(item.hole_id) in calibration_keys]
+        qualified_calibration = [item for item in calibration_rows if item.measurement_basis == "BOREHOLE_ALONG_HOLE"]
+        qualified_validation = [item for item in validation_rows if item.measurement_basis == "BOREHOLE_ALONG_HOLE"]
+        calibration_segments = sum(
+            len(self._spacing_domain_segments(item)[0])
+            for item in qualified_calibration
+            if self._spacing_domain_segments(item)[1] is None
+        )
+        selected_method = self.project.m9_state.density_settings.method.value
+        method_results: dict[str, dict[str, Any]] = {
+            selected_method: {
+                "valid": selected_valid,
+                "no_data": selected_no_data,
+                "no_data_reasons": dict(sorted(selected_reasons.items())),
+            }
+        }
+        holes = {self._hole_key(item.borehole_id): item for item in self.project.borehole_collection.boreholes}
+        for method in DensityMethod:
+            if method.value == selected_method:
+                continue
+            candidate = DensitySettings.model_validate(
+                {**self.project.m9_state.density_settings.model_dump(mode="python"), "method": method}
+            )
+            predictors, _input_hash, _exclusions, predictor_failures = self._calibration_spacing_p10_predictors(
+                calibration_holes, candidate
+            )
+            valid_count = 0
+            reasons: dict[str, int] = {}
+            for observation in validation_rows:
+                reason = blocked_reason
+                predicted = None
+                segments, segment_reason = self._spacing_domain_segments(observation)
+                if observation.measurement_basis != "BOREHOLE_ALONG_HOLE":
+                    reason = "unknown_or_invalid_basis"
+                elif self._hole_key(observation.hole_id) not in holes:
+                    reason = "invalid_trajectory"
+                elif segment_reason is not None:
+                    reason = segment_reason
+                elif reason is None:
+                    predicted, reason = self._integrated_total_p10_prediction(
+                        holes[self._hole_key(observation.hole_id)], segments, predictors, predictor_failures
+                    )
+                if predicted is not None:
+                    valid_count += 1
+                else:
+                    category = reason or "other_no_data"
+                    reasons[category] = reasons.get(category, 0) + 1
+            method_results[method.value] = {
+                "valid": valid_count,
+                "no_data": len(validation_rows) - valid_count,
+                "no_data_reasons": dict(sorted(reasons.items())),
+            }
+        return {
+            "raw_spacing_records": sum(
+                1
+                for item in ObservationService(self.project).repository.query(
+                    BoreholeDataType.FRACTURES, raw=True
+                )
+                if item.values.get("observation_mode") == FractureObservationMode.INTERVAL_SPACING
+            ),
+            "formal_spacing_records": len(all_spacing),
+            "holdout_calibration_records": len(calibration_rows),
+            "holdout_validation_records": sum(
+                1 for item in all_spacing if self._hole_key(item.hole_id) in validation_keys
+            ),
+            "qualified_calibration_records": len(qualified_calibration),
+            "qualified_validation_records": len(qualified_validation),
+            "calibration_support_segments": calibration_segments,
+            "validation_target_segments": validation_segment_count,
+            "selected_method": selected_method,
+            "methods": method_results,
+        }
+
     def _validate_selected_density_input(self) -> None:
         """Reject stale or missing Phase 2A lineage before downstream M9 work."""
         state = self.project.m9_state
@@ -518,11 +971,16 @@ class M9Service:
 
     def _field_value(self, interval, set_id: int) -> float | None:
         """Read a validation prediction from the generated voxel field."""
+        if interval.center_x is None:
+            return None
+        return self._field_value_at((interval.center_x, interval.center_y, interval.center_z), set_id)
+
+    def _field_value_at(self, point, set_id: int) -> float | None:
+        """Read one finite set-specific P32 value at an XYZ point."""
         metadata = self.project.m9_state.parameter_field_metadata
         array = self.project.m9_state.parameter_field_arrays.get(f"set_{set_id}_p32")
-        if metadata is None or array is None or interval.center_x is None:
+        if metadata is None or array is None:
             return None
-        point = (interval.center_x, interval.center_y, interval.center_z)
         indices = tuple(
             int(math.floor((coordinate - origin) / spacing))
             for coordinate, origin, spacing in zip(point, metadata.origin, metadata.spacing)

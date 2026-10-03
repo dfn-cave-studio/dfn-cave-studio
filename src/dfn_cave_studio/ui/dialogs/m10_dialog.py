@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from dfn_cave_studio.models.m10 import M10FractureSource, M10GenerationConfig
@@ -108,6 +109,9 @@ class M10ExplicitDFNDialog(QDialog):
         self.base_seed.setRange(-2_147_483_648, 2_147_483_647)
         self.realization_count = _NoWheelSpinBox()
         self.realization_count.setRange(1, 100)
+        self.maximum_fractures = _NoWheelSpinBox()
+        self.maximum_fractures.setRange(1, 2_000_000_000)
+        self.maximum_fractures.setGroupSeparatorShown(True)
         self.worker_count = _NoWheelComboBox()
         for worker_count in (1, 2, 4, 8):
             self.worker_count.addItem(str(worker_count), worker_count)
@@ -137,6 +141,7 @@ class M10ExplicitDFNDialog(QDialog):
         self.restore_threshold_defaults = QPushButton("Restore Recommended Defaults")
         form.addRow("Base seed", self.base_seed)
         form.addRow("Realizations", self.realization_count)
+        form.addRow("Maximum explicit fractures per realization", self.maximum_fractures)
         form.addRow("CPU workers", self.worker_count)
         form.addRow(self.condition_observations)
         form.addRow(self.deterministic_budget)
@@ -152,13 +157,41 @@ class M10ExplicitDFNDialog(QDialog):
         form.addRow(self.generate_small, self.restore_threshold_defaults)
         layout.addWidget(config_group)
 
-        self.size_estimate_table = QTableWidget(0, 7)
+        layout.addWidget(QLabel("Size Class Summary"))
+        self.size_estimate_table = QTableWidget(0, 8)
         self.size_estimate_table.setHorizontalHeaderLabels(
-            ["Size Class", "Radius Range", "Generate", "Expected Count", "Target P32", "P32 Share", "Estimated Memory"]
+            [
+                "Size Class",
+                "Radius Range",
+                "Generate",
+                "Contributing Domain×Set count",
+                "Expected Count",
+                "Target P32",
+                "P32 Share",
+                "Estimated Memory",
+            ]
         )
         layout.addWidget(self.size_estimate_table)
 
-        self.group_summary_table = QTableWidget(0, 8)
+        layout.addWidget(QLabel("Domain×Set Size Details"))
+        self.size_detail_table = QTableWidget(0, 10)
+        self.size_detail_table.setHorizontalHeaderLabels(
+            [
+                "Domain ID",
+                "Set ID",
+                "Set Name",
+                "Size Class",
+                "Radius Range",
+                "Generate",
+                "Expected Count",
+                "Target P32",
+                "P32 Share",
+                "Estimated Memory",
+            ]
+        )
+        layout.addWidget(self.size_detail_table)
+
+        self.group_summary_table = QTableWidget(0, 16)
         self.group_summary_table.setHorizontalHeaderLabels(
             [
                 "Domain",
@@ -169,6 +202,14 @@ class M10ExplicitDFNDialog(QDialog):
                 "Expected",
                 "Actual",
                 "Unresolved Reason",
+                "Size Status",
+                "Size Source",
+                "Size Model",
+                "Radius Unit",
+                "E[area] (m²)",
+                "Radius min (m)",
+                "Radius mean (m)",
+                "Radius max/std (m)",
             ]
         )
         layout.addWidget(QLabel("Domain / Joint Set generation summary"))
@@ -286,7 +327,7 @@ class M10ExplicitDFNDialog(QDialog):
         self._estimate_timer.setInterval(180)
         self._estimate_timer.timeout.connect(self._refresh_estimate)
         for control in (
-            self.threshold_mode, self.small_area_share, self.medium_large_share,
+            self.maximum_fractures, self.threshold_mode, self.small_area_share, self.medium_large_share,
             self.manual_sm, self.manual_ml, self.generate_large, self.generate_medium, self.generate_small,
         ):
             signal = getattr(control, "currentIndexChanged", None) or getattr(control, "valueChanged", None) or control.toggled
@@ -297,6 +338,7 @@ class M10ExplicitDFNDialog(QDialog):
         config = self.project.m10_state.config
         self.base_seed.setValue(config.base_seed)
         self.realization_count.setValue(config.realization_count)
+        self.maximum_fractures.setValue(config.maximum_fractures)
         self.worker_count.setCurrentIndex(self.worker_count.findData(config.worker_count))
         self.condition_observations.setChecked(config.condition_calibration_observations)
         self.deterministic_budget.setChecked(config.deterministic_structures_reduce_budget)
@@ -321,6 +363,7 @@ class M10ExplicitDFNDialog(QDialog):
             {
                 "base_seed": self.base_seed.value(),
                 "realization_count": self.realization_count.value(),
+                "maximum_fractures": self.maximum_fractures.value(),
                 "worker_count": int(self.worker_count.currentData()),
                 "condition_calibration_observations": self.condition_observations.isChecked(),
                 "deterministic_structures_reduce_budget": self.deterministic_budget.isChecked(),
@@ -364,30 +407,117 @@ class M10ExplicitDFNDialog(QDialog):
             details = self.service.estimate_details(self._config())
             self._update_threshold_controls()
             self.estimate_label.setText(
-                f"Expected: {details['expected_fractures']:,.1f} | final: {details['final_storage_bytes'] / 1024**2:,.1f} MiB | "
+                f"Expected: {details['expected_fractures']:,.1f} | recommended limit: "
+                f"{self._recommended_fracture_limit(details['expected_fractures']):,} | "
+                f"final: {details['final_storage_bytes'] / 1024**2:,.1f} MiB | "
                 f"peak generation: {details['peak_generation_bytes'] / 1024**2:,.1f} MiB | "
                 f"LOD: {details['preview_render_bytes'] / 1024**2:,.1f} MiB | "
                 f"save temporary: {details['project_save_temporary_bytes'] / 1024**2:,.1f} MiB | "
                 f"all realizations peak: {details['all_realizations_peak_bytes'] / 1024**2:,.1f} MiB"
             )
-            rows = [item for target in details.get("targets", []) for item in target.get("classes", [])]
-            self.size_estimate_table.setRowCount(len(rows))
-            for row, item in enumerate(rows):
-                lower, upper = item["radius_range"]
-                radius_range = f"{lower:.4g} ≤ R < {'∞' if not isinstance(upper, (int, float)) or upper == float('inf') else f'{upper:.4g}'} m"
-                values = (
-                    item["size_class"], radius_range, "Yes" if item["generate"] else "No",
-                    f"{item['expected_count']:,.1f}", f"{item['target_p32']:.6g}",
-                    f"{100 * item['p32_share']:.2f}%", f"{item['expected_count'] * 113 / 1024**2:.2f} MiB",
-                )
-                for column, value in enumerate(values):
-                    self.size_estimate_table.setItem(row, column, QTableWidgetItem(str(value)))
+            self._populate_size_estimate_tables(details)
             self._refresh_group_summary(details=details)
         except Exception as exc:
             self.estimate_label.setText(f"Estimate unavailable: {exc}")
             self._refresh_group_summary()
         finally:
             self.project.m10_state.deterministic_structures = old
+
+    @staticmethod
+    def _recommended_fracture_limit(expected: float) -> int:
+        """Return a six-sigma Poisson planning limit without changing configuration."""
+        value = max(0.0, float(expected))
+        return int(math.ceil(value + 6.0 * math.sqrt(value)))
+
+    @staticmethod
+    def _format_radius_range(lower: float, upper: float) -> str:
+        upper_text = "∞" if not math.isfinite(float(upper)) else f"{float(upper):.4g}"
+        return f"{float(lower):.4g} ≤ R < {upper_text} m"
+
+    def _populate_size_estimate_tables(self, details: dict) -> None:
+        """Show a three-row class summary plus auditable Domain×Set details."""
+        targets = details.get("targets", [])
+        bytes_per_fracture = int(details.get("bytes_per_unclipped_fracture", 0))
+        set_names = {int(item.set_id): item.name for item in self.project.joint_sets}
+        detail_rows: list[dict] = []
+        for target in targets:
+            for item in target.get("classes", []):
+                detail_rows.append(
+                    {
+                        **item,
+                        "domain_id": target.get("domain_id"),
+                        "set_id": int(target["set_id"]),
+                        "set_name": set_names.get(int(target["set_id"]), f"Joint Set {int(target['set_id'])}"),
+                    }
+                )
+
+        self.size_detail_table.setRowCount(len(detail_rows))
+        for row, item in enumerate(detail_rows):
+            memory = float(item["expected_count"]) * bytes_per_fracture if item["generate"] else 0.0
+            values = (
+                "Unassigned" if item["domain_id"] is None else item["domain_id"],
+                item["set_id"],
+                item["set_name"],
+                item["size_class"],
+                self._format_radius_range(*item["radius_range"]),
+                "Yes" if item["generate"] else "No",
+                f"{item['expected_count']:,.1f}",
+                f"{item['target_p32']:.6g}",
+                f"{100 * item['p32_share']:.2f}%",
+                f"{memory / 1024**2:.2f} MiB",
+            )
+            for column, value in enumerate(values):
+                self.size_detail_table.setItem(row, column, QTableWidgetItem(str(value)))
+
+        class_order = ("SMALL", "MEDIUM", "LARGE")
+        total_target_area = sum(float(item.get("target_area", 0.0)) for item in detail_rows)
+        self.size_estimate_table.setRowCount(len(class_order))
+        for row, size_class in enumerate(class_order):
+            members = [item for item in detail_rows if item["size_class"] == size_class]
+            expected_count = sum(float(item["expected_count"]) for item in members)
+            target_p32 = sum(float(item["target_p32"]) for item in members)
+            ranges = {tuple(item["radius_range"]) for item in members}
+            if not ranges:
+                radius_range = "—"
+            elif len(ranges) == 1:
+                radius_range = self._format_radius_range(*next(iter(ranges)))
+            else:
+                finite_lowers = [float(bounds[0]) for bounds in ranges]
+                finite_uppers = [float(bounds[1]) for bounds in ranges]
+                overall_lower = min(finite_lowers)
+                overall_upper = max(finite_uppers)
+                radius_range = f"Varies ({self._format_radius_range(overall_lower, overall_upper)})"
+            generated = any(bool(item["generate"]) for item in members)
+            contributing = sum(float(item["target_p32"]) > 0.0 for item in members)
+            target_area = sum(float(item.get("target_area", 0.0)) for item in members)
+            p32_share = target_area / total_target_area if total_target_area > 0.0 else 0.0
+            memory = expected_count * bytes_per_fracture if generated else 0.0
+            values = (
+                size_class,
+                radius_range,
+                "Yes" if generated else "No",
+                contributing,
+                f"{expected_count:,.1f}",
+                f"{target_p32:.6g}",
+                f"{100 * p32_share:.2f}%",
+                f"{memory / 1024**2:.2f} MiB",
+            )
+            for column, value in enumerate(values):
+                self.size_estimate_table.setItem(row, column, QTableWidgetItem(str(value)))
+
+    @staticmethod
+    def _generation_safety_details(details: dict, config: M10GenerationConfig) -> str:
+        enabled = ", ".join(config.enabled_size_classes) or "none"
+        return (
+            f"Expected explicit fractures: {details['expected_fractures']:,.1f}\n"
+            f"Configured per-realization limit: {config.maximum_fractures:,}\n"
+            f"Recommended minimum limit (mean + 6σ): "
+            f"{M10ExplicitDFNDialog._recommended_fracture_limit(details['expected_fractures']):,}\n"
+            f"Enabled size classes: {enabled}\n"
+            f"Estimated final arrays: {details['final_storage_bytes'] / 1024**2:,.1f} MiB\n"
+            f"Estimated generation peak: {details['peak_generation_bytes'] / 1024**2:,.1f} MiB\n"
+            f"All-realizations peak: {details['all_realizations_peak_bytes'] / 1024**2:,.1f} MiB"
+        )
 
     def _import_structures(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Import Deterministic Structures", "", "CSV (*.csv)")
@@ -438,9 +568,39 @@ class M10ExplicitDFNDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Estimate Failed", str(exc))
             return
+        safety_details = self._generation_safety_details(details, config)
+        if expected > config.maximum_fractures:
+            QMessageBox.warning(
+                self,
+                "Explicit Fracture Limit Exceeded",
+                "Generation was not started because the expected explicit count exceeds the configured "
+                f"per-realization limit.\n\n{safety_details}",
+            )
+            return
+        if config.maximum_fractures > 1_000_000:
+            answer = QMessageBox.question(
+                self,
+                "Override Default Fracture Limit",
+                "You are overriding the default one-million-fracture safety limit.\n\n"
+                f"{safety_details}\n\nContinue?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        available = int(details.get("available_memory_bytes", 0))
+        all_realizations_peak = int(details["all_realizations_peak_bytes"])
+        if available > 0 and all_realizations_peak > available * config.memory_safety_fraction:
+            QMessageBox.warning(
+                self,
+                "Insufficient System Memory",
+                f"{safety_details}\n\nConservative all-realizations planning peak "
+                f"({all_realizations_peak / 1024**3:.2f} GiB, including clipped polygons) exceeds "
+                f"{config.memory_safety_fraction:.0%} of currently available system memory "
+                f"({available / 1024**3:.2f} GiB).",
+            )
+            return
         if memory > config.memory_warning_bytes:
             answer = QMessageBox.question(
-                self, "Large Generation", f"Estimated {expected:,.0f} fractures and {memory / 1024**2:,.1f} MiB. Continue?"
+                self, "Large Generation", f"{safety_details}\n\nContinue?"
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -533,6 +693,18 @@ class M10ExplicitDFNDialog(QDialog):
                 f"{row['expected']:,.1f}",
                 actual,
                 self._unresolved_reason_text(row["unresolved_reason"]),
+                row["size_status"],
+                row["size_source"],
+                row["size_model"],
+                row["radius_unit"],
+                "—" if row["expected_area"] is None else f"{row['expected_area']:.6g}",
+                "—" if row["radius_min"] is None else f"{row['radius_min']:.6g}",
+                "—" if row["radius_mean"] is None else f"{row['radius_mean']:.6g}",
+                (
+                    "—"
+                    if row["radius_max"] is None
+                    else f"{row['radius_max']:.6g} / {row['radius_std']:.6g}"
+                ),
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
@@ -559,6 +731,7 @@ class M10ExplicitDFNDialog(QDialog):
             "NO_DATA": tr("No Data"),
             "TARGET_P32_ZERO": tr("Target P32 Zero"),
             "MISSING_SIZE_MODEL": tr("Missing Size Model"),
+            "UNRESOLVED_SIZE_MODEL": tr("Size unresolved — M10 generation is blocked"),
             "INSUFFICIENT_ORIENTATION_DATA": tr("Insufficient Orientation Data"),
         }.get(reason, reason)
 

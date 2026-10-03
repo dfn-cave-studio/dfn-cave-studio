@@ -5,8 +5,8 @@ from __future__ import annotations
 from dfn_cave_studio.models.m9 import M9DensityInputMode
 from dfn_cave_studio.services.workflow_controller import WorkflowController
 from dfn_cave_studio.ui.qt_adapter import QDialog, QDialogButtonBox, Qt
-from dfn_cave_studio.ui.dialogs.m9_dialogs import M9DensityDialog
-from tests.unit.test_m9_phase2a_adapter import _project_with_realizations
+from dfn_cave_studio.ui.dialogs.m9_dialogs import M9DensityDialog, M9ValidationDialog
+from tests.unit.test_m9_phase2a_adapter import _build_and_validate_phase2a, _project_with_realizations
 
 
 def test_density_dialog_never_auto_selects_a_phase2a_realization(qtbot) -> None:
@@ -94,3 +94,17 @@ def test_ok_button_and_direct_accept_cannot_close_while_density_worker_runs(qtbo
     late = original.model_copy(update={"density_input_realization_id": "late"})
     dialog._calculation_done(late, worker)
     assert project.m9_state == original
+
+
+def test_validation_dialog_distinguishes_independent_p10_from_p32_or_full_dfn(qtbot) -> None:
+    project = _project_with_realizations(1, include_validation=True)
+    _build_and_validate_phase2a(project)
+    dialog = M9ValidationDialog(project, WorkflowController())
+    qtbot.addWidget(dialog)
+    assert dialog.results_table.rowCount() == 1
+    assert "P10 only" in dialog.interpretation.text()
+    assert "not independent validation of P32" in dialog.interpretation.text()
+    assert "Spacing audit: raw=" in dialog.pipeline_diagnostics.text()
+    assert "global_constant: valid=1, no_data=0" in dialog.pipeline_diagnostics.text()
+    assert dialog.results_table.item(0, 3).text() != "—"
+    assert dialog.results_table.item(0, 4).text() != "—"

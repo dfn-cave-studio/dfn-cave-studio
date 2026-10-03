@@ -80,7 +80,20 @@ ORIENTATION_CODES = {
     "observed_full_orientation": np.uint8(1),
     "deterministic_structure": np.uint8(2),
 }
-SIZE_SOURCE_CODES = {name: np.uint8(index) for index, name in enumerate(("assumed", "user_defined", "experimental"))}
+SIZE_SOURCE_CODES = {
+    name: np.uint8(index)
+    for index, name in enumerate(
+        (
+            "assumed",
+            "user_defined",
+            "experimental",
+            "manual_fixed",
+            "manual_distribution",
+            "fitted_from_trace_data",
+            "assumed_scenario",
+        )
+    )
+}
 DISTRIBUTION_CODES = {
     name: np.uint8(index)
     for index, name in enumerate(
@@ -233,6 +246,9 @@ class M10ExplicitDFNGenerator:
         self.cancelled = cancelled
         self.progress = progress
         self.actual_worker_count = int(actual_worker_count)
+        # Assigned by the service from available system memory before execution.
+        # Zero permits direct scientific calls without a machine-specific limit.
+        self.memory_limit_bytes = 0
         self._validate_inputs()
 
     @staticmethod
@@ -321,6 +337,7 @@ class M10ExplicitDFNGenerator:
                                         if np.any(modelable_mask)
                                         else 0.0
                                     ),
+                                    "target_area": modelable_area * budget.area_share,
                                     "p32_share": budget.area_share,
                                 }
                                 for budget in thresholds.budgets
@@ -345,16 +362,53 @@ class M10ExplicitDFNGenerator:
         clipped_geometry = 0
         multiscale_metadata_bytes = max(4 * 1024, len(targets) * 512)
         final_storage = fracture_array_bytes + subgrid_array_bytes + clipped_geometry + multiscale_metadata_bytes
-        batch = min(max(1, count), self.config.fracture_batch_size)
-        temporary_batch = batch * (3 * 8 * 3 + 8 * 4 + 16)
         metadata_bytes = multiscale_metadata_bytes
-        # Cold first render includes the VTK runtime plus compact point/normal/radius buffers.
-        render_memory = 85 * 1024**2 + count * 32
         # Streaming NPZ-to-ZIP uses bounded compressor buffers rather than a second full geometry copy.
         save_temporary = min(64 * 1024**2, count * 48 + 1 * 1024**2)
-        peak_generation = int(
-            fracture_array_bytes * 1.12 + subgrid_array_bytes + temporary_batch + metadata_bytes
-        )
+        # Whole-class buffers are allocated BEFORE the chunk loop.  Chunking
+        # append/clip work does not bound repeat/Fisher/radius/center allocations.
+        # The preceding class remains bound while Python evaluates replacement
+        # RHSs, so reserve two complete sets of those buffers plus Fisher work.
+        # Keep the expected compact storage estimate separate from this safety
+        # ledger: clipped polygons and unused accumulator capacity are not part
+        # of the compact (logical nbytes) estimate above.
+        def memory_ledger(fractures: int) -> dict[str, int]:
+            capacity = min(
+                self.config.maximum_fractures,
+                max(16, int(math.ceil(fractures * 1.5)) + 1024),
+            )
+            voxel_count = int(np.prod(self.metadata.shape))
+            prefix_count = len(self.conditioned_observations) + deterministic_count
+            return {
+                "accumulator_capacity_bytes": capacity * bytes_per_fracture,
+                # _ensure replaces one column at a time; the largest is Nx3 f64.
+                "capacity_replacement_bytes": capacity * 24,
+                "whole_class_buffers_bytes": fractures * 124 * 2,
+                "fisher_and_sampling_work_bytes": fractures * 256,
+                "voxel_work_and_lookup_bytes": voxel_count * 512,
+                "chunk_work_bytes": min(fractures, self.config.fracture_batch_size) * 512,
+                # A convex disk polygon gains at most one vertex per box plane.
+                # List-held parts and concatenate output coexist at finalize.
+                "ragged_parts_and_finalize_bytes": fractures * (
+                    (self.config.disk_sides + 6) * 24 * 2 + 256
+                ),
+                "prefix_objects_bytes": prefix_count * (4096 + self.config.disk_sides * 24),
+                "subgrid_array_bytes": subgrid_array_bytes,
+                "metadata_bytes": metadata_bytes,
+            }
+
+        planned_count = min(self.config.maximum_fractures, int(math.ceil(expected + 6 * math.sqrt(expected))))
+        ledger = memory_ledger(planned_count)
+        limit_ledger = memory_ledger(self.config.maximum_fractures)
+        # Native allocator/runtime variation: explicit margin, not a substitute
+        # for omitted buffers.  The hard-limit ledger bounds Poisson excursions.
+        peak_generation = int(math.ceil(sum(ledger.values()) * 1.2))
+        limit_peak = int(math.ceil(sum(limit_ledger.values()) * 1.2))
+        retained_per_fracture = bytes_per_fracture * 1.5 + (self.config.disk_sides + 6) * 24
+        retained_planned = int(math.ceil(planned_count * retained_per_fracture)) + subgrid_array_bytes + metadata_bytes
+        # Glyph rendering retains selected copies and Python RGB tuples before
+        # VTK/GPU upload.  Unlike Exact Geometry it does not expand disk vertices.
+        render_memory = 85 * 1024**2 + planned_count * 256
         parameter_field_bytes = int(sum(value.nbytes for value in self.arrays.values()))
         active_workers = min(self.config.worker_count, self.config.realization_count)
         return {
@@ -372,6 +426,10 @@ class M10ExplicitDFNGenerator:
             "multiscale_metadata_bytes": multiscale_metadata_bytes,
             "final_storage_bytes": int(final_storage),
             "peak_generation_bytes": peak_generation,
+            "generation_memory_ledger": ledger,
+            "memory_planning_fracture_count": planned_count,
+            "hard_limit_generation_peak_bytes": limit_peak,
+            "memory_estimate_scope": "6-sigma planning; hard-limit bound assumes every disk is clipped",
             "preview_render_bytes": int(render_memory),
             "project_save_temporary_bytes": int(save_temporary),
             "realization_count": self.config.realization_count,
@@ -379,8 +437,14 @@ class M10ExplicitDFNGenerator:
             "parameter_field_bytes": parameter_field_bytes,
             "active_worker_count": active_workers,
             "all_realizations_peak_bytes": int(
-                final_storage * self.config.realization_count
+                retained_planned * self.config.realization_count
                 + peak_generation * active_workers
+                + parameter_field_bytes * max(0, active_workers - 1)
+            ),
+            "hard_limit_all_realizations_peak_bytes": int(
+                limit_peak * active_workers
+                + (self.config.maximum_fractures * retained_per_fracture + subgrid_array_bytes + metadata_bytes)
+                * self.config.realization_count
                 + parameter_field_bytes * max(0, active_workers - 1)
             ),
         }
@@ -405,6 +469,8 @@ class M10ExplicitDFNGenerator:
             realization_id, generated, budget_deductions, warnings
         )
         estimate = self.estimate_details()
+        if self.memory_limit_bytes and estimate["peak_generation_bytes"] > self.memory_limit_bytes:
+            raise MemoryError("M10 generation planning peak exceeds the assigned memory allowance")
         initial_capacity = min(
             self.config.maximum_fractures,
             max(len(generated) + 16, int(math.ceil(estimate["expected_fractures"] * 1.02)) + 1024),
@@ -553,6 +619,18 @@ class M10ExplicitDFNGenerator:
                         raise MemoryError("Generated fracture count exceeds the configured safety limit")
                     if count == 0:
                         continue
+                    # Poisson has no finite probabilistic upper bound.  Recheck
+                    # actual accumulated count BEFORE allocating full-class
+                    # arrays, without drawing another random number.
+                    if self.memory_limit_bytes:
+                        actual_total = columns.count + count
+                        planned_total = max(1, estimate["memory_planning_fracture_count"])
+                        required = estimate["peak_generation_bytes"] * max(1.0, actual_total / planned_total)
+                        if required > self.memory_limit_bytes:
+                            raise MemoryError(
+                                f"M10 actual Poisson count {actual_total:,} exceeds the assigned memory allowance "
+                                "before whole-class allocation"
+                            )
                     repeated_flat = np.repeat(active_flat, poisson_counts)
                     repeated_parameters = np.repeat(np.arange(len(active_flat), dtype=np.int64), poisson_counts)
                     normals = np.empty((count, 3), dtype=np.float64)
@@ -710,6 +788,23 @@ class M10ExplicitDFNGenerator:
         missing = sorted(required - self.arrays.keys())
         if missing:
             raise ValueError(f"M9 parameter field is missing required arrays: {', '.join(missing)}")
+        modeled = self.arrays["cell_state"] == CELL_STATE_CODES[VoxelCellState.MODELED_VALUE]
+        domains = self.arrays["domain_id"]
+        unresolved: list[str] = []
+        for set_id in self.metadata.set_ids:
+            p32 = self.arrays[f"set_{set_id}_p32"]
+            active = modeled & np.isfinite(p32) & (p32 > 0.0)
+            for raw_domain_id in np.unique(domains[active]):
+                domain_id = self._domain_value(int(raw_domain_id))
+                size = self._size_model(domain_id, set_id)
+                if size is None:
+                    unresolved.append(f"Domain {domain_id} / Set {set_id}: missing size model")
+                elif not size.is_usable_for_explicit_dfn:
+                    unresolved.append(
+                        f"Domain {domain_id} / Set {set_id}: size status {size.scientific_status.value}"
+                    )
+        if unresolved:
+            raise ValueError("Cannot generate positive-P32 targets with unresolved fracture size:\n" + "\n".join(unresolved))
         for size in self.size_models.values():
             if size.source == SizeModelSource.EXPERIMENTAL and not self.config.experimental_size_models_confirmed:
                 raise ValueError("EXPERIMENTAL size models require explicit user confirmation")

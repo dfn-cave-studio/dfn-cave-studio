@@ -90,6 +90,32 @@ def make_m10_project() -> Project:
     return project
 
 
+def test_service_blocks_expected_count_over_per_realization_limit_before_generation(monkeypatch):
+    project = make_m10_project()
+    service = M10Service(project)
+    config = M10GenerationConfig(
+        maximum_fractures=1_000_000,
+        condition_calibration_observations=False,
+    )
+    monkeypatch.setattr(service, "validate_readiness", lambda _config: [])
+    monkeypatch.setattr(
+        service,
+        "estimate_details",
+        lambda _config: {
+            "expected_fractures": 1_200_000.0,
+            "available_memory_bytes": 32 * 1024**3,
+            "all_realizations_peak_bytes": 256 * 1024**2,
+        },
+    )
+    generator_calls = []
+    monkeypatch.setattr(service, "_generator", lambda *_args, **_kwargs: generator_calls.append(True))
+
+    with pytest.raises(MemoryError, match="per-realization limit"):
+        service.generate_batch(config, commit=False)
+
+    assert generator_calls == []
+
+
 def test_m10_batch_save_reopen_arrays_and_seeds_are_identical(tmp_path: Path):
     project = make_m10_project()
     config = M10GenerationConfig(base_seed=100, realization_count=3, condition_calibration_observations=False)

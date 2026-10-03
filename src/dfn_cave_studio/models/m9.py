@@ -81,6 +81,21 @@ class SizeModelSource(StrEnum):
     ASSUMED = "assumed"
     USER_DEFINED = "user_defined"
     EXPERIMENTAL = "experimental"
+    MANUAL_FIXED = "manual_fixed"
+    MANUAL_DISTRIBUTION = "manual_distribution"
+    FITTED_FROM_TRACE_DATA = "fitted_from_trace_data"
+    ASSUMED_SCENARIO = "assumed_scenario"
+
+
+class SizeModelStatus(StrEnum):
+    """Whether a size model is scientifically usable by explicit DFN generation."""
+
+    UNRESOLVED = "UNRESOLVED"
+    MANUAL_FIXED = "MANUAL_FIXED"
+    MANUAL_DISTRIBUTION = "MANUAL_DISTRIBUTION"
+    FITTED_FROM_TRACE_DATA = "FITTED_FROM_TRACE_DATA"
+    ASSUMED_SCENARIO = "ASSUMED_SCENARIO"
+    LEGACY_VALID = "LEGACY_VALID"
 
 
 class ValidationState(StrEnum):
@@ -221,6 +236,30 @@ class SizeModel(BaseModel):
     optimizer_message: str | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def scientific_status(self) -> SizeModelStatus:
+        """Return explicit status while preserving usable legacy project semantics."""
+        explicit = self.provenance.get("size_status")
+        if explicit is not None:
+            try:
+                return SizeModelStatus(str(explicit))
+            except ValueError:
+                return SizeModelStatus.UNRESOLVED
+        if self.source == SizeModelSource.MANUAL_FIXED:
+            return SizeModelStatus.MANUAL_FIXED
+        if self.source == SizeModelSource.MANUAL_DISTRIBUTION:
+            return SizeModelStatus.MANUAL_DISTRIBUTION
+        if self.source == SizeModelSource.FITTED_FROM_TRACE_DATA:
+            return SizeModelStatus.FITTED_FROM_TRACE_DATA
+        if self.source == SizeModelSource.ASSUMED_SCENARIO:
+            return SizeModelStatus.ASSUMED_SCENARIO
+        return SizeModelStatus.LEGACY_VALID
+
+    @property
+    def is_usable_for_explicit_dfn(self) -> bool:
+        """Return false only for explicitly unresolved scientific placeholders."""
+        return self.scientific_status != SizeModelStatus.UNRESOLVED
+
 
 class ParameterFieldMetadata(BaseModel):
     """Small JSON metadata stored alongside compressed parameter arrays."""
@@ -248,14 +287,18 @@ class ValidationIntervalResult(BaseModel):
     to_depth: float
     domain_id: int | None = None
     set_id: int
-    observed_count: int = Field(ge=0)
+    observed_count: int | None = Field(default=None, ge=0)
     observed_p10: float | None = Field(default=None, ge=0.0)
     predicted_p10: float | None = Field(default=None, ge=0.0)
     predicted_p32: float | None = Field(default=None, ge=0.0)
     absolute_error: float | None = Field(default=None, ge=0.0)
+    signed_error: float | None = None
     relative_error: float | None = None
     calibration_or_validation: str = "validation"
     data_state: str = "modeled_value"
+    observation_source: str = "formal_fracture_observations"
+    prediction_source: str = "m9_parameter_field"
+    exclusion_reason: str | None = None
 
 
 class ValidationSummary(BaseModel):

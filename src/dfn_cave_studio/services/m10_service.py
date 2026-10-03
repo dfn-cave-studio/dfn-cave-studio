@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import ctypes
+import math
 import multiprocessing
 import os
 import time
@@ -63,6 +64,15 @@ class M10Service:
                     for domain_id, set_id in missing_size
                 )
                 errors.append(f"M9 fracture size model is missing for active targets: {labels}")
+            unresolved_size = self._unresolved_active_size_models()
+            if unresolved_size:
+                names = {item.set_id: item.name for item in self.project.joint_sets}
+                labels = ", ".join(
+                    f"Domain {domain_id if domain_id is not None else 'None'} / Set {set_id} "
+                    f"({names.get(set_id, f'Joint Set {set_id}')}): {status}"
+                    for domain_id, set_id, status in unresolved_size
+                )
+                errors.append(f"Fracture Size is unresolved for positive-P32 targets: {labels}")
         if self.project.spatial_grid_config is None:
             errors.append("DFN Generation Domain is not configured")
         if any(model.source.value == "experimental" for model in state.size_models) and not config.experimental_size_models_confirmed:
@@ -99,6 +109,27 @@ class M10Service:
                 if (domain_id, int(set_id)) not in available and (None, int(set_id)) not in available:
                     missing.append((domain_id, int(set_id)))
         return missing
+
+    def _unresolved_active_size_models(self) -> list[tuple[int | None, int, str]]:
+        """Return active targets whose selected model is explicitly unresolved."""
+        state = self.project.m9_state
+        metadata = state.parameter_field_metadata
+        if metadata is None:
+            return []
+        arrays = state.parameter_field_arrays
+        modeled = arrays["cell_state"] == CELL_STATE_CODES[VoxelCellState.MODELED_VALUE]
+        domains = arrays["domain_id"]
+        models = {(item.domain_id, item.set_id): item for item in state.size_models}
+        output: list[tuple[int | None, int, str]] = []
+        for set_id in metadata.set_ids:
+            values = arrays[f"set_{set_id}_p32"]
+            active = modeled & np.isfinite(values) & (values > 0.0)
+            for raw_domain_id in np.unique(domains[active]):
+                domain_id = None if int(raw_domain_id) < 0 else int(raw_domain_id)
+                model = models.get((domain_id, int(set_id))) or models.get((None, int(set_id)))
+                if model is not None and not model.is_usable_for_explicit_dfn:
+                    output.append((domain_id, int(set_id), model.scientific_status.value))
+        return output
 
     def joint_set_diagnostics(
         self,
@@ -143,7 +174,7 @@ class M10Service:
                 counts[role] += 1
                 counts["full_orientation" if observation.has_full_orientation else "dip_only"] += 1
 
-        size_models = {(item.domain_id, item.set_id) for item in state.size_models}
+        size_models = {(item.domain_id, item.set_id): item for item in state.size_models}
         quality = {
             (item.domain_id, item.set_id): item
             for item in (realization.quality.domain_set if realization is not None else [])
@@ -194,7 +225,9 @@ class M10Service:
                 for field in ("dip_direction", "dip", "kappa"):
                     direction_valid = direction_valid & np.isfinite(arrays[f"set_{set_id}_{field}"])
                 direction_valid = direction_valid & (arrays[f"set_{set_id}_kappa"] > 0.0)
-                has_size = (domain_id, int(set_id)) in size_models or (None, int(set_id)) in size_models
+                size_model = size_models.get((domain_id, int(set_id))) or size_models.get((None, int(set_id)))
+                has_size = size_model is not None
+                size_usable = size_model is not None and size_model.is_usable_for_explicit_dfn
                 estimate = estimates.get((domain_id, int(set_id)), {})
                 generated = quality.get((domain_id, int(set_id)))
                 counts = observation_counts.get(
@@ -212,6 +245,8 @@ class M10Service:
                     reason = "TARGET_P32_ZERO"
                 elif not has_size:
                     reason = "MISSING_SIZE_MODEL"
+                elif not size_usable:
+                    reason = "UNRESOLVED_SIZE_MODEL"
                 elif not np.all(direction_valid[positive]):
                     reason = "INSUFFICIENT_ORIENTATION_DATA"
                 if generated is not None and generated.status != "generated":
@@ -233,6 +268,25 @@ class M10Service:
                         "effective_voxels": int(np.count_nonzero(positive)),
                         "target_p32": target,
                         "expected": float(estimate.get("expected_fractures", 0.0)),
+                        "size_status": (
+                            size_model.scientific_status.value if size_model is not None else "UNRESOLVED"
+                        ),
+                        "size_source": size_model.source.value if size_model is not None else "none",
+                        "size_model": size_model.distribution_type if size_model is not None else "none",
+                        "radius_unit": (
+                            str(size_model.provenance.get("radius_unit", "m")) if size_model is not None else "m"
+                        ),
+                        "expected_area": (
+                            float(np.pi * size_model.mean_squared_radius) if size_usable else None
+                        ),
+                        "radius_min": float(size_model.min_radius) if size_usable else None,
+                        "radius_mean": float(size_model.mean_radius) if size_usable else None,
+                        "radius_max": float(size_model.max_radius) if size_usable else None,
+                        "radius_std": (
+                            float(max(0.0, size_model.mean_squared_radius - size_model.mean_radius**2) ** 0.5)
+                            if size_usable
+                            else None
+                        ),
                         **actual,
                         "p32_unresolved_orientation": (
                             float(generated.p32_unresolved_orientation) if generated is not None else 0.0
@@ -299,17 +353,30 @@ class M10Service:
         if errors:
             raise RuntimeError("; ".join(errors))
         details = self.estimate_details(config)
+        expected = float(details["expected_fractures"])
+        if expected > config.maximum_fractures:
+            recommended = int(math.ceil(expected + 6.0 * math.sqrt(max(0.0, expected))))
+            enabled = ", ".join(config.enabled_size_classes) or "none"
+            raise MemoryError(
+                f"Expected explicit fractures {expected:,.1f} exceed the configured per-realization limit "
+                f"{config.maximum_fractures:,}; recommended minimum limit (mean + 6σ): {recommended:,}; "
+                f"enabled size classes: {enabled}"
+            )
         available = int(details["available_memory_bytes"])
         required = int(details["all_realizations_peak_bytes"])
         if available > 0 and required > available * config.memory_safety_fraction:
             raise MemoryError(
                 f"Estimated peak memory {required / 1024**3:.2f} GiB exceeds "
                 f"{config.memory_safety_fraction:.0%} of available memory ({available / 1024**3:.2f} GiB); "
-                "reduce the realization count or fracture density"
+                "reduce realization count or the configured maximum_fractures safety cap"
             )
         state = self.project.m9_state
         completed: list[M10Realization] = []
         worker_count = min(config.worker_count, config.realization_count)
+        per_worker_allowance = (
+            max(1, int(details["peak_generation_bytes"] * available * config.memory_safety_fraction / required))
+            if available > 0 and required > 0 else 0
+        )
         if worker_count == 1:
             for index in range(config.realization_count):
                 if cancelled and cancelled():
@@ -328,6 +395,7 @@ class M10Service:
                     ),
                     actual_worker_count=1,
                 )
+                generator.memory_limit_bytes = per_worker_allowance
                 completed.append(generator.generate(index))
         else:
             context = multiprocessing.get_context("spawn")
@@ -343,6 +411,7 @@ class M10Service:
                         deterministic_structures=deterministic_structures,
                         actual_worker_count=worker_count,
                     )
+                    generator.memory_limit_bytes = per_worker_allowance
                     jobs.append(pool.apply_async(_generate_realization_process, (generator, index)))
                 while not all(job.ready() for job in jobs):
                     if cancelled and cancelled():

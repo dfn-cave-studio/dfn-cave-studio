@@ -390,3 +390,61 @@ def test_missing_reliable_orientation_skips_domain_set_with_explicit_status():
     assert result.quality.stochastic_count == 0
     assert result.quality.domain_set[0].status == "INSUFFICIENT_ORIENTATION_DATA"
     assert result.quality.skipped_regions[0]["reason"] == "INSUFFICIENT_ORIENTATION_DATA"
+
+
+def test_memory_ledger_counts_whole_class_buffers_not_only_chunks():
+    generator = _input(p32=20.0)
+    generator.config.fracture_batch_size = 16
+    details = generator.estimate_details()
+    count = details["memory_planning_fracture_count"]
+    ledger = details["generation_memory_ledger"]
+    assert count > 100 * generator.config.fracture_batch_size
+    assert ledger["whole_class_buffers_bytes"] == count * 124 * 2
+    assert ledger["chunk_work_bytes"] == 16 * 512
+    assert ledger["capacity_replacement_bytes"] > 0
+    assert ledger["ragged_parts_and_finalize_bytes"] >= count * 2 * 24 * 32
+    assert details["peak_generation_bytes"] >= sum(ledger.values())
+    assert details["hard_limit_generation_peak_bytes"] >= details["peak_generation_bytes"]
+
+
+def test_memory_ledger_multiple_classes_keeps_previous_class_buffers_and_science():
+    model = SizeModel(
+        domain_id=1, set_id=1, distribution_type="uniform", parameters={},
+        min_radius=0.5, max_radius=2.0, mean_radius=1.25,
+        mean_squared_radius=1.75, source=SizeModelSource.USER_DEFINED,
+    )
+    generator = _input(size_model=model)
+    generator.config.enabled_size_classes = ["SMALL", "MEDIUM", "LARGE"]
+    before = generator.generate(0)
+    details = generator.estimate_details()
+    assert sum(row["expected_count"] for row in details["targets"][0]["classes"]) == pytest.approx(
+        details["expected_fractures"]
+    )
+    assert details["generation_memory_ledger"]["whole_class_buffers_bytes"] == (
+        details["memory_planning_fracture_count"] * 124 * 2
+    )
+    after = generator.generate(0)
+    for name in before.geometry_arrays:
+        np.testing.assert_array_equal(before.geometry_arrays[name], after.geometry_arrays[name])
+
+
+def test_actual_poisson_memory_check_precedes_whole_class_allocations(monkeypatch):
+    generator = _input()
+    generator.memory_limit_bytes = generator.estimate_details()["peak_generation_bytes"] * 2
+    real_rng = np.random.default_rng(42)
+
+    class HighCountRng:
+        def poisson(self, means):
+            return np.full(np.shape(means), 100_000, dtype=np.int64)
+
+        def __getattr__(self, name):
+            return getattr(real_rng, name)
+
+    monkeypatch.setattr(np.random, "default_rng", lambda _seed: HighCountRng())
+
+    def forbidden_repeat(*args, **kwargs):
+        raise AssertionError("full-class buffer allocated before actual-count memory check")
+
+    monkeypatch.setattr(np, "repeat", forbidden_repeat)
+    with pytest.raises(MemoryError, match="actual Poisson count.*before whole-class allocation"):
+        generator.generate(0)

@@ -6,7 +6,7 @@ from dfn_cave_studio.ui.qt_adapter import (
     Qt, QColor, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QPushButton, QDoubleSpinBox, QComboBox, QGroupBox, QSignalBlocker, QSpinBox,
     QDialogButtonBox, QListWidget, QListWidgetItem,
-    QSplitter, QTabWidget, QWidget, QColorDialog, QLineEdit,
+    QScrollArea, QSplitter, QTabWidget, QWidget, QColorDialog, QLineEdit,
     QTableWidget, QTableWidgetItem,
 )
 from dfn_cave_studio.models.fracture_set import (
@@ -14,6 +14,20 @@ from dfn_cave_studio.models.fracture_set import (
 )
 from dfn_cave_studio.models.enums import SizeDistributionType
 from dfn_cave_studio.services.joint_set_service import joint_set_color
+
+
+class _NoWheelSpinBox(QSpinBox):
+    """Keep a scrolling page from accidentally changing a scientific integer."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+class _NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """Keep a scrolling page from accidentally changing a scientific value."""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 class JointSetManagerDialog(QDialog):
@@ -30,6 +44,7 @@ class JointSetManagerDialog(QDialog):
         self._project = project
         self._phase2a_service = None
         self._pending_global_fit = None
+        self._mapping_suggestions = []
         if project is not None:
             from dfn_cave_studio.services.borehole_fracture_service import BoreholeFractureService
 
@@ -51,6 +66,14 @@ class JointSetManagerDialog(QDialog):
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
+        self._data_status = QLabel()
+        self._data_status.setWordWrap(True)
+        layout.addWidget(self._data_status)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(self._scroll_content)
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Left: set list
@@ -61,9 +84,6 @@ class JointSetManagerDialog(QDialog):
         self._list.currentRowChanged.connect(self._on_set_selected)
         ll.addWidget(QLabel("Confirmed Global Joint Sets:"))
         ll.addWidget(self._list)
-        self._data_status = QLabel()
-        self._data_status.setWordWrap(True)
-        ll.addWidget(self._data_status)
         btn_row = QHBoxLayout()
         add_btn = QPushButton("+ Add")
         add_btn.clicked.connect(self._add_set)
@@ -169,25 +189,29 @@ class JointSetManagerDialog(QDialog):
 
         splitter.addWidget(right)
         splitter.setSizes([250, 550])
-        layout.addWidget(splitter)
-        self._build_imported_representatives_ui(layout)
+        scroll_layout.addWidget(splitter)
+        self._build_imported_representatives_ui(scroll_layout)
+        self._scroll_area.setWidget(self._scroll_content)
+        layout.addWidget(self._scroll_area)
 
         if self._sets:
             self._refresh_stats_label(self._sets[0])
         else:
             self._stats_lbl.setText("No confirmed global joint set selected.")
 
-        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btn_box.accepted.connect(self._on_accept)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
+        self._button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self._button_box.accepted.connect(self._on_accept)
+        self._button_box.rejected.connect(self.reject)
+        layout.addWidget(self._button_box)
 
         self._on_set_selected(0)
         self._refresh_data_status()
         self._refresh_imported_representatives()
 
     def _make_double(self, lo, hi, decimals) -> QDoubleSpinBox:
-        sb = QDoubleSpinBox(); sb.setRange(lo, hi); sb.setDecimals(decimals); return sb
+        sb = _NoWheelDoubleSpinBox(); sb.setRange(lo, hi); sb.setDecimals(decimals); return sb
 
     def _refresh_list(self) -> None:
         self._list.clear()
@@ -225,9 +249,12 @@ class JointSetManagerDialog(QDialog):
         group = QGroupBox("Imported observation candidates and authoritative mapping")
         group_layout = QVBoxLayout(group)
         self._observation_tabs = QTabWidget()
-        self._representative_table = QTableWidget(0, 8)
+        self._representative_table = QTableWidget(0, 10)
         self._representative_table.setHorizontalHeaderLabels(
-            ["Point", "Source", "Local set", "Dip", "Dip direction", "Joint count", "Spacing (m)", "Role"]
+            [
+                "Component", "Point", "Source", "Domain", "Local set", "Dip", "Dip direction",
+                "Joint count", "Spacing (m)", "Role",
+            ]
         )
         self._random_table = QTableWidget(0, 6)
         self._random_table.setHorizontalHeaderLabels(
@@ -237,10 +264,32 @@ class JointSetManagerDialog(QDialog):
         self._observation_tabs.addTab(self._random_table, "Random Background")
         group_layout.addWidget(self._observation_tabs)
 
-        controls = QHBoxLayout()
-        self._global_k_spin = QSpinBox()
+        mapping_controls = QHBoxLayout()
+        self._prepare_mapping_button = QPushButton("Preserve Representatives as Separate Global Sets")
+        self._prepare_mapping_button.clicked.connect(self._prepare_local_mapping)
+        self._merge_suggestion_button = QPushButton("Merge Selected Suggested Pair")
+        self._merge_suggestion_button.clicked.connect(self._merge_selected_suggestion)
+        mapping_controls.addWidget(self._prepare_mapping_button)
+        mapping_controls.addWidget(self._merge_suggestion_button)
+        group_layout.addLayout(mapping_controls)
+        mapping_explanation = QLabel(
+            "Default: one complete imported representative is one global set. Similarity suggestions use axial "
+            "pole angle and are advisory only; no pair is merged until you explicitly confirm it. Equal local_set "
+            "labels at different points are not treated as the same group."
+        )
+        mapping_explanation.setWordWrap(True)
+        group_layout.addWidget(mapping_explanation)
+        self._suggestion_table = QTableWidget(0, 9)
+        self._suggestion_table.setHorizontalHeaderLabels(
+            ["Angle (deg)", "Component A", "Point A", "Source A", "Domain A", "Component B", "Point B", "Source B", "Domain B"]
+        )
+        group_layout.addWidget(self._suggestion_table)
+
+        legacy_group = QGroupBox("Legacy weighted K-means (optional; retained for compatibility)")
+        controls = QHBoxLayout(legacy_group)
+        self._global_k_spin = _NoWheelSpinBox()
         self._global_k_spin.setRange(1, 50)
-        self._global_seed_spin = QSpinBox()
+        self._global_seed_spin = _NoWheelSpinBox()
         self._global_seed_spin.setRange(-2_147_483_648, 2_147_483_647)
         if self._project is not None:
             config = self._project.borehole_fracture_state.config
@@ -253,7 +302,7 @@ class JointSetManagerDialog(QDialog):
         controls.addWidget(QLabel("Seed:"))
         controls.addWidget(self._global_seed_spin)
         controls.addWidget(self._fit_imported_button)
-        group_layout.addLayout(controls)
+        group_layout.addWidget(legacy_group)
         self._k_explanation = QLabel(
             "K is the number of dominant joint sets for the whole study area. It is not a point-local local_set "
             "count, fracture count, or Poisson parameter. P representatives use joint_num weights; Z uses weight 1."
@@ -300,8 +349,10 @@ class JointSetManagerDialog(QDialog):
                 else "Z representative — direction only; does not provide density"
             )
             values = (
+                self._phase2a_service._component_id(item),
                 item.point_id,
                 item.source_kind,
+                item.domain_id if item.domain_id is not None else "Unassigned",
                 item.local_set_id,
                 item.dip,
                 item.dip_direction,
@@ -325,6 +376,24 @@ class JointSetManagerDialog(QDialog):
                 self._random_table.setItem(row, column, QTableWidgetItem(str(value)))
 
         self._fit_imported_button.setEnabled(bool(candidates))
+        self._prepare_mapping_button.setEnabled(bool(candidates))
+        self._mapping_suggestions = self._phase2a_service.local_mapping_suggestions() if candidates else []
+        self._suggestion_table.setRowCount(len(self._mapping_suggestions))
+        for row, suggestion in enumerate(self._mapping_suggestions):
+            values = (
+                f"{suggestion.axial_angle_deg:.3f}",
+                suggestion.component_a,
+                suggestion.point_a,
+                suggestion.source_a,
+                suggestion.domain_a if suggestion.domain_a is not None else "Unassigned",
+                suggestion.component_b,
+                suggestion.point_b,
+                suggestion.source_b,
+                suggestion.domain_b if suggestion.domain_b is not None else "Unassigned",
+            )
+            for column, value in enumerate(values):
+                self._suggestion_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self._merge_suggestion_button.setEnabled(bool(self._mapping_suggestions))
         if self._sets:
             self._pending_global_fit = self._phase2a_service.authoritative_confirmed_fit(self._sets)
             self._fit_status.setText(
@@ -333,8 +402,8 @@ class JointSetManagerDialog(QDialog):
             )
         elif candidates:
             self._fit_status.setText(
-                f"{len(candidates)} complete P/Z representative(s) are available. Choose global K and fit before "
-                "confirming."
+                f"{len(candidates)} complete P/Z representative(s) are available. Preserve them as separate "
+                "global groups, optionally review and merge suggested pairs, then confirm; legacy K-means remains optional."
             )
         else:
             self._fit_status.setText(
@@ -342,6 +411,52 @@ class JointSetManagerDialog(QDialog):
                 "are not converted into ordinary global joint sets."
             )
         self._refresh_authoritative_mapping()
+
+    def _prepare_local_mapping(self) -> None:
+        """Create a pending identity component mapping without changing the project."""
+        if self._phase2a_service is None:
+            return
+        from dfn_cave_studio.ui.qt_adapter import QMessageBox
+
+        try:
+            fit = self._phase2a_service.build_local_component_mapping()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot prepare component mapping", str(exc))
+            return
+        self._apply_imported_fit(fit)
+        self._fit_status.setText(
+            f"Pending review: {len(fit.local_components)} representatives remain intact as {len(fit.sets)} "
+            "global groups. Select an advisory pair only if you explicitly intend to merge it."
+        )
+
+    def _merge_selected_suggestion(self) -> None:
+        """Merge one explicitly selected advisory pair in the pending mapping."""
+        if self._phase2a_service is None:
+            return
+        from dfn_cave_studio.ui.qt_adapter import QMessageBox
+
+        row = self._suggestion_table.currentRow()
+        if row < 0 or row >= len(self._mapping_suggestions):
+            QMessageBox.information(self, "No suggested pair selected", "Select one advisory pair to merge.")
+            return
+        if (
+            self._pending_global_fit is None
+            or self._pending_global_fit.algorithm != "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING"
+        ):
+            self._pending_global_fit = self._phase2a_service.build_local_component_mapping()
+        suggestion = self._mapping_suggestions[row]
+        assignments = {item.component_id: item.global_set_id for item in self._pending_global_fit.mappings}
+        left_id = assignments[suggestion.component_a]
+        right_id = assignments[suggestion.component_b]
+        if left_id != right_id:
+            keep_id, replace_id = sorted((left_id, right_id))
+            assignments = {key: keep_id if value == replace_id else value for key, value in assignments.items()}
+        fit = self._phase2a_service.build_local_component_mapping(assignments)
+        self._apply_imported_fit(fit)
+        self._fit_status.setText(
+            f"Pending review: explicit merge gives {len(fit.sets)} global groups while preserving "
+            f"all {len(fit.local_components)} imported representatives."
+        )
 
     def _fit_imported_representatives(self) -> None:
         if self._phase2a_service is None:
@@ -356,6 +471,18 @@ class JointSetManagerDialog(QDialog):
         except (ValueError, RuntimeError) as exc:
             QMessageBox.warning(self, "Cannot fit global joint sets", str(exc))
             return
+        self._apply_imported_fit(fit)
+        self._fit_status.setText(
+            f"Fitted {len(fit.sets)} global joint set(s) by legacy K-means. Review the mapping, then click OK to confirm."
+        )
+        self._count_summary.setText(
+            f"Imported Local Representatives: {self._representative_table.rowCount()} | "
+            f"Random Background: {self._random_table.rowCount()} | Confirmed Global Joint Sets pending: "
+            f"{len(fit.sets)} (strictly selected K={self._global_k_spin.value()})"
+        )
+
+    def _apply_imported_fit(self, fit) -> None:
+        """Apply a pending imported-representative fit to dialog-local editor state."""
         existing = {item.set_id: item for item in self._sets}
         fitted_sets: list[JointSetConfig] = []
         for model in fit.sets:
@@ -373,13 +500,20 @@ class JointSetManagerDialog(QDialog):
                 mean_dip=model.mean_dip,
                 kappa=model.kappa,
             )
-            joint_set.provenance["orientation"] = "P/Z representative axial fit"
+            joint_set.provenance["orientation"] = (
+                "user-confirmed mapping of preserved P/Z local representatives"
+                if fit.algorithm == "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING"
+                else "P/Z representative axial fit"
+            )
             joint_set.provenance["kappa_status"] = model.kappa_status
             joint_set.provenance["kappa_meaning"] = (
                 "one representative direction cannot estimate dispersion"
                 if model.kappa_status == "UNRESOLVED"
                 else "dispersion among site representative means; not raw within-set dispersion"
             )
+            joint_set.provenance["phase2a_intensity_support"] = fit.provenance.get(
+                "intensity_support_by_global_set", {}
+            ).get(str(model.global_set_id), "P_SPACING_SUPPORTED")
             if is_new:
                 joint_set.provenance.update(
                     {
@@ -401,13 +535,10 @@ class JointSetManagerDialog(QDialog):
             # over the fitted orientation.
             self._on_set_selected(0)
         self._refresh_data_status()
-        self._fit_status.setText(
-            f"Fitted {len(fit.sets)} global joint set(s). Review the local-to-global mapping, then click OK to confirm."
-        )
         self._count_summary.setText(
             f"Imported Local Representatives: {self._representative_table.rowCount()} | "
             f"Random Background: {self._random_table.rowCount()} | Confirmed Global Joint Sets pending: "
-            f"{len(fit.sets)} (strictly selected K={self._global_k_spin.value()})"
+            f"{len(fit.sets)}"
         )
         self._refresh_authoritative_mapping()
 
@@ -521,12 +652,16 @@ class JointSetManagerDialog(QDialog):
             self._size_form.setRowVisible(editor, not size_unresolved)
 
         p32_derived_later = joint_set.provenance.get("p32_status") == "DERIVED_LATER_BY_M9"
-        self._intensity_status_label.setText(
-            "Derived later by M9 — P-site spacing controls Phase 2A group probability only; borehole spacing "
-            "controls Poisson total count."
-            if p32_derived_later
-            else str(joint_set.provenance.get("p32_status", "Explicit GLOBAL_CONSTANT / legacy target"))
-        )
+        if joint_set.provenance.get("phase2a_intensity_support") == "Z_DIRECTION_ONLY_NO_P_INTENSITY":
+            intensity_text = "Z direction support only — no P quantity support; this is NO_DATA, not true zero."
+        elif p32_derived_later:
+            intensity_text = (
+                "Derived later by M9 — P-site spacing controls Phase 2A group probability only; borehole spacing "
+                "controls Poisson total count."
+            )
+        else:
+            intensity_text = str(joint_set.provenance.get("p32_status", "Explicit GLOBAL_CONSTANT / legacy target"))
+        self._intensity_status_label.setText(intensity_text)
         self._intensity_form.setRowVisible(self._p32_spin, not p32_derived_later)
         self._intensity_form.setRowVisible(self._tol_spin, not p32_derived_later)
 
@@ -692,12 +827,24 @@ class JointSetManagerDialog(QDialog):
     def _on_accept(self) -> None:
         if self._phase2a_service is not None and not self._sets and self._representative_table.rowCount() > 0:
             self._fit_status.setText(
-                "Imported P/Z direction candidates are available. Fit and review the global joint sets before "
-                "confirming."
+                "Imported P/Z direction candidates are available. Prepare and review a local-component mapping "
+                "or use the optional legacy K-means workflow before confirming."
             )
             return
-        if self._phase2a_service is not None and self._sets and not self._pending_fit_matches_sets():
-            self._pending_global_fit = self._phase2a_service.use_confirmed_project_sets(self._sets)
+        if self._phase2a_service is not None and self._sets:
+            if (
+                self._pending_global_fit is not None
+                and self._pending_global_fit.algorithm == "USER_CONFIRMED_LOCAL_COMPONENT_MAPPING"
+            ):
+                assignments = {
+                    item.component_id: item.global_set_id for item in self._pending_global_fit.mappings
+                }
+                self._pending_global_fit = self._phase2a_service.build_local_component_mapping(
+                    assignments, user_confirmed=True
+                )
+                self._apply_imported_fit(self._pending_global_fit)
+            elif not self._pending_fit_matches_sets():
+                self._pending_global_fit = self._phase2a_service.use_confirmed_project_sets(self._sets)
         self.accept()
 
     def get_joint_sets(self) -> List[JointSetConfig]:
